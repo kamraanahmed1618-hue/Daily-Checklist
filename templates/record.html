@@ -6,42 +6,83 @@
   <a class="text-link" href="{{ url_for('admin') }}">← Back to records</a>
   <button class="button primary" id="print-record" type="button">Print / Save PDF</button>
 </section>
-<article class="record-sheet">
-  <header class="record-title">
-    <div><span class="eyebrow">Controlled inspection record</span><h1>Daily OHS Team Inspection</h1><p>{{ record.report_no }}</p></div>
-    <div class="record-score"><strong>{{ record.score }}%</strong><span>compliance</span></div>
-  </header>
-  <dl class="record-meta">
-    <div><dt>Project</dt><dd>{{ record.project_name }}</dd></div>
-    <div><dt>Location / zone</dt><dd>{{ record.work_location }}</dd></div>
-    <div><dt>Contractor</dt><dd>{{ record.contractor }}</dd></div>
-    <div><dt>Inspected by</dt><dd>{{ record.inspected_by }}</dd></div>
-    <div><dt>Date &amp; time</dt><dd>{{ record.inspection_date }} · {{ record.inspection_time }}</dd></div>
-    <div><dt>Shift</dt><dd>{{ record.shift }}</dd></div>
-  </dl>
-  <div class="record-summary">
-    <span><b>{{ record.compliant }}</b> compliant</span>
-    <span><b>{{ record.non_compliant }}</b> non-compliant</span>
-    <span><b>{{ record.not_applicable }}</b> not applicable</span>
-  </div>
-  {% for section in sections %}
-  <section class="record-section">
-    <h2><span>{{ '%02d'|format(loop.index) }}</span>{{ section.title }}</h2>
-    <table>
-      <thead><tr><th>Requirement</th><th>Result</th><th>Observation / action</th></tr></thead>
+
+<article class="doc-sheet">
+  <table class="doc-logos">
+    <tr>
+      <td class="logo-cell"><span class="logo-label">CLIENT</span></td>
+      <td class="logo-cell"><img src="{{ url_for('static', filename='egis.png') }}" alt="Egis"><span class="logo-label">PMC</span></td>
+      <td class="logo-cell"><img src="{{ url_for('static', filename='dewan.png') }}" alt="Dewan"><span class="logo-label">CSC</span></td>
+      <td class="logo-cell"><img src="{{ url_for('static', filename='bec-ashoka.png') }}" alt="BEC Ashoka"><span class="logo-label">MAIN CONTRACTOR</span></td>
+    </tr>
+  </table>
+  <div class="doc-banner">1 HOTEL DIRIYAH</div>
+  <h1 class="doc-title">1 HOTEL CONSTRUCTION PROJECT — DAILY OHS INSPECTION CHECKLIST</h1>
+
+  <table class="doc-info">
+    <tr><td class="info-label">Project Name:</td><td>{{ record.project_name }}</td><td class="info-label">Inspected By:</td><td>{{ record.inspected_by }}</td></tr>
+    <tr><td class="info-label">Work Location / Zone:</td><td>{{ record.work_location }}</td><td class="info-label">Date:</td><td>{{ record.inspection_date }}</td></tr>
+    <tr><td class="info-label">Contractor / Subcontractor:</td><td>{{ record.contractor }}</td><td class="info-label">Time:</td><td>{{ record.inspection_time }}</td></tr>
+    <tr><td class="info-label">Shift:</td><td>{{ record.shift }}</td><td class="info-label">Report No.:</td><td>{{ record.report_no }}</td></tr>
+  </table>
+
+  <div class="doc-columns">
+    {% for column in [sections[:7], sections[7:]] %}
+    <table class="doc-checklist">
+      <thead><tr><th>Requirements</th><th>Y/N/NA</th></tr></thead>
       <tbody>
-      {% for item in section["items"] %}
-        {% set value = record.responses.get(item.id, '') %}
-        <tr><td>{{ item.text }}</td><td><span class="result result-{{ value|lower }}">{% if value == 'Y' %}Yes{% elif value == 'N' %}No{% else %}N/A{% endif %}</span></td><td>{{ record.response_notes.get(item.id, '') or '—' }}</td></tr>
+      {% for section in column %}
+        <tr class="section-row"><td colspan="2">{{ section.title|upper }}</td></tr>
+        {% for item in section["items"] %}
+          {% set value = record.responses.get(item.id, '') %}
+          <tr>
+            <td>{{ item.text }}</td>
+            <td class="result-cell result-{{ value|lower }}">{% if value == 'Y' %}Y{% elif value == 'N' %}N{% else %}NA{% endif %}</td>
+          </tr>
+        {% endfor %}
       {% endfor %}
       </tbody>
     </table>
-  </section>
+    {% endfor %}
+  </div>
+
+  {% set noncompliant_items = [] %}
+  {% for section in sections %}
+    {% for item in section["items"] %}
+      {% if record.responses.get(item.id) == 'N' %}
+        {% set _ = noncompliant_items.append((section, item)) %}
+      {% endif %}
+    {% endfor %}
   {% endfor %}
-  <section class="record-signoff">
-    <div><span>General remarks</span><p>{{ record.remarks or 'No additional remarks.' }}</p></div>
-    <div><span>Digitally signed by</span><strong>{{ record.signoff_name }}</strong><small>Submitted {{ record.created_at }}</small></div>
-  </section>
+  <table class="doc-noncompliance">
+    <tr><td class="section-header" colspan="2">NON-COMPLIANCE OBSERVATIONS</td></tr>
+    {% if noncompliant_items %}
+      {% for section, item in noncompliant_items %}
+        <tr><td class="nc-item">{{ section.title }} — {{ item.text }}</td><td class="nc-note">{{ record.response_notes.get(item.id, '') }}</td></tr>
+      {% endfor %}
+    {% else %}
+      <tr><td colspan="2">No non-compliance items recorded.</td></tr>
+    {% endif %}
+  </table>
+
+  <table class="doc-summary">
+    <tr><td class="section-header" colspan="2">COMPLIANCE SUMMARY</td></tr>
+    <tr><td>Total Items Inspected</td><td>{{ record.total_inspected }}</td></tr>
+    <tr><td>Compliant (Y)</td><td>{{ record.compliant }}</td></tr>
+    <tr><td>Non-Compliant (N)</td><td>{{ record.non_compliant }}</td></tr>
+    <tr><td>Not Applicable (N/A)</td><td>{{ record.not_applicable }}</td></tr>
+    <tr><td>Compliance Score (%)</td><td>{{ record.score }}</td></tr>
+  </table>
+
+  <table class="doc-footer">
+    <tr>
+      <td class="info-label">Inspected by:</td><td>{{ record.signoff_name }}</td>
+      <td class="info-label">Signature:</td><td>Digitally signed · {{ record.created_at }}</td>
+    </tr>
+    <tr>
+      <td class="info-label">Remarks</td><td colspan="3">{{ record.remarks or 'No additional remarks.' }}</td>
+    </tr>
+  </table>
 </article>
 {% endblock %}
 {% block scripts %}<script src="{{ url_for('static', filename='record.js') }}" defer></script>{% endblock %}
