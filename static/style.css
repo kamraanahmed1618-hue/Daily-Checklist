@@ -246,3 +246,15 @@ td small { margin-top: 3px; color: var(--muted); }
   th, td { padding: 5px 7px; }
   .result, .record-summary span, .record-signoff { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 }
+.partner-logos {
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    margin-bottom: 20px;
+}
+
+.partner-logos img {
+    height: 55px;
+    width: auto;
+    object-fit: contain;
+}
