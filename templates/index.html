@@ -3,7 +3,14 @@
 {% block body_class %}form-page{% endblock %}
 {% block content %}
 <section class="hero">
-  <div>
+<div>
+
+    <div class="partner-logos">
+        <img src="{{ url_for('static', filename='egis.png') }}" alt="Egis">
+        <img src="{{ url_for('static', filename='dewan.png') }}" alt="Dewan">
+        <img src="{{ url_for('static', filename='bec-ashoka.png') }}" alt="BEC Ashoka">
+    </div>
+
     <span class="eyebrow">Daily site assurance</span>
     <h1>OHS Team Inspection Checklist</h1>
     <p>Complete every requirement, record observations for any non-compliance, and sign off before submission.</p>
