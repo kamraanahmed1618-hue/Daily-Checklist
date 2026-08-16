@@ -130,6 +130,17 @@ def photo_urls(keys: list[str]) -> list[str]:
         return []
 
 
+def delete_photos(keys: list[str]) -> None:
+    if not keys or not b2_configured():
+        return
+    try:
+        client = b2_client()
+        for key in keys:
+            client.delete_object(Bucket=B2_BUCKET, Key=key)
+    except Exception:
+        app.logger.exception("Failed to delete photos from storage")
+
+
 def detect_image_type(data: bytes) -> str | None:
     if data.startswith(b"\xff\xd8\xff"):
         return "jpg"
@@ -818,6 +829,15 @@ def record_detail(record_id: str) -> str | tuple[str, int]:
     return render_template("record.html", record=record, sections=CHECKLIST)
 
 
+@app.post("/admin/records/<record_id>/delete")
+@admin_required
+def delete_record(record_id: str) -> Response:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("DELETE FROM inspections WHERE id = ?"), [record_id])
+    return redirect(url_for("admin", view="inspections"))
+
+
 @app.get("/admin/near-miss/<record_id>")
 @admin_required
 def near_miss_detail(record_id: str) -> str | tuple[str, int]:
@@ -833,6 +853,19 @@ def near_miss_detail(record_id: str) -> str | tuple[str, int]:
     return render_template("near_miss_record.html", record=record, photo_urls=photo_urls(record["photos"]))
 
 
+@app.post("/admin/near-miss/<record_id>/delete")
+@admin_required
+def delete_near_miss(record_id: str) -> Response:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT photos FROM near_miss_reports WHERE id = ?"), [record_id])
+        row = cursor.fetchone()
+        cursor.execute(sql("DELETE FROM near_miss_reports WHERE id = ?"), [record_id])
+    if row:
+        delete_photos(json.loads(row["photos"]))
+    return redirect(url_for("admin", view="near-miss"))
+
+
 @app.get("/admin/violations/<record_id>")
 @admin_required
 def violation_detail(record_id: str) -> str | tuple[str, int]:
@@ -846,6 +879,19 @@ def violation_detail(record_id: str) -> str | tuple[str, int]:
     record["actions"] = json.loads(record["actions"])
     record["photos"] = json.loads(record["photos"])
     return render_template("violation_record.html", record=record, photo_urls=photo_urls(record["photos"]))
+
+
+@app.post("/admin/violations/<record_id>/delete")
+@admin_required
+def delete_violation(record_id: str) -> Response:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT photos FROM violation_notices WHERE id = ?"), [record_id])
+        row = cursor.fetchone()
+        cursor.execute(sql("DELETE FROM violation_notices WHERE id = ?"), [record_id])
+    if row:
+        delete_photos(json.loads(row["photos"]))
+    return redirect(url_for("admin", view="violations"))
 
 
 @app.get("/admin/export")
