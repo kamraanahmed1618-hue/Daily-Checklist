@@ -104,6 +104,7 @@ def init_db() -> None:
     statements = [
         """CREATE TABLE IF NOT EXISTS inspections (
             id TEXT PRIMARY KEY,
+            seq INTEGER,
             report_no TEXT NOT NULL UNIQUE,
             project_name TEXT NOT NULL,
             work_location TEXT NOT NULL,
@@ -132,6 +133,19 @@ def init_db() -> None:
         cursor = connection.cursor()
         for statement in statements:
             cursor.execute(statement)
+        if is_postgres():
+            cursor.execute("ALTER TABLE inspections ADD COLUMN IF NOT EXISTS seq INTEGER")
+        else:
+            cursor.execute("PRAGMA table_info(inspections)")
+            if not any(row[1] == "seq" for row in cursor.fetchall()):
+                cursor.execute("ALTER TABLE inspections ADD COLUMN seq INTEGER")
+        # Backfill sequential numbers for any pre-existing records in submission order.
+        cursor.execute(sql("SELECT COALESCE(MAX(seq), 0) AS next_seq FROM inspections"))
+        next_seq = cursor.fetchone()["next_seq"] or 0
+        cursor.execute(sql("SELECT id FROM inspections WHERE seq IS NULL ORDER BY created_at ASC"))
+        for row in cursor.fetchall():
+            next_seq += 1
+            cursor.execute(sql("UPDATE inspections SET seq = ? WHERE id = ?"), [next_seq, row["id"]])
 
 
 def clean_text(value: Any, field: str, maximum: int = 200, required: bool = True) -> str:
@@ -262,18 +276,20 @@ def submit_inspection() -> tuple[Response, int] | Response:
             raise ValueError("The inspection data is invalid.")
         record = validate_inspection(payload)
         record_id = secrets.token_hex(16)
-        report_no = record["report_no"] or f'OHS-{record["inspection_date"].replace("-", "")}-{record_id[:6].upper()}'
         created_at = datetime.now(timezone.utc).isoformat()
-        values = [
-            record_id, report_no, record["project_name"], record["work_location"], record["contractor"],
-            record["inspected_by"], record["inspection_date"], record["inspection_time"], record["shift"],
-            json.dumps(record["responses"]), json.dumps(record["response_notes"]), record["remarks"],
-            record["signoff_name"], record["signed"], record["total_inspected"], record["compliant"],
-            record["non_compliant"], record["not_applicable"], record["score"], created_at,
-        ]
-        placeholders = ",".join("?" for _ in values)
         with database() as connection:
             cursor = connection.cursor()
+            cursor.execute(sql("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM inspections"))
+            seq = cursor.fetchone()["next_seq"]
+            report_no = record["report_no"] or f"OHS-{seq:04d}"
+            values = [
+                record_id, seq, report_no, record["project_name"], record["work_location"], record["contractor"],
+                record["inspected_by"], record["inspection_date"], record["inspection_time"], record["shift"],
+                json.dumps(record["responses"]), json.dumps(record["response_notes"]), record["remarks"],
+                record["signoff_name"], record["signed"], record["total_inspected"], record["compliant"],
+                record["non_compliant"], record["not_applicable"], record["score"], created_at,
+            ]
+            placeholders = ",".join("?" for _ in values)
             cursor.execute(sql(f"INSERT INTO inspections VALUES ({placeholders})"), values)
         return jsonify({"id": record_id, "reportNo": report_no, "score": record["score"], "nonCompliant": record["non_compliant"]}), 201
     except ValueError as error:
