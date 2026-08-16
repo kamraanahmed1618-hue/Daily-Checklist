@@ -35,7 +35,7 @@ function getDraft() {
 
 function collectState() {
   const fields = {};
-  ["projectName", "workLocation", "contractor", "inspectedBy", "reportNo", "inspectionDate", "inspectionTime", "shift", "remarks", "signoffName"].forEach((name) => {
+  ["projectName", "workLocation", "contractor", "inspectedBy", "inspectionDate", "inspectionTime", "shift", "remarks", "signoffName"].forEach((name) => {
     fields[name] = field(name)?.value || "";
   });
   const responses = {};

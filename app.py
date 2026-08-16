@@ -304,7 +304,6 @@ def validate_inspection(payload: dict[str, Any]) -> dict[str, Any]:
         "inspection_date": clean_text(payload.get("inspectionDate"), "Date", 10),
         "inspection_time": clean_text(payload.get("inspectionTime"), "Time", 5),
         "shift": clean_text(payload.get("shift"), "Shift", 80),
-        "report_no": clean_text(payload.get("reportNo"), "Report number", 80, False),
         "remarks": clean_text(payload.get("remarks"), "Remarks", 3000, False),
         "signoff_name": clean_text(payload.get("signoffName"), "Sign-off name"),
     }
@@ -430,7 +429,6 @@ def validate_near_miss(payload: dict[str, Any]) -> dict[str, Any]:
         "corrective_actions": clean_list_text(payload.get("correctiveActions"), "Corrective action", 4),
         "preventive_measures": clean_list_text(payload.get("preventiveMeasures"), "Preventive measure", 4),
         "status": status,
-        "report_no": clean_text(payload.get("reportNo"), "Report number", 80, False),
         "photos": clean_photo_keys(payload.get("photoKeys")),
     }
 
@@ -449,7 +447,6 @@ def validate_violation(payload: dict[str, Any]) -> dict[str, Any]:
         "deduction_amount": clean_text(payload.get("deductionAmount"), "Deduction amount", 80, False),
         "issued_by_name": clean_text(payload.get("issuedByName"), "Issued by (name)"),
         "issued_by_position": clean_text(payload.get("issuedByPosition"), "Issued by (position)", 200, False),
-        "violation_no": clean_text(payload.get("violationNo"), "Violation number", 80, False),
     }
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", record["violation_date"]):
         raise ValueError("Enter a valid date.")
@@ -575,7 +572,7 @@ def submit_inspection() -> tuple[Response, int] | Response:
             cursor = connection.cursor()
             cursor.execute(sql("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM inspections"))
             seq = cursor.fetchone()["next_seq"]
-            report_no = record["report_no"] or f"OHS-{seq:04d}"
+            report_no = f"OHS-{seq:04d}"
             values = [
                 record_id, seq, report_no, record["project_name"], record["work_location"], record["contractor"],
                 record["inspected_by"], record["inspection_date"], record["inspection_time"], record["shift"],
@@ -609,7 +606,7 @@ def submit_near_miss() -> tuple[Response, int] | Response:
             cursor = connection.cursor()
             cursor.execute(sql("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM near_miss_reports"))
             seq = cursor.fetchone()["next_seq"]
-            report_no = record["report_no"] or f"NM-{seq:04d}"
+            report_no = f"NM-{seq:04d}"
             values = [
                 record_id, seq, report_no, record["department_project"], record["incident_date"], record["incident_time"],
                 record["location"], record["reported_by"], record["what_happened"], record["could_have_happened"],
@@ -647,7 +644,7 @@ def submit_violation() -> tuple[Response, int] | Response:
             cursor = connection.cursor()
             cursor.execute(sql("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM violation_notices"))
             seq = cursor.fetchone()["next_seq"]
-            violation_no = record["violation_no"] or f"VN-{seq:04d}"
+            violation_no = f"VN-{seq:04d}"
             values = [
                 record_id, seq, violation_no, record["project_name"], record["violation_date"], record["employee_name"],
                 record["employee_id"], record["company_contractor"], record["job_title"], record["violation_location"],

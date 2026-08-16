@@ -46,7 +46,6 @@ async function submitReport(event) {
     incidentTime: field("incidentTime").value,
     location: field("location").value,
     reportedBy: field("reportedBy").value,
-    reportNo: field("reportNo").value,
     whatHappened: field("whatHappened").value,
     couldHaveHappened: field("couldHaveHappened").value,
     nearMissTypes,

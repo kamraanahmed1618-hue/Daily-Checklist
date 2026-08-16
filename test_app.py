@@ -28,7 +28,6 @@ class ChecklistApplicationTests(unittest.TestCase):
             "workLocation": "Zone 3",
             "contractor": "Test Contractor",
             "inspectedBy": "QA Inspector",
-            "reportNo": "QA-TEST-001",
             "inspectionDate": "2026-08-15",
             "inspectionTime": "14:30",
             "shift": "Day",
@@ -77,11 +76,12 @@ class ChecklistApplicationTests(unittest.TestCase):
         response = self.client.post("/api/inspections", json=self.payload())
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.json["score"], 100.0)
+        self.assertEqual(response.json["reportNo"], "OHS-0001")
         record_id = response.json["id"]
 
         self.assertEqual(self.login().status_code, 302)
         dashboard = self.client.get("/admin")
-        self.assertIn(b"QA-TEST-001", dashboard.data)
+        self.assertIn(b"OHS-0001", dashboard.data)
         detail = self.client.get(f"/admin/records/{record_id}")
         self.assertEqual(detail.status_code, 200)
         self.assertIn(b"GENERAL BEST PRACTICE", detail.data)
@@ -89,7 +89,7 @@ class ChecklistApplicationTests(unittest.TestCase):
         summary = self.client.get("/admin/export?kind=summary")
         self.assertEqual(summary.status_code, 200)
         self.assertIn("attachment", summary.headers["Content-Disposition"])
-        self.assertIn("QA-TEST-001", summary.get_data(as_text=True))
+        self.assertIn("OHS-0001", summary.get_data(as_text=True))
 
         detailed = self.client.get("/admin/export?kind=detailed")
         rows = list(csv.reader(io.StringIO(detailed.get_data(as_text=True).lstrip("\ufeff"))))
@@ -164,11 +164,11 @@ class ChecklistApplicationTests(unittest.TestCase):
 
     def test_sequential_report_numbers(self):
         first = self.client.post("/api/inspections", json=self.payload())
-        second_payload = self.payload()
-        second_payload["reportNo"] = ""
-        second = self.client.post("/api/inspections", json=second_payload)
-        self.assertEqual(first.json["reportNo"], "QA-TEST-001")
-        self.assertTrue(second.json["reportNo"].startswith("OHS-"))
+        ignored_payload = self.payload()
+        ignored_payload["reportNo"] = "CUSTOM-IGNORED"
+        second = self.client.post("/api/inspections", json=ignored_payload)
+        self.assertEqual(first.json["reportNo"], "OHS-0001")
+        self.assertEqual(second.json["reportNo"], "OHS-0002")
 
     def test_photo_upload_rejects_bad_token(self):
         response = self.client.post("/api/uploads/bad token!", data={}, content_type="multipart/form-data")
