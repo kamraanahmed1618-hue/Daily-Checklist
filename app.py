@@ -8,13 +8,14 @@ import os
 import re
 import secrets
 import sqlite3
+import zipfile
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 from typing import Any, Iterator
 
-from flask import Flask, Response, jsonify, redirect, render_template, request, session, url_for
+from flask import Flask, Response, jsonify, redirect, render_template, request, send_from_directory, session, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from charts import bar_chart_svg, grouped_bar_chart_svg, line_chart_svg
@@ -588,6 +589,13 @@ def index() -> str:
     return render_template("index.html", total_items=len(CHECKLIST_ITEMS))
 
 
+@app.get("/sw.js")
+def service_worker() -> Response:
+    response = send_from_directory(app.static_folder, "sw.js", mimetype="application/javascript")
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 @app.get("/near-miss")
 def near_miss_form() -> str:
     return render_template("near_miss.html", near_miss_types=NEAR_MISS_TYPES, root_causes=ROOT_CAUSES, statuses=NEAR_MISS_STATUSES)
@@ -894,11 +902,7 @@ def delete_violation(record_id: str) -> Response:
     return redirect(url_for("admin", view="violations"))
 
 
-@app.get("/admin/export")
-@admin_required
-def export_records() -> Response:
-    records = filtered_records(limit=5000)
-    detailed = request.args.get("kind") == "detailed"
+def inspections_csv(records: list[dict[str, Any]], detailed: bool) -> str:
     output = io.StringIO()
     writer = csv.writer(output)
     if detailed:
@@ -908,20 +912,14 @@ def export_records() -> Response:
             notes = json.loads(record["response_notes"])
             for item in CHECKLIST_ITEMS:
                 writer.writerow([record["report_no"], record["inspection_date"], record["project_name"], record["work_location"], record["contractor"], record["inspected_by"], item["section_title"], item["text"], responses.get(item["id"], ""), notes.get(item["id"], "")])
-        kind = "detailed"
     else:
         writer.writerow(["Report No.", "Date", "Time", "Project", "Work Location / Zone", "Contractor / Subcontractor", "Inspected By", "Shift", "Total Inspected", "Compliant", "Non-Compliant", "N/A", "Compliance Score (%)", "Remarks", "Signed By", "Submitted At"])
         for record in records:
             writer.writerow([record["report_no"], record["inspection_date"], record["inspection_time"], record["project_name"], record["work_location"], record["contractor"], record["inspected_by"], record["shift"], record["total_inspected"], record["compliant"], record["non_compliant"], record["not_applicable"], record["score"], record["remarks"], record["signoff_name"], record["created_at"]])
-        kind = "summary"
-    filename = f'diriyah-ohs-{kind}-{datetime.now(timezone.utc).date().isoformat()}.csv'
-    return Response("\ufeff" + output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+    return output.getvalue()
 
 
-@app.get("/admin/export/near-miss")
-@admin_required
-def export_near_miss() -> Response:
-    records = filtered_near_miss(limit=5000)
+def near_miss_csv(records: list[dict[str, Any]]) -> str:
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow([
@@ -939,14 +937,10 @@ def export_near_miss() -> Response:
             "; ".join(json.loads(record["corrective_actions"])), "; ".join(json.loads(record["preventive_measures"])),
             record["person_responsible"], record["target_completion_date"], record["status"], record["created_at"],
         ])
-    filename = f'diriyah-near-miss-{datetime.now(timezone.utc).date().isoformat()}.csv'
-    return Response("\ufeff" + output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+    return output.getvalue()
 
 
-@app.get("/admin/export/violations")
-@admin_required
-def export_violations() -> Response:
-    records = filtered_violations(limit=5000)
+def violations_csv(records: list[dict[str, Any]]) -> str:
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow([
@@ -961,8 +955,51 @@ def export_violations() -> Response:
             record["violation_type"], record["violation_description"], "; ".join(json.loads(record["actions"])),
             record["deduction_amount"], record["issued_by_name"], record["issued_by_position"], record["created_at"],
         ])
+    return output.getvalue()
+
+
+@app.get("/admin/export")
+@admin_required
+def export_records() -> Response:
+    kind = "detailed" if request.args.get("kind") == "detailed" else "summary"
+    csv_text = inspections_csv(filtered_records(limit=5000), detailed=(kind == "detailed"))
+    filename = f'diriyah-ohs-{kind}-{datetime.now(timezone.utc).date().isoformat()}.csv'
+    return Response("\ufeff" + csv_text, mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@app.get("/admin/export/near-miss")
+@admin_required
+def export_near_miss() -> Response:
+    csv_text = near_miss_csv(filtered_near_miss(limit=5000))
+    filename = f'diriyah-near-miss-{datetime.now(timezone.utc).date().isoformat()}.csv'
+    return Response("\ufeff" + csv_text, mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@app.get("/admin/export/violations")
+@admin_required
+def export_violations() -> Response:
+    csv_text = violations_csv(filtered_violations(limit=5000))
     filename = f'diriyah-violations-{datetime.now(timezone.utc).date().isoformat()}.csv'
-    return Response("\ufeff" + output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+    return Response("\ufeff" + csv_text, mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@app.get("/admin/backup")
+def backup_all() -> Response | tuple[Response, int]:
+    expected = os.environ.get("EXPORT_TOKEN")
+    supplied = request.args.get("token") or request.headers.get("X-Export-Token", "")
+    if not expected or not hmac.compare_digest(supplied, expected):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    today = datetime.now(timezone.utc).date().isoformat()
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(f"inspections-summary-{today}.csv", "\ufeff" + inspections_csv(filtered_records(limit=5000), detailed=False))
+        archive.writestr(f"inspections-detailed-{today}.csv", "\ufeff" + inspections_csv(filtered_records(limit=5000), detailed=True))
+        archive.writestr(f"near-miss-{today}.csv", "\ufeff" + near_miss_csv(filtered_near_miss(limit=5000)))
+        archive.writestr(f"violations-{today}.csv", "\ufeff" + violations_csv(filtered_violations(limit=5000)))
+    buffer.seek(0)
+    filename = f"diriyah-ohs-backup-{today}.zip"
+    return Response(buffer.getvalue(), mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 @app.get("/health")

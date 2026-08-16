@@ -1,0 +1,14 @@
+{
+  "name": "1 Hotel Diriyah OHS",
+  "short_name": "OHS Diriyah",
+  "description": "Daily OHS inspections, near-miss reports, and violation notices for 1 Hotel Diriyah.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f8fc",
+  "theme_color": "#0a1f8f",
+  "icons": [
+    { "src": "/static/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/static/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

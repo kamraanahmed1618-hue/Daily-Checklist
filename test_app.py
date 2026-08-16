@@ -3,12 +3,14 @@ import io
 import os
 import tempfile
 import unittest
+import zipfile
 
 
 TEST_FILES = tempfile.TemporaryDirectory()
 os.environ["OHS_DB_PATH"] = os.path.join(TEST_FILES.name, "test.db")
 os.environ["ADMIN_PASSWORD"] = "test-admin-password"
 os.environ["SECRET_KEY"] = "test-secret-key-that-is-only-used-by-the-automated-suite"
+os.environ["EXPORT_TOKEN"] = "test-export-token"
 
 from app import CHECKLIST_ITEMS, app, database  # noqa: E402
 
@@ -225,6 +227,27 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         detail = self.client.get(f"/admin/violations/{record_id}")
         self.assertEqual(detail.status_code, 404)
+
+    def test_backup_rejects_missing_or_wrong_token(self):
+        self.assertEqual(self.client.get("/admin/backup").status_code, 401)
+        self.assertEqual(self.client.get("/admin/backup?token=wrong").status_code, 401)
+
+    def test_backup_returns_zip_with_all_record_types(self):
+        self.client.post("/api/inspections", json=self.payload())
+        self.client.post("/api/near-miss", json=self.near_miss_payload())
+        self.client.post("/api/violations", json=self.violation_payload())
+
+        response = self.client.get("/admin/backup?token=test-export-token")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "application/zip")
+
+        archive = zipfile.ZipFile(io.BytesIO(response.data))
+        names = archive.namelist()
+        self.assertEqual(len(names), 4)
+        self.assertTrue(any(name.startswith("inspections-summary-") for name in names))
+        self.assertTrue(any(name.startswith("inspections-detailed-") for name in names))
+        self.assertTrue(any(name.startswith("near-miss-") for name in names))
+        self.assertTrue(any(name.startswith("violations-") for name in names))
 
 
 if __name__ == "__main__":
