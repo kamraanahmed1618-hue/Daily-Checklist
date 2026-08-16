@@ -1,35 +1,203 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#17372f">
-  <title>{% block title %}1 Hotel Diriyah OHS{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  {% block head %}{% endblock %}
-</head>
-<body class="{% block body_class %}{% endblock %}">
-  <header class="site-header">
-    <a class="brand" href="{{ url_for('index') }}" aria-label="1 Hotel Diriyah OHS home">
-      <span class="brand-mark">1</span>
-      <span><strong>1 Hotel Diriyah</strong><small>Occupational Health &amp; Safety</small></span>
-    </a>
-    <nav aria-label="Primary navigation">
-      <a href="{{ url_for('index') }}">New inspection</a>
-      <a href="{{ url_for('admin') }}">Records</a>
-    </nav>
-  </header>
+{% extends "base.html" %}
 
-  <main>{% block content %}{% endblock %}</main>
+{% block title %}Inspection Records · 1 Hotel Diriyah OHS{% endblock %}
+{% block body_class %}admin-page{% endblock %}
 
-  <footer class="site-footer">
-    <div class="partner-logos" aria-label="Project partners">
-      <img src="{{ url_for('static', filename='egis.png') }}" alt="Egis">
-      <img src="{{ url_for('static', filename='dewan.png') }}" alt="Dewan">
-      <img src="{{ url_for('static', filename='bec-ashoka.png') }}" alt="BEC Ashoka">
+{% block content %}
+
+<section class="admin-hero">
+    <div>
+        <span class="eyebrow">Records control centre</span>
+        <h1>Inspection records</h1>
+        <p>Search, review, print, and export submitted inspections.</p>
     </div>
-    <p>Daily OHS Team Inspection Checklist · Controlled digital record</p>
-  </footer>
-  {% block scripts %}{% endblock %}
-</body>
-</html>
+
+    <form method="post" action="{{ url_for('logout') }}">
+        <button class="button ghost" type="submit">Sign out</button>
+    </form>
+</section>
+
+
+<section class="stats-grid">
+
+    <article>
+        <span>Matching records</span>
+        <strong>{{ total }}</strong>
+    </article>
+
+    <article>
+        <span>Average compliance</span>
+        <strong>{{ "%.1f"|format(average) }}%</strong>
+    </article>
+
+    <article>
+        <span>Non-compliant findings</span>
+        <strong>{{ non_compliant }}</strong>
+    </article>
+
+</section>
+
+
+<section class="card records-card">
+
+    <form class="filter-bar" method="get">
+
+        <label class="search-field">
+            <span>Search</span>
+            <input
+                name="q"
+                value="{{ request.args.get('q', '') }}"
+                placeholder="Report, inspector, contractor, location">
+        </label>
+
+        <label>
+            <span>From</span>
+            <input
+                type="date"
+                name="date_from"
+                value="{{ request.args.get('date_from', '') }}">
+        </label>
+
+        <label>
+            <span>To</span>
+            <input
+                type="date"
+                name="date_to"
+                value="{{ request.args.get('date_to', '') }}">
+        </label>
+
+        <button class="button secondary" type="submit">
+            Apply filters
+        </button>
+
+        <a class="text-link" href="{{ url_for('admin') }}">
+            Clear
+        </a>
+
+    </form>
+
+
+    <div class="records-actions">
+
+        <p>Exports use the active search and date filters.</p>
+
+        <div>
+
+            <a
+                class="button secondary"
+                href="{{ url_for(
+                    'export_records',
+                    kind='summary',
+                    q=request.args.get('q', ''),
+                    date_from=request.args.get('date_from', ''),
+                    date_to=request.args.get('date_to', '')
+                ) }}">
+                Export summary
+            </a>
+
+            <a
+                class="button primary"
+                href="{{ url_for(
+                    'export_records',
+                    kind='detailed',
+                    q=request.args.get('q', ''),
+                    date_from=request.args.get('date_from', ''),
+                    date_to=request.args.get('date_to', '')
+                ) }}">
+                Export detailed
+            </a>
+
+        </div>
+
+    </div>
+
+
+    <div class="table-wrap">
+
+        <table>
+
+            <thead>
+                <tr>
+                    <th>Report</th>
+                    <th>Date</th>
+                    <th>Location</th>
+                    <th>Contractor</th>
+                    <th>Inspector</th>
+                    <th>Score</th>
+                    <th>Findings</th>
+                    <th></th>
+                </tr>
+            </thead>
+
+            <tbody>
+
+            {% for record in records %}
+
+                <tr>
+
+                    <td>
+                        <strong>{{ record.report_no }}</strong>
+                        <small>{{ record.shift }}</small>
+                    </td>
+
+                    <td>
+                        <strong>{{ record.inspection_date }}</strong>
+                        <small>{{ record.inspection_time }}</small>
+                    </td>
+
+                    <td>
+                        {{ record.work_location }}
+                    </td>
+
+                    <td>
+                        {{ record.contractor }}
+                    </td>
+
+                    <td>
+                        {{ record.inspected_by }}
+                    </td>
+
+                    <td>
+                        <span class="score-pill
+                            {% if record.score|float < 70 %}
+                                low
+                            {% elif record.score|float < 90 %}
+                                medium
+                            {% endif %}">
+                            {{ record.score }}%
+                        </span>
+                    </td>
+
+                    <td>
+                        {{ record.non_compliant }}
+                    </td>
+
+                    <td>
+                        <a
+                            class="row-link"
+                            href="{{ url_for('record_detail', record_id=record.id) }}">
+                            View record
+                        </a>
+                    </td>
+
+                </tr>
+
+            {% else %}
+
+                <tr>
+                    <td colspan="8" style="text-align:center; padding:40px;">
+                        No inspection records found.
+                    </td>
+                </tr>
+
+            {% endfor %}
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+</section>
+
+{% endblock %}
