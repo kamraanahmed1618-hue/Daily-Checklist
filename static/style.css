@@ -492,3 +492,89 @@ button.primary:hover {
 body {
     background: #f5f8fc !important;
 }
+/* =====================================================
+   BEC ARABIA OFFICIAL BLUE THEME
+   ===================================================== */
+
+:root {
+    --bec-blue: #0A1F8F;
+    --bec-blue-dark: #07176B;
+    --bec-blue-light: #EEF2FF;
+    --white: #FFFFFF;
+}
+
+/* Main Header */
+.site-header {
+    background: #0A1F8F !important;
+}
+
+/* Main blue section bars */
+.section-heading,
+.checklist-header,
+.checklist-summary,
+.inspection-header,
+.checklist-progress,
+.progress-card,
+.requirements-header,
+.submit-bar {
+    background: #0A1F8F !important;
+    color: #FFFFFF !important;
+}
+
+/* IMPORTANT: 01 / 02 / 03 remain WHITE */
+.step-number {
+    color: #FFFFFF !important;
+    font-weight: 800 !important;
+}
+
+/* Headings inside blue bars */
+.section-heading h2,
+.checklist-header h2,
+.checklist-summary h2,
+.inspection-header h2,
+.submit-bar strong {
+    color: #FFFFFF !important;
+}
+
+/* Navigation */
+.site-header a,
+.site-header span,
+.site-header strong {
+    color: #FFFFFF !important;
+}
+
+/* Main page headings outside blue bars */
+.page-container h1,
+.page-container h2:not(.section-heading h2) {
+    color: #0A1F8F;
+}
+
+/* Progress bar */
+.progress-track {
+    background: rgba(255, 255, 255, 0.28) !important;
+}
+
+#progress-bar,
+.progress-bar {
+    background: #FFFFFF !important;
+}
+
+/* Submit button */
+.submit-bar button,
+.button.primary,
+button.primary {
+    background: #FFFFFF !important;
+    color: #0A1F8F !important;
+    border: 2px solid #FFFFFF !important;
+    font-weight: 800 !important;
+}
+
+.submit-bar button:hover,
+.button.primary:hover,
+button.primary:hover {
+    background: #EEF2FF !important;
+    color: #07176B !important;
+}
+.step-number {
+    color: #FFFFFF !important;
+}
