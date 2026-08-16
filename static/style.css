@@ -132,6 +132,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--navy-2); box-sha
 .submit-bar .button.primary { color: var(--navy); background: white; }
 .button.secondary { color: var(--navy); background: white; border-color: #c7d0e3; }
 .button.ghost { color: var(--navy); background: transparent; border-color: #b7c2da; }
+.button.ghost.danger { color: var(--red); border-color: #e0b8b3; }
+.button.ghost.danger:hover { background: var(--red-soft); }
 .button:hover { filter: brightness(.96); }
 .button:disabled { opacity: .5; cursor: not-allowed; }
 .form-error, .notice { margin: 20px 0; padding: 14px 16px; border-radius: 10px; font-size: 13px; font-weight: 650; }
@@ -192,6 +194,8 @@ td small { margin-top: 3px; color: var(--muted); }
 .empty-state { padding: 50px; color: var(--muted); text-align: center; }
 
 .record-toolbar { padding: 30px 0 14px; display: flex; align-items: center; justify-content: space-between; }
+.record-toolbar-actions { display: flex; align-items: center; gap: 10px; }
+.delete-form { margin: 0; }
 
 /* Daily OHS inspection sheet — mirrors the "1 Hotel Diriyah" printed checklist layout */
 .doc-sheet { margin-bottom: 50px; padding: 20px 26px 30px; background: white; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); font-family: "Times New Roman", Times, serif; color: #111; }

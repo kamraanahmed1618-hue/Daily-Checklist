@@ -193,6 +193,39 @@ class ChecklistApplicationTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 503)
 
+    def test_delete_requires_admin(self):
+        record_id = self.client.post("/api/inspections", json=self.payload()).json["id"]
+        response = self.client.post(f"/admin/records/{record_id}/delete")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/admin", response.headers["Location"])
+        self.login()
+        detail = self.client.get(f"/admin/records/{record_id}")
+        self.assertEqual(detail.status_code, 200)
+
+    def test_delete_record(self):
+        record_id = self.client.post("/api/inspections", json=self.payload()).json["id"]
+        self.login()
+        response = self.client.post(f"/admin/records/{record_id}/delete")
+        self.assertEqual(response.status_code, 302)
+        detail = self.client.get(f"/admin/records/{record_id}")
+        self.assertEqual(detail.status_code, 404)
+
+    def test_delete_near_miss(self):
+        record_id = self.client.post("/api/near-miss", json=self.near_miss_payload()).json["id"]
+        self.login()
+        response = self.client.post(f"/admin/near-miss/{record_id}/delete")
+        self.assertEqual(response.status_code, 302)
+        detail = self.client.get(f"/admin/near-miss/{record_id}")
+        self.assertEqual(detail.status_code, 404)
+
+    def test_delete_violation(self):
+        record_id = self.client.post("/api/violations", json=self.violation_payload()).json["id"]
+        self.login()
+        response = self.client.post(f"/admin/violations/{record_id}/delete")
+        self.assertEqual(response.status_code, 302)
+        detail = self.client.get(f"/admin/violations/{record_id}")
+        self.assertEqual(detail.status_code, 404)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -4,7 +4,12 @@
 {% block content %}
 <section class="record-toolbar no-print">
   <a class="text-link" href="{{ url_for('admin', view='near-miss') }}">← Back to records</a>
-  <button class="button primary" id="print-record" type="button">Print / Save PDF</button>
+  <div class="record-toolbar-actions">
+    <form class="delete-form" method="post" action="{{ url_for('delete_near_miss', record_id=record.id) }}">
+      <button class="button ghost danger" type="submit">Delete record</button>
+    </form>
+    <button class="button primary" id="print-record" type="button">Print / Save PDF</button>
+  </div>
 </section>
 
 <article class="doc-sheet">
