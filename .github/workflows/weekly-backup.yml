@@ -2,7 +2,7 @@ name: Weekly records backup
 
 on:
   schedule:
-    - cron: "0 3 * * 1" # Every Monday 03:00 UTC
+    - cron: "0 20 * * 4" # Every Thursday 20:00 UTC (23:00 Saudi time) — end of the Sat-Thu work week
   workflow_dispatch: {}
 
 jobs:
