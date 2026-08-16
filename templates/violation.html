@@ -73,11 +73,16 @@
 
   <section class="card">
     <div class="section-heading"><div><span class="step-number">05</span><h2>Attachments</h2></div></div>
+    <div class="photo-upload" id="violation-photo-upload">
+      <input type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
+      <button class="button secondary photo-add-button" type="button">+ Add photos</button>
+      <span class="field-note">JPEG, PNG, or WEBP · up to 8 photos · 8 MB each</span>
+      <div class="photo-grid"></div>
+    </div>
     <div class="checkbox-grid">
-      <label class="checkbox-tile"><input type="checkbox" name="photosAttached"><span>Violation photos attached</span></label>
       <label class="checkbox-tile"><input type="checkbox" name="documentsAttached"><span>Supporting documents attached</span></label>
     </div>
-    <p class="field-note">Attach the actual photos/documents to the physical or shared-drive copy of this notice — file uploads aren't supported here yet.</p>
+    <p class="field-note">Non-photo supporting documents (permits, statements) still go with the physical or shared-drive copy of this notice.</p>
   </section>
 
   <section class="card signoff-card">
@@ -95,4 +100,7 @@
   </div>
 </form>
 {% endblock %}
-{% block scripts %}<script src="{{ url_for('static', filename='violation.js') }}" defer></script>{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='photo_upload.js') }}" defer></script>
+<script src="{{ url_for('static', filename='violation.js') }}" defer></script>
+{% endblock %}

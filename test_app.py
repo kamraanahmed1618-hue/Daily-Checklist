@@ -170,6 +170,18 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertEqual(first.json["reportNo"], "QA-TEST-001")
         self.assertTrue(second.json["reportNo"].startswith("OHS-"))
 
+    def test_photo_upload_rejects_bad_token(self):
+        response = self.client.post("/api/uploads/bad token!", data={}, content_type="multipart/form-data")
+        self.assertEqual(response.status_code, 400)
+
+    def test_photo_upload_without_storage_configured(self):
+        response = self.client.post(
+            "/api/uploads/abcdef1234567890",
+            data={"photo": (io.BytesIO(b"not-a-real-image"), "photo.jpg")},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(response.status_code, 503)
+
 
 if __name__ == "__main__":
     unittest.main()

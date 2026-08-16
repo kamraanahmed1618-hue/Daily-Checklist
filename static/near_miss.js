@@ -4,6 +4,7 @@ const form = document.getElementById("near-miss-form");
 const errorBox = document.getElementById("form-error");
 const successPanel = document.getElementById("success-panel");
 const successCopy = document.getElementById("success-copy");
+const photoUpload = initPhotoUpload("near-miss-photo-upload");
 
 function field(name) {
   return form.elements.namedItem(name);
@@ -68,6 +69,7 @@ async function submitReport(event) {
     followupDate: field("followupDate").value,
     status: field("status").value,
     statusReason: field("statusReason").value,
+    photoKeys: photoUpload.getKeys(),
   };
 
   const button = form.querySelector("button[type=submit]");

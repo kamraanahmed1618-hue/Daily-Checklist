@@ -4,6 +4,7 @@ const form = document.getElementById("violation-form");
 const errorBox = document.getElementById("form-error");
 const successPanel = document.getElementById("success-panel");
 const successCopy = document.getElementById("success-copy");
+const photoUpload = initPhotoUpload("violation-photo-upload");
 
 function field(name) {
   return form.elements.namedItem(name);
@@ -37,7 +38,7 @@ async function submitNotice(event) {
     violationDescription: field("violationDescription").value,
     actions: checkedValues("actions"),
     deductionAmount: field("deductionAmount").value,
-    photosAttached: field("photosAttached").checked,
+    photoKeys: photoUpload.getKeys(),
     documentsAttached: field("documentsAttached").checked,
     issuedByName: field("issuedByName").value,
     issuedByPosition: field("issuedByPosition").value,

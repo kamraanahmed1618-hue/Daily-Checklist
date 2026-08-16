@@ -48,6 +48,15 @@
     <span class="doc-checkbox {{ 'checked' if record.documents_attached else '' }}">{{ '☑' if record.documents_attached else '☐' }} Supporting Documents</span>
   </div>
 
+  <p class="doc-note bold">Evidence</p>
+  {% if photo_urls %}
+  <div class="doc-evidence">
+    {% for url in photo_urls %}<a href="{{ url }}" target="_blank" rel="noopener"><img src="{{ url }}" alt="Violation evidence photo {{ loop.index }}"></a>{% endfor %}
+  </div>
+  {% else %}
+  <p class="doc-note">No photos attached.</p>
+  {% endif %}
+
   <p class="doc-note bold">Issued By</p>
   <table class="doc-plain">
     <tr><td>Name</td><td>{{ record.issued_by_name }}</td></tr>

@@ -24,6 +24,13 @@ except ImportError:  # Local SQLite mode does not need psycopg.
     psycopg = None
     dict_row = None
 
+try:
+    import boto3
+    from botocore.client import Config as BotoConfig
+except ImportError:  # Photo upload is unavailable until boto3 is installed.
+    boto3 = None
+    BotoConfig = None
+
 
 BASE_DIR = Path(__file__).resolve().parent
 CHECKLIST_SOURCE = BASE_DIR / "checklist_source.ts"
@@ -66,13 +73,76 @@ app.config.update(
     SESSION_COOKIE_SAMESITE="Strict",
     SESSION_COOKIE_SECURE=bool(os.environ.get("RENDER")),
     PERMANENT_SESSION_LIFETIME=60 * 60 * 12,
-    MAX_CONTENT_LENGTH=512 * 1024,
+    MAX_CONTENT_LENGTH=12 * 1024 * 1024,
 )
 app.jinja_env.filters["from_json"] = json.loads
+
+B2_BUCKET = os.environ.get("B2_BUCKET_NAME")
+PHOTO_MAX_BYTES = 8 * 1024 * 1024
+PHOTO_MAX_COUNT = 8
+PHOTO_KEY_PATTERN = re.compile(r"uploads/[a-zA-Z0-9_-]{8,64}/[0-9a-f]{20}\.(?:jpg|png|webp)")
 
 
 def is_postgres() -> bool:
     return bool(os.environ.get("DATABASE_URL"))
+
+
+def b2_configured() -> bool:
+    return bool(
+        boto3 and B2_BUCKET
+        and os.environ.get("B2_KEY_ID")
+        and os.environ.get("B2_APPLICATION_KEY")
+        and os.environ.get("B2_ENDPOINT")
+    )
+
+
+def b2_client() -> Any:
+    endpoint = os.environ["B2_ENDPOINT"]
+    if not endpoint.startswith("http"):
+        endpoint = f"https://{endpoint}"
+    region = "auto"
+    host_parts = endpoint.split("//", 1)[-1].split(".")
+    if len(host_parts) >= 2 and host_parts[0] == "s3":
+        region = host_parts[1]
+    return boto3.client(
+        "s3",
+        endpoint_url=endpoint,
+        aws_access_key_id=os.environ["B2_KEY_ID"],
+        aws_secret_access_key=os.environ["B2_APPLICATION_KEY"],
+        config=BotoConfig(signature_version="s3v4"),
+        region_name=region,
+    )
+
+
+def photo_url(key: str, expires: int = 3600) -> str:
+    return b2_client().generate_presigned_url("get_object", Params={"Bucket": B2_BUCKET, "Key": key}, ExpiresIn=expires)
+
+
+def photo_urls(keys: list[str]) -> list[str]:
+    if not keys or not b2_configured():
+        return []
+    try:
+        return [photo_url(key) for key in keys]
+    except Exception:
+        app.logger.exception("Failed to generate photo URLs")
+        return []
+
+
+def detect_image_type(data: bytes) -> str | None:
+    if data.startswith(b"\xff\xd8\xff"):
+        return "jpg"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    return None
+
+
+def clean_photo_keys(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    keys = [item for item in value if isinstance(item, str) and PHOTO_KEY_PATTERN.fullmatch(item)]
+    return list(dict.fromkeys(keys))[:PHOTO_MAX_COUNT]
 
 
 @contextmanager
@@ -160,6 +230,7 @@ def init_db() -> None:
             followup_date TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT '',
             status_reason TEXT NOT NULL DEFAULT '',
+            photos TEXT NOT NULL DEFAULT '[]',
             created_at TEXT NOT NULL
         )""",
         "CREATE INDEX IF NOT EXISTS near_miss_date_idx ON near_miss_reports (incident_date)",
@@ -183,6 +254,7 @@ def init_db() -> None:
             documents_attached INTEGER NOT NULL DEFAULT 0,
             issued_by_name TEXT NOT NULL,
             issued_by_position TEXT NOT NULL DEFAULT '',
+            photos TEXT NOT NULL DEFAULT '[]',
             created_at TEXT NOT NULL
         )""",
         "CREATE INDEX IF NOT EXISTS violations_date_idx ON violation_notices (violation_date)",
@@ -192,12 +264,18 @@ def init_db() -> None:
         cursor = connection.cursor()
         for statement in statements:
             cursor.execute(statement)
-        if is_postgres():
-            cursor.execute("ALTER TABLE inspections ADD COLUMN IF NOT EXISTS seq INTEGER")
-        else:
-            cursor.execute("PRAGMA table_info(inspections)")
-            if not any(row[1] == "seq" for row in cursor.fetchall()):
-                cursor.execute("ALTER TABLE inspections ADD COLUMN seq INTEGER")
+
+        def ensure_column(table: str, column: str, coltype: str) -> None:
+            if is_postgres():
+                cursor.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {coltype}")
+            else:
+                cursor.execute(f"PRAGMA table_info({table})")
+                if not any(row[1] == column for row in cursor.fetchall()):
+                    cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
+
+        ensure_column("inspections", "seq", "INTEGER")
+        ensure_column("near_miss_reports", "photos", "TEXT NOT NULL DEFAULT '[]'")
+        ensure_column("violation_notices", "photos", "TEXT NOT NULL DEFAULT '[]'")
         # Backfill sequential numbers for any pre-existing records in submission order.
         for table in ("inspections", "near_miss_reports", "violation_notices"):
             cursor.execute(sql(f"SELECT COALESCE(MAX(seq), 0) AS next_seq FROM {table}"))
@@ -353,6 +431,7 @@ def validate_near_miss(payload: dict[str, Any]) -> dict[str, Any]:
         "preventive_measures": clean_list_text(payload.get("preventiveMeasures"), "Preventive measure", 4),
         "status": status,
         "report_no": clean_text(payload.get("reportNo"), "Report number", 80, False),
+        "photos": clean_photo_keys(payload.get("photoKeys")),
     }
 
 
@@ -374,11 +453,13 @@ def validate_violation(payload: dict[str, Any]) -> dict[str, Any]:
     }
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", record["violation_date"]):
         raise ValueError("Enter a valid date.")
+    photos = clean_photo_keys(payload.get("photoKeys"))
     return {
         **record,
         "actions": clean_choices(payload.get("actions"), "Action taken", VIOLATION_ACTIONS),
-        "photos_attached": 1 if payload.get("photosAttached") is True else 0,
+        "photos_attached": 1 if photos else 0,
         "documents_attached": 1 if payload.get("documentsAttached") is True else 0,
+        "photos": photos,
     }
 
 
@@ -433,7 +514,7 @@ def security_headers(response: Response) -> Response:
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "same-origin")
     response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-    response.headers.setdefault("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; base-uri 'self'; frame-ancestors 'none'")
+    response.headers.setdefault("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https://*.backblazeb2.com; style-src 'self'; script-src 'self'; connect-src 'self'; base-uri 'self'; frame-ancestors 'none'")
     return response
 
 
@@ -450,6 +531,30 @@ def near_miss_form() -> str:
 @app.get("/violation")
 def violation_form() -> str:
     return render_template("violation.html", actions=VIOLATION_ACTIONS)
+
+
+@app.post("/api/uploads/<token>")
+def upload_photo(token: str) -> tuple[Response, int] | Response:
+    if not re.fullmatch(r"[a-zA-Z0-9_-]{8,64}", token):
+        return jsonify({"error": "Invalid upload session."}), 400
+    if not b2_configured():
+        return jsonify({"error": "Photo storage is not configured."}), 503
+    uploaded = request.files.get("photo")
+    if not uploaded:
+        return jsonify({"error": "No photo provided."}), 400
+    data = uploaded.read(PHOTO_MAX_BYTES + 1)
+    if len(data) > PHOTO_MAX_BYTES:
+        return jsonify({"error": "Photo is too large (max 8 MB)."}), 400
+    ext = detect_image_type(data)
+    if not ext:
+        return jsonify({"error": "Only JPEG, PNG, or WEBP photos are supported."}), 400
+    key = f"uploads/{token}/{secrets.token_hex(10)}.{ext}"
+    try:
+        b2_client().put_object(Bucket=B2_BUCKET, Key=key, Body=data, ContentType=f"image/{ext}")
+    except Exception:
+        app.logger.exception("Photo upload failed")
+        return jsonify({"error": "The photo could not be uploaded."}), 500
+    return jsonify({"key": key}), 201
 
 
 @app.get("/api/checklist")
@@ -514,7 +619,7 @@ def submit_near_miss() -> tuple[Response, int] | Response:
                 record["root_cause_detail"], json.dumps(record["corrective_actions"]), json.dumps(record["preventive_measures"]),
                 record["person_responsible"], record["target_completion_date"], record["reported_by_signoff"],
                 record["hse_manager_signoff"], record["followup_by"], record["followup_date"], record["status"],
-                record["status_reason"], created_at,
+                record["status_reason"], json.dumps(record["photos"]), created_at,
             ]
             placeholders = ",".join("?" for _ in values)
             cursor.execute(sql(f"INSERT INTO near_miss_reports VALUES ({placeholders})"), values)
@@ -548,7 +653,7 @@ def submit_violation() -> tuple[Response, int] | Response:
                 record["employee_id"], record["company_contractor"], record["job_title"], record["violation_location"],
                 record["violation_type"], record["violation_description"], json.dumps(record["actions"]),
                 record["deduction_amount"], record["photos_attached"], record["documents_attached"],
-                record["issued_by_name"], record["issued_by_position"], created_at,
+                record["issued_by_name"], record["issued_by_position"], json.dumps(record["photos"]), created_at,
             ]
             placeholders = ",".join("?" for _ in values)
             cursor.execute(sql(f"INSERT INTO violation_notices VALUES ({placeholders})"), values)
@@ -652,9 +757,9 @@ def near_miss_detail(record_id: str) -> str | tuple[str, int]:
     if not row:
         return "Record not found", 404
     record = dict(row)
-    for field in ("near_miss_types", "root_causes", "corrective_actions", "preventive_measures"):
+    for field in ("near_miss_types", "root_causes", "corrective_actions", "preventive_measures", "photos"):
         record[field] = json.loads(record[field])
-    return render_template("near_miss_record.html", record=record)
+    return render_template("near_miss_record.html", record=record, photo_urls=photo_urls(record["photos"]))
 
 
 @app.get("/admin/violations/<record_id>")
@@ -668,7 +773,8 @@ def violation_detail(record_id: str) -> str | tuple[str, int]:
         return "Record not found", 404
     record = dict(row)
     record["actions"] = json.loads(record["actions"])
-    return render_template("violation_record.html", record=record)
+    record["photos"] = json.loads(record["photos"])
+    return render_template("violation_record.html", record=record, photo_urls=photo_urls(record["photos"]))
 
 
 @app.get("/admin/export")
