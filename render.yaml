@@ -2,7 +2,7 @@ services:
   - type: web
     name: diriyah-ohs-checklist
     runtime: python
-    rootDir: render-app
+  
     region: frankfurt
     plan: free
     buildCommand: pip install -r requirements.txt
