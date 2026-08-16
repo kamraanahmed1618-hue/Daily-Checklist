@@ -584,3 +584,10 @@ button.primary:hover {
 .signoff-card .section-heading .step-number {
     color: #FFFFFF !important;
 }
+.section-heading .step-number,
+.checklist-header .step-number,
+.checklist-summary .step-number,
+.requirements-header .step-number,
+.submit-bar .step-number {
+    color: #FFFFFF !important;
+}
