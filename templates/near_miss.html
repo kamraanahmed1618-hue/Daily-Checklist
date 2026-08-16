@@ -133,6 +133,16 @@
     <label><span>If not completed, reason</span><input name="statusReason" maxlength="1000"></label>
   </section>
 
+  <section class="card">
+    <div class="section-heading"><div><span class="step-number">09</span><h2>Attached photos</h2></div></div>
+    <div class="photo-upload" id="near-miss-photo-upload">
+      <input type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
+      <button class="button secondary photo-add-button" type="button">+ Add photos</button>
+      <span class="field-note">JPEG, PNG, or WEBP · up to 8 photos · 8 MB each</span>
+      <div class="photo-grid"></div>
+    </div>
+  </section>
+
   <div id="form-error" class="form-error hidden" role="alert"></div>
   <div class="submit-bar">
     <div><strong>Near-miss report</strong><span>Submit for review by the HSE team</span></div>
@@ -140,4 +150,7 @@
   </div>
 </form>
 {% endblock %}
-{% block scripts %}<script src="{{ url_for('static', filename='near_miss.js') }}" defer></script>{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='photo_upload.js') }}" defer></script>
+<script src="{{ url_for('static', filename='near_miss.js') }}" defer></script>
+{% endblock %}

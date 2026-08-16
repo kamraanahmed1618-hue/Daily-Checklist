@@ -75,6 +75,15 @@
     <tr><td class="info-label tan">Follow-Up Conducted By:</td><td>{{ record.followup_by or '—' }}</td><td class="info-label tan">Follow-Up Date:</td><td>{{ record.followup_date or '—' }}</td></tr>
     <tr><td class="info-label tan">Status:</td><td colspan="3">{{ record.status or '—' }}{% if record.status == 'Not Completed' and record.status_reason %} — {{ record.status_reason }}{% endif %}</td></tr>
   </table>
+
+  <div class="doc-band">The Attached Images</div>
+  {% if photo_urls %}
+  <div class="doc-evidence">
+    {% for url in photo_urls %}<a href="{{ url }}" target="_blank" rel="noopener"><img src="{{ url }}" alt="Near-miss evidence photo {{ loop.index }}"></a>{% endfor %}
+  </div>
+  {% else %}
+  <p class="doc-note">No photos attached.</p>
+  {% endif %}
 </article>
 {% endblock %}
 {% block scripts %}<script src="{{ url_for('static', filename='record.js') }}" defer></script>{% endblock %}
