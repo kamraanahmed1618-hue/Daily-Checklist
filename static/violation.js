@@ -28,7 +28,6 @@ async function submitNotice(event) {
   const payload = {
     projectName: field("projectName").value,
     violationDate: field("violationDate").value,
-    violationNo: field("violationNo").value,
     employeeName: field("employeeName").value,
     employeeId: field("employeeId").value,
     companyContractor: field("companyContractor").value,
