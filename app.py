@@ -572,7 +572,7 @@ def submit_inspection() -> tuple[Response, int] | Response:
             cursor = connection.cursor()
             cursor.execute(sql("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM inspections"))
             seq = cursor.fetchone()["next_seq"]
-            report_no = f"OHS-{seq:04d}"
+            report_no = f"OHS-{seq:03d}"
             values = [
                 record_id, seq, report_no, record["project_name"], record["work_location"], record["contractor"],
                 record["inspected_by"], record["inspection_date"], record["inspection_time"], record["shift"],
