@@ -156,6 +156,15 @@ input:focus, select:focus, textarea:focus { border-color: var(--navy-2); box-sha
 .record-tab span { margin-left: 6px; padding: 1px 7px; color: var(--muted); background: var(--sand); border-radius: 20px; font-size: 11px; font-weight: 800; }
 .record-tab.active { color: white; background: var(--navy); border-color: var(--navy); }
 .record-tab.active span { color: white; background: rgba(255,255,255,.2); }
+
+.chart-card { padding: 24px 26px; }
+.chart-heading { margin-bottom: 12px; }
+.chart-heading h2 { margin: 0 0 3px; font-family: Georgia, serif; font-size: 19px; font-weight: 500; }
+.chart-heading p { margin: 0; color: var(--muted); font-size: 12px; }
+.chart-svg { display: block; width: 100%; height: auto; }
+.chart-legend { margin-bottom: 10px; display: flex; gap: 16px; flex-wrap: wrap; }
+.chart-legend span { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.chart-legend i { width: 10px; height: 10px; border-radius: 2px; }
 .stats-grid { margin-bottom: 22px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
 .stats-grid article { padding: 21px 23px; background: white; border: 1px solid var(--line); border-radius: 14px; }
 .stats-grid span, .stats-grid strong { display: block; }
