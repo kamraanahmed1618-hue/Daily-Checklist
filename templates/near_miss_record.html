@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}{{ record.report_no }} · Near-Miss Record{% endblock %}
+{% block body_class %}record-page{% endblock %}
+{% block content %}
+<section class="record-toolbar no-print">
+  <a class="text-link" href="{{ url_for('admin', view='near-miss') }}">← Back to records</a>
+  <button class="button primary" id="print-record" type="button">Print / Save PDF</button>
+</section>
+
+<article class="doc-sheet">
+  <div class="doc-band">NEAR MISS REPORTING FORM</div>
+
+  <table class="doc-info">
+    <tr><td class="info-label tan">Department / Project:</td><td>{{ record.department_project }}</td><td class="info-label tan">Date:</td><td>{{ record.incident_date }}</td></tr>
+    <tr><td class="info-label tan">Location:</td><td>{{ record.location }}</td><td class="info-label tan">Time:</td><td>{{ record.incident_time }}</td></tr>
+    <tr><td class="info-label tan">Reported By:</td><td colspan="3">{{ record.reported_by }}</td></tr>
+  </table>
+
+  <div class="doc-band">Description of Near Miss</div>
+  <table class="doc-info stacked">
+    <tr><td class="info-label tan">What happened?</td></tr>
+    <tr><td>{{ record.what_happened }}</td></tr>
+    <tr><td class="info-label tan">What could have happened?</td></tr>
+    <tr><td>{{ record.could_have_happened or '—' }}</td></tr>
+  </table>
+
+  <div class="doc-band">Type of Near Miss</div>
+  <div class="doc-checkbox-row">
+    {% for kind in ["Unsafe Act", "Unsafe Condition", "Equipment Failure", "Human Error", "Other"] %}
+    <span class="doc-checkbox {{ 'checked' if kind in record.near_miss_types else '' }}">{{ '☑' if kind in record.near_miss_types else '☐' }} {{ kind }}</span>
+    {% endfor %}
+  </div>
+  {% if record.near_miss_type_other %}<p class="doc-note">Other: {{ record.near_miss_type_other }}</p>{% endif %}
+
+  <div class="doc-band">Immediate Actions Taken</div>
+  <table class="doc-info stacked">
+    <tr><td>{{ record.immediate_actions or '—' }}</td></tr>
+    <tr><td class="info-label tan">Was the hazard eliminated?</td></tr>
+    <tr><td>{{ record.hazard_eliminated or '—' }}{% if record.hazard_eliminated == 'No' and record.hazard_actions_required %} — {{ record.hazard_actions_required }}{% endif %}</td></tr>
+  </table>
+
+  <div class="doc-band">Investigation &amp; Root Cause Analysis</div>
+  <table class="doc-info">
+    <tr><td class="info-label tan">Investigation Lead:</td><td>{{ record.investigation_lead or '—' }}</td><td class="info-label tan">Date of Investigation:</td><td>{{ record.investigation_date or '—' }}</td></tr>
+  </table>
+  <div class="doc-checkbox-row">
+    {% for cause in ["Lack of Awareness/Training", "Inadequate Supervision", "Equipment/Tool Defect", "Procedural Failure", "Time Pressure/Workload", "Other"] %}
+    <span class="doc-checkbox {{ 'checked' if cause in record.root_causes else '' }}">{{ '☑' if cause in record.root_causes else '☐' }} {{ cause }}</span>
+    {% endfor %}
+  </div>
+  {% if record.root_cause_other %}<p class="doc-note">Other: {{ record.root_cause_other }}</p>{% endif %}
+  {% if record.root_cause_detail %}<p class="doc-note">{{ record.root_cause_detail }}</p>{% endif %}
+
+  <table class="doc-info stacked">
+    <tr><td class="info-label tan">Corrective Actions</td></tr>
+    <tr><td>
+      {% if record.corrective_actions %}<ol>{% for item in record.corrective_actions %}<li>{{ item }}</li>{% endfor %}</ol>{% else %}—{% endif %}
+    </td></tr>
+    <tr><td class="info-label tan">Preventive Measures</td></tr>
+    <tr><td>
+      {% if record.preventive_measures %}<ol>{% for item in record.preventive_measures %}<li>{{ item }}</li>{% endfor %}</ol>{% else %}—{% endif %}
+    </td></tr>
+  </table>
+  <table class="doc-info">
+    <tr><td class="info-label tan">Person Responsible:</td><td>{{ record.person_responsible or '—' }}</td><td class="info-label tan">Target Completion Date:</td><td>{{ record.target_completion_date or '—' }}</td></tr>
+  </table>
+
+  <div class="doc-band">Review &amp; Sign-Off</div>
+  <table class="doc-info">
+    <tr><td class="info-label tan">Reported By:</td><td>{{ record.reported_by_signoff }}</td><td class="info-label tan">HSE Manager:</td><td>{{ record.hse_manager_signoff or '—' }}</td></tr>
+  </table>
+
+  <div class="doc-band">Follow-Up &amp; Closure</div>
+  <table class="doc-info">
+    <tr><td class="info-label tan">Follow-Up Conducted By:</td><td>{{ record.followup_by or '—' }}</td><td class="info-label tan">Follow-Up Date:</td><td>{{ record.followup_date or '—' }}</td></tr>
+    <tr><td class="info-label tan">Status:</td><td colspan="3">{{ record.status or '—' }}{% if record.status == 'Not Completed' and record.status_reason %} — {{ record.status_reason }}{% endif %}</td></tr>
+  </table>
+</article>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='record.js') }}" defer></script>{% endblock %}

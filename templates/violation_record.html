@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}{{ record.violation_no }} · Violation Notice{% endblock %}
+{% block body_class %}record-page{% endblock %}
+{% block content %}
+<section class="record-toolbar no-print">
+  <a class="text-link" href="{{ url_for('admin', view='violations') }}">← Back to records</a>
+  <button class="button primary" id="print-record" type="button">Print / Save PDF</button>
+</section>
+
+<article class="doc-sheet">
+  <div class="doc-band">Occupational Health &amp; Safety Violation Notice</div>
+
+  <p class="doc-note bold">Project Information</p>
+  <table class="doc-plain">
+    <tr><td>Project Name</td><td>{{ record.project_name }}</td></tr>
+    <tr><td>Violation No.</td><td>{{ record.violation_no }}</td></tr>
+    <tr><td>Date</td><td>{{ record.violation_date }}</td></tr>
+  </table>
+
+  <p class="doc-note bold">Violating Employee Details</p>
+  <table class="doc-plain">
+    <tr><td>Name</td><td>{{ record.employee_name }}</td></tr>
+    <tr><td>Employee ID / Iqama No.</td><td>{{ record.employee_id or '—' }}</td></tr>
+    <tr><td>Company / Contractor</td><td>{{ record.company_contractor }}</td></tr>
+    <tr><td>Job Title</td><td>{{ record.job_title or '—' }}</td></tr>
+  </table>
+
+  <p class="doc-note bold">Violation Details</p>
+  <table class="doc-plain">
+    <tr><td>Violation Location</td><td>{{ record.violation_location }}</td></tr>
+    <tr><td>Type of Violation</td><td>{{ record.violation_type }}</td></tr>
+    <tr><td>Description of Violation</td><td>{{ record.violation_description }}</td></tr>
+  </table>
+
+  <p class="doc-note bold">Action Taken</p>
+  <div class="doc-checkbox-row">
+    {% for action in ["First Warning", "Final Warning", "Salary Deduction", "Deduction from Subcontractor Payment", "Removal from Site"] %}
+    <span class="doc-checkbox {{ 'checked' if action in record.actions else '' }}">{{ '☑' if action in record.actions else '☐' }} {{ action }}</span>
+    {% endfor %}
+  </div>
+  <table class="doc-plain">
+    <tr><td>Deduction Amount (if any)</td><td>{{ record.deduction_amount or '—' }}</td></tr>
+  </table>
+
+  <p class="doc-note bold">Attachment</p>
+  <div class="doc-checkbox-row">
+    <span class="doc-checkbox {{ 'checked' if record.photos_attached else '' }}">{{ '☑' if record.photos_attached else '☐' }} Violation Photos</span>
+    <span class="doc-checkbox {{ 'checked' if record.documents_attached else '' }}">{{ '☑' if record.documents_attached else '☐' }} Supporting Documents</span>
+  </div>
+
+  <p class="doc-note bold">Issued By</p>
+  <table class="doc-plain">
+    <tr><td>Name</td><td>{{ record.issued_by_name }}</td></tr>
+    <tr><td>Position</td><td>{{ record.issued_by_position or '—' }}</td></tr>
+    <tr><td>Signature</td><td>Digitally signed · {{ record.created_at }}</td></tr>
+  </table>
+</article>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='record.js') }}" defer></script>{% endblock %}

@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}Near-Miss Report · 1 Hotel Diriyah OHS{% endblock %}
+{% block body_class %}form-page{% endblock %}
+{% block content %}
+<section class="hero">
+  <div>
+    <div class="partner-logos">
+      <img src="{{ url_for('static', filename='egis.png') }}" alt="Egis">
+      <img src="{{ url_for('static', filename='dewan.png') }}" alt="Dewan">
+      <img src="{{ url_for('static', filename='bec-ashoka.png') }}" alt="BEC Ashoka">
+    </div>
+    <span class="eyebrow">Daily site assurance</span>
+    <h1>Near-Miss Reporting Form</h1>
+    <p>Report the event, its potential consequences, and any corrective action taken so it doesn't happen again.</p>
+  </div>
+</section>
+
+<div id="success-panel" class="success-panel hidden" role="status" aria-live="polite">
+  <span class="success-icon">✓</span>
+  <div>
+    <span class="eyebrow">Report saved</span>
+    <h2>Near-miss report submitted</h2>
+    <p id="success-copy"></p>
+    <button class="button primary" id="new-report" type="button">Report another near-miss</button>
+  </div>
+</div>
+
+<form id="near-miss-form" novalidate>
+  <section class="card">
+    <div class="section-heading">
+      <div><span class="step-number">01</span><h2>Basic information</h2></div>
+      <p>Fields marked <span class="required">*</span> are required</p>
+    </div>
+    <div class="field-grid">
+      <label><span>Department / Project <b>*</b></span><input name="departmentProject" required maxlength="200" value="1 Hotel Diriyah"></label>
+      <label><span>Location of near miss <b>*</b></span><input name="location" required maxlength="200" placeholder="Area / section"></label>
+      <label><span>Date of near miss <b>*</b></span><input name="incidentDate" type="date" required></label>
+      <label><span>Time of near miss <b>*</b></span><input name="incidentTime" type="time" required></label>
+      <label class="wide"><span>Reported by (name &amp; designation) <b>*</b></span><input name="reportedBy" required maxlength="200"></label>
+      <label><span>Report number <small>(optional)</small></span><input name="reportNo" maxlength="80" placeholder="Generated automatically if blank"></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-heading"><div><span class="step-number">02</span><h2>Description of near miss</h2></div></div>
+    <div class="field-grid one-col">
+      <label><span>What happened? (briefly describe the event) <b>*</b></span><textarea name="whatHappened" rows="3" maxlength="3000" required></textarea></label>
+      <label><span>What could have happened? (potential consequences if not avoided)</span><textarea name="couldHaveHappened" rows="3" maxlength="3000"></textarea></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-heading"><div><span class="step-number">03</span><h2>Type of near miss</h2></div><p>Select at least one <span class="required">*</span></p></div>
+    <div class="checkbox-grid">
+      {% for kind in near_miss_types %}
+      <label class="checkbox-tile"><input type="checkbox" name="nearMissTypes" value="{{ kind }}"><span>{{ kind }}</span></label>
+      {% endfor %}
+    </div>
+    <label><span>If "Other", specify</span><input name="nearMissTypeOther" maxlength="200"></label>
+  </section>
+
+  <section class="card">
+    <div class="section-heading"><div><span class="step-number">04</span><h2>Immediate actions taken</h2></div></div>
+    <div class="field-grid one-col">
+      <label><span>Immediate actions taken to prevent recurrence</span><textarea name="immediateActions" rows="3" maxlength="3000"></textarea></label>
+    </div>
+    <div class="field-grid">
+      <label><span>Was the hazard eliminated?</span>
+        <select name="hazardEliminated"><option value="">Select</option><option value="Yes">Yes</option><option value="No">No</option></select>
+      </label>
+      <label class="wide"><span>If no, specify required actions to eliminate the hazard</span><input name="hazardActionsRequired" maxlength="600"></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-heading">
+      <div><span class="step-number">05</span><h2>Investigation &amp; root cause analysis</h2></div>
+      <p>To be completed by the HSE Manager or investigation team, if known</p>
+    </div>
+    <div class="field-grid">
+      <label><span>Investigation lead (name &amp; designation)</span><input name="investigationLead" maxlength="200"></label>
+      <label><span>Date of investigation</span><input name="investigationDate" type="date"></label>
+    </div>
+    <div class="checkbox-grid">
+      {% for cause in root_causes %}
+      <label class="checkbox-tile"><input type="checkbox" name="rootCauses" value="{{ cause }}"><span>{{ cause }}</span></label>
+      {% endfor %}
+    </div>
+    <div class="field-grid">
+      <label><span>If "Other", specify</span><input name="rootCauseOther" maxlength="200"></label>
+    </div>
+    <div class="field-grid one-col">
+      <label><span>Detailed description of root cause</span><textarea name="rootCauseDetail" rows="3" maxlength="3000"></textarea></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-heading"><div><span class="step-number">06</span><h2>Corrective &amp; preventive actions</h2></div></div>
+    <div class="list-fields">
+      <span>Corrective actions</span>
+      {% for i in range(1, 5) %}<input name="correctiveAction{{ i }}" maxlength="300" placeholder="{{ i }}.">{% endfor %}
+    </div>
+    <div class="list-fields">
+      <span>Preventive measures</span>
+      {% for i in range(1, 5) %}<input name="preventiveMeasure{{ i }}" maxlength="300" placeholder="{{ i }}.">{% endfor %}
+    </div>
+    <div class="field-grid">
+      <label><span>Person responsible for action</span><input name="personResponsible" maxlength="200"></label>
+      <label><span>Target completion date</span><input name="targetCompletionDate" type="date"></label>
+    </div>
+  </section>
+
+  <section class="card signoff-card">
+    <div class="section-heading"><div><span class="step-number">07</span><h2>Review &amp; sign-off</h2></div></div>
+    <div class="field-grid">
+      <label><span>Reported by (signature &amp; date) <b>*</b></span><input name="reportedBySignoff" required maxlength="200" placeholder="Full name"></label>
+      <label><span>HSE Manager (signature &amp; date)</span><input name="hseManagerSignoff" maxlength="200" placeholder="Full name"></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-heading"><div><span class="step-number">08</span><h2>Follow-up &amp; closure</h2></div></div>
+    <div class="field-grid">
+      <label><span>Follow-up conducted by (name &amp; designation)</span><input name="followupBy" maxlength="200"></label>
+      <label><span>Follow-up date</span><input name="followupDate" type="date"></label>
+    </div>
+    <label><span>Status of corrective actions</span>
+      <select name="status">
+        <option value="">Select</option>
+        {% for item in statuses %}<option value="{{ item }}">{{ item }}</option>{% endfor %}
+      </select>
+    </label>
+    <label><span>If not completed, reason</span><input name="statusReason" maxlength="1000"></label>
+  </section>
+
+  <div id="form-error" class="form-error hidden" role="alert"></div>
+  <div class="submit-bar">
+    <div><strong>Near-miss report</strong><span>Submit for review by the HSE team</span></div>
+    <button class="button primary submit-button" type="submit">Submit report</button>
+  </div>
+</form>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='near_miss.js') }}" defer></script>{% endblock %}
