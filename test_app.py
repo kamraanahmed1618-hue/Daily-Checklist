@@ -57,7 +57,7 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertIn(b"QA-TEST-001", dashboard.data)
         detail = self.client.get(f"/admin/records/{record_id}")
         self.assertEqual(detail.status_code, 200)
-        self.assertIn(b"General Best Practice", detail.data)
+        self.assertIn(b"GENERAL BEST PRACTICE", detail.data)
 
         summary = self.client.get("/admin/export?kind=summary")
         self.assertEqual(summary.status_code, 200)

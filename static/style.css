@@ -162,29 +162,43 @@ td small { margin-top: 3px; color: var(--muted); }
 .empty-state { padding: 50px; color: var(--muted); text-align: center; }
 
 .record-toolbar { padding: 30px 0 14px; display: flex; align-items: center; justify-content: space-between; }
-.record-sheet { margin-bottom: 50px; padding: 42px; background: white; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
-.record-title { padding-bottom: 25px; display: flex; align-items: center; justify-content: space-between; gap: 30px; border-bottom: 2px solid var(--forest); }
-.record-title h1 { margin: 0 0 5px; font-family: Georgia, serif; font-size: 38px; font-weight: 500; }
-.record-title p { margin: 0; color: var(--muted); font-weight: 750; }
-.record-score { min-width: 120px; text-align: right; }
-.record-score strong, .record-score span { display: block; }
-.record-score strong { color: var(--forest-2); font-family: Georgia, serif; font-size: 42px; line-height: 1; }
-.record-score span { color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; }
-.record-meta { margin: 0; padding: 22px 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; border-bottom: 1px solid var(--line); }
-.record-meta div { min-width: 0; }
-.record-meta dt { margin-bottom: 3px; color: var(--muted); font-size: 10px; font-weight: 850; letter-spacing: .07em; text-transform: uppercase; }
-.record-meta dd { margin: 0; font-size: 13px; font-weight: 700; }
-.record-summary { padding: 16px 0 4px; display: flex; gap: 10px; flex-wrap: wrap; }
-.record-summary span { padding: 7px 11px; background: var(--sand); border-radius: 8px; font-size: 12px; }
-.record-section { margin-top: 24px; break-inside: avoid; }
-.record-section h2 { margin-bottom: 8px; padding: 9px 12px; color: white; background: var(--forest); font-family: Georgia, serif; font-size: 17px; font-weight: 500; }
-.record-section h2 span { margin-right: 10px; color: #d4b77d; font-family: Inter, sans-serif; font-size: 10px; }
-.record-section th:nth-child(2), .record-section td:nth-child(2) { width: 90px; }
-.record-section th:nth-child(3), .record-section td:nth-child(3) { width: 30%; }
-.record-signoff { margin-top: 30px; padding: 22px; display: grid; grid-template-columns: 1fr 1fr; gap: 26px; background: var(--sand); border-radius: 12px; }
-.record-signoff span, .record-signoff small { display: block; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
-.record-signoff p { margin: 5px 0 0; }
-.record-signoff strong { display: block; margin: 5px 0; }
+
+/* Daily OHS inspection sheet — mirrors the "1 Hotel Diriyah" printed checklist layout */
+.doc-sheet { margin-bottom: 50px; padding: 20px 26px 30px; background: white; border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); font-family: "Times New Roman", Times, serif; color: #111; }
+.doc-sheet table { width: 100%; border-collapse: collapse; }
+.doc-sheet td, .doc-sheet th { border: 1px solid #000; padding: 4px 8px; font-size: 13px; vertical-align: middle; }
+
+.doc-logos { margin-bottom: 0; }
+.doc-logos td.logo-cell { height: 64px; text-align: center; vertical-align: middle; }
+.doc-logos img { display: block; max-height: 40px; max-width: 90%; margin: 0 auto 3px; }
+.doc-logos .logo-label { display: block; font-size: 11px; font-weight: 700; letter-spacing: .02em; }
+
+.doc-banner { padding: 10px 12px; color: white; background: #002060; border: 1px solid #000; border-top: none; font-size: 22px; font-weight: 700; letter-spacing: .03em; text-align: center; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+
+.doc-title { margin: 14px 0 10px; color: #1F3864; font-size: 16px; font-weight: 700; text-align: center; text-decoration: underline; }
+
+.doc-info td.info-label, .doc-summary td.section-header, .doc-checklist tr.section-row td, .doc-footer td.info-label, .doc-noncompliance td.section-header {
+  background: #DAE9F7; font-weight: 700; print-color-adjust: exact; -webkit-print-color-adjust: exact;
+}
+.doc-info td.info-label, .doc-footer td.info-label { background: #A5C9EB; width: 20%; white-space: nowrap; }
+.doc-info td:not(.info-label), .doc-footer td:not(.info-label) { width: 30%; }
+
+.doc-checklist thead th { background: #9DC3E6; font-weight: 700; text-align: left; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+.doc-checklist thead th:last-child, .doc-checklist td.result-cell { text-align: center; width: 15%; }
+.doc-checklist tr.section-row td { text-transform: uppercase; }
+
+.doc-columns { margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start; }
+
+.result-cell { font-weight: 700; }
+.result-cell.result-y { color: #1d5a2e; }
+.result-cell.result-n { color: #a01515; }
+.result-cell.result-na { color: #555; }
+
+.doc-noncompliance, .doc-summary { margin-top: 14px; }
+.doc-noncompliance td.nc-item { width: 65%; }
+
+.doc-footer { margin-top: 14px; }
+
 
 @media (max-width: 900px) {
   .field-grid { grid-template-columns: repeat(2, 1fr); }
@@ -227,24 +241,24 @@ td small { margin-top: 3px; color: var(--muted); }
   .filter-bar { grid-template-columns: 1fr; }
   .filter-bar .search-field { grid-column: auto; }
   .records-actions > div { width: 100%; flex-direction: column; }
-  .record-sheet { padding: 21px 16px; }
-  .record-title { align-items: flex-start; flex-direction: column; }
-  .record-score { text-align: left; }
-  .record-meta { grid-template-columns: 1fr 1fr; }
-  .record-signoff { grid-template-columns: 1fr; }
+  .doc-sheet { padding: 14px 10px 20px; }
+  .doc-sheet td, .doc-sheet th { font-size: 11px; padding: 3px 5px; }
+  .doc-logos { display: none; }
+  .doc-banner { border-top: 1px solid #000; font-size: 17px; }
+  .doc-columns { grid-template-columns: 1fr; }
 }
 
 @media print {
-  @page { margin: 12mm; }
+  @page { size: A4 portrait; margin: 8mm; }
   body { background: white; color: black; font-size: 9pt; }
   .site-header, .site-footer, .no-print { display: none !important; }
   main { width: 100%; }
-  .record-sheet { margin: 0; padding: 0; border: 0; box-shadow: none; }
-  .record-title h1 { font-size: 25pt; }
-  .record-section { break-inside: avoid; }
-  .record-section h2 { color: white !important; background: #17372f !important; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-  th, td { padding: 5px 7px; }
-  .result, .record-summary span, .record-signoff { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .doc-sheet { margin: 0; padding: 0; border: 0; box-shadow: none; }
+  .doc-sheet * { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .doc-sheet td, .doc-sheet th { padding: 2px 5px; font-size: 7.5pt; }
+  .doc-title { font-size: 13pt; }
+  .doc-banner { font-size: 18pt; }
+  .doc-checklist tr, .doc-noncompliance tr, .doc-summary tr, .doc-footer tr { break-inside: avoid; }
 }
 .partner-logos {
     display: flex;
