@@ -9,6 +9,15 @@
     <link rel="stylesheet"
           href="{{ url_for('static', filename='style.css') }}">
 
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <meta name="theme-color" content="#0a1f8f">
+    <link rel="icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="OHS Diriyah">
+    <meta name="mobile-web-app-capable" content="yes">
+    <script src="{{ url_for('static', filename='sw-register.js') }}" defer></script>
+
     {% block head %}{% endblock %}
 </head>
 

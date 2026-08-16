@@ -1,0 +1,33 @@
+name: Weekly records backup
+
+on:
+  schedule:
+    - cron: "0 3 * * 1" # Every Monday 03:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download backup archive
+        env:
+          EXPORT_TOKEN: ${{ secrets.EXPORT_TOKEN }}
+          APP_URL: ${{ vars.APP_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APP_URL:-}" ]; then
+            echo "APP_URL repository variable is not set (Settings > Secrets and variables > Actions > Variables)." >&2
+            exit 1
+          fi
+          # Render free instances spin down when idle; allow time for cold start + retries.
+          curl -sS --fail --retry 5 --retry-delay 15 --retry-all-errors --max-time 120 \
+            -H "X-Export-Token: ${EXPORT_TOKEN}" \
+            -o backup.zip \
+            "${APP_URL%/}/admin/backup"
+
+      - name: Upload backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: diriyah-ohs-backup-${{ github.run_id }}
+          path: backup.zip
+          retention-days: 90
