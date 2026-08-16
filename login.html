@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Records Login · 1 Hotel Diriyah OHS{% endblock %}
+{% block body_class %}login-page{% endblock %}
+{% block content %}
+<section class="login-shell">
+  <div class="login-card">
+    <span class="lock-mark">⌁</span>
+    <span class="eyebrow">Restricted access</span>
+    <h1>Inspection records</h1>
+    <p>Enter the administrator password to review and download submitted records.</p>
+    {% if not configured %}<div class="notice danger">ADMIN_PASSWORD has not been configured on this service.</div>{% endif %}
+    {% if error %}<div class="notice danger" role="alert">{{ error }}</div>{% endif %}
+    <form method="post">
+      <label><span>Admin password</span><input name="password" type="password" autocomplete="current-password" required autofocus></label>
+      <button class="button primary full" type="submit" {% if not configured %}disabled{% endif %}>Open records dashboard</button>
+    </form>
+  </div>
+</section>
+{% endblock %}

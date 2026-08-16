@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#17372f">
+  <title>{% block title %}1 Hotel Diriyah OHS{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+  <header class="site-header">
+    <a class="brand" href="{{ url_for('index') }}" aria-label="1 Hotel Diriyah OHS home">
+      <span class="brand-mark">1</span>
+      <span><strong>1 Hotel Diriyah</strong><small>Occupational Health &amp; Safety</small></span>
+    </a>
+    <nav aria-label="Primary navigation">
+      <a href="{{ url_for('index') }}">New inspection</a>
+      <a href="{{ url_for('admin') }}">Records</a>
+    </nav>
+  </header>
+
+  <main>{% block content %}{% endblock %}</main>
+
+  <footer class="site-footer">
+    <div class="partner-logos" aria-label="Project partners">
+      <img src="{{ url_for('static', filename='brands/egis.png') }}" alt="Egis">
+      <img src="{{ url_for('static', filename='brands/dewan.png') }}" alt="Dewan">
+      <img src="{{ url_for('static', filename='brands/bec-ashoka.png') }}" alt="BEC Ashoka">
+    </div>
+    <p>Daily OHS Team Inspection Checklist · Controlled digital record</p>
+  </footer>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}{{ record.report_no }} · OHS Record{% endblock %}
+{% block body_class %}record-page{% endblock %}
+{% block content %}
+<section class="record-toolbar no-print">
+  <a class="text-link" href="{{ url_for('admin') }}">← Back to records</a>
+  <button class="button primary" id="print-record" type="button">Print / Save PDF</button>
+</section>
+<article class="record-sheet">
+  <header class="record-title">
+    <div><span class="eyebrow">Controlled inspection record</span><h1>Daily OHS Team Inspection</h1><p>{{ record.report_no }}</p></div>
+    <div class="record-score"><strong>{{ record.score }}%</strong><span>compliance</span></div>
+  </header>
+  <dl class="record-meta">
+    <div><dt>Project</dt><dd>{{ record.project_name }}</dd></div>
+    <div><dt>Location / zone</dt><dd>{{ record.work_location }}</dd></div>
+    <div><dt>Contractor</dt><dd>{{ record.contractor }}</dd></div>
+    <div><dt>Inspected by</dt><dd>{{ record.inspected_by }}</dd></div>
+    <div><dt>Date &amp; time</dt><dd>{{ record.inspection_date }} · {{ record.inspection_time }}</dd></div>
+    <div><dt>Shift</dt><dd>{{ record.shift }}</dd></div>
+  </dl>
+  <div class="record-summary">
+    <span><b>{{ record.compliant }}</b> compliant</span>
+    <span><b>{{ record.non_compliant }}</b> non-compliant</span>
+    <span><b>{{ record.not_applicable }}</b> not applicable</span>
+  </div>
+  {% for section in sections %}
+  <section class="record-section">
+    <h2><span>{{ '%02d'|format(loop.index) }}</span>{{ section.title }}</h2>
+    <table>
+      <thead><tr><th>Requirement</th><th>Result</th><th>Observation / action</th></tr></thead>
+      <tbody>
+      {% for item in section["items"] %}
+        {% set value = record.responses.get(item.id, '') %}
+        <tr><td>{{ item.text }}</td><td><span class="result result-{{ value|lower }}">{% if value == 'Y' %}Yes{% elif value == 'N' %}No{% else %}N/A{% endif %}</span></td><td>{{ record.response_notes.get(item.id, '') or '—' }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endfor %}
+  <section class="record-signoff">
+    <div><span>General remarks</span><p>{{ record.remarks or 'No additional remarks.' }}</p></div>
+    <div><span>Digitally signed by</span><strong>{{ record.signoff_name }}</strong><small>Submitted {{ record.created_at }}</small></div>
+  </section>
+</article>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='record.js') }}" defer></script>{% endblock %}

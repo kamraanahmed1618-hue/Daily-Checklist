@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}New Inspection · 1 Hotel Diriyah OHS{% endblock %}
+{% block body_class %}form-page{% endblock %}
+{% block content %}
+<section class="hero">
+  <div>
+    <span class="eyebrow">Daily site assurance</span>
+    <h1>OHS Team Inspection Checklist</h1>
+    <p>Complete every requirement, record observations for any non-compliance, and sign off before submission.</p>
+  </div>
+  <div class="hero-stat"><strong>{{ total_items }}</strong><span>inspection requirements</span></div>
+</section>
+
+<div id="success-panel" class="success-panel hidden" role="status" aria-live="polite">
+  <span class="success-icon">✓</span>
+  <div>
+    <span class="eyebrow">Inspection saved</span>
+    <h2>Record submitted successfully</h2>
+    <p id="success-copy"></p>
+    <button class="button primary" id="new-inspection" type="button">Start another inspection</button>
+  </div>
+</div>
+
+<form id="inspection-form" novalidate>
+  <section class="card details-card">
+    <div class="section-heading">
+      <div><span class="step-number">01</span><h2>Inspection details</h2></div>
+      <p>Fields marked <span class="required">*</span> are required</p>
+    </div>
+    <div class="field-grid">
+      <label class="wide"><span>Project name <b>*</b></span><input name="projectName" required maxlength="200" value="1 Hotel Diriyah"></label>
+      <label><span>Work location / zone <b>*</b></span><input name="workLocation" required maxlength="200" placeholder="e.g. Zone 3, Level 02"></label>
+      <label><span>Contractor / subcontractor <b>*</b></span><input name="contractor" required maxlength="200"></label>
+      <label><span>Inspected by <b>*</b></span><input name="inspectedBy" required maxlength="200"></label>
+      <label><span>Report number <small>(optional)</small></span><input name="reportNo" maxlength="80" placeholder="Generated automatically if blank"></label>
+      <label><span>Date <b>*</b></span><input name="inspectionDate" type="date" required></label>
+      <label><span>Time <b>*</b></span><input name="inspectionTime" type="time" required></label>
+      <label><span>Shift <b>*</b></span><select name="shift" required><option value="">Select shift</option><option>Day</option><option>Night</option><option>Other</option></select></label>
+    </div>
+  </section>
+
+  <section class="checklist-header">
+    <div>
+      <span class="step-number">02</span>
+      <div><h2>Inspection requirements</h2><p id="progress-copy">0 of {{ total_items }} answered</p></div>
+    </div>
+    <div class="progress-track" aria-hidden="true"><span id="progress-bar"></span></div>
+  </section>
+
+  <div id="checklist-sections" class="checklist-sections" aria-live="polite">
+    <div class="loading-card">Loading inspection requirements…</div>
+  </div>
+
+  <section class="card signoff-card">
+    <div class="section-heading">
+      <div><span class="step-number">03</span><h2>Remarks &amp; sign-off</h2></div>
+    </div>
+    <label><span>General remarks</span><textarea name="remarks" rows="4" maxlength="3000" placeholder="Record follow-up actions, responsible persons, or other notes…"></textarea></label>
+    <div class="signoff-grid">
+      <label><span>Signed by <b>*</b></span><input name="signoffName" required maxlength="200" placeholder="Full name"></label>
+      <label class="confirmation"><input name="signed" type="checkbox" required><span>I confirm that this inspection is accurate and complete. <b>*</b></span></label>
+    </div>
+  </section>
+
+  <div id="form-error" class="form-error hidden" role="alert"></div>
+  <div class="submit-bar">
+    <div><strong id="score-copy">Compliance —</strong><span>Calculated from Yes ÷ (Yes + No)</span></div>
+    <button class="button primary submit-button" type="submit">Submit inspection</button>
+  </div>
+</form>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='form.js') }}" defer></script>{% endblock %}
