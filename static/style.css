@@ -364,3 +364,131 @@ button.primary {
 button.primary:hover {
     background: #1456b8;
 }
+/* =====================================================
+   FINAL BLUE + WHITE THEME OVERRIDE
+   ===================================================== */
+
+:root {
+    --primary: #0b3a82;
+    --primary-dark: #072d66;
+    --primary-light: #eaf2ff;
+    --accent: #2563eb;
+    --white: #ffffff;
+}
+
+/* Top navigation */
+.site-header {
+    background: #0b3a82 !important;
+    color: #ffffff !important;
+}
+
+.site-header a,
+.site-header span,
+.site-header strong {
+    color: #ffffff !important;
+}
+
+/* Dark section headers */
+.section-heading,
+.checklist-header,
+.checklist-summary,
+.inspection-header {
+    background: #0b3a82 !important;
+    color: #ffffff !important;
+}
+
+.section-heading h2,
+.section-heading span,
+.checklist-header h2,
+.checklist-header span,
+.checklist-summary h2,
+.checklist-summary span {
+    color: #ffffff !important;
+}
+
+/* Inspection requirements top bar */
+.checklist-progress,
+.progress-card,
+.requirements-header {
+    background: #0b3a82 !important;
+    color: #ffffff !important;
+}
+
+/* Progress bar */
+.progress-track {
+    background: rgba(255, 255, 255, 0.30) !important;
+}
+
+#progress-bar,
+.progress-bar {
+    background: #ffffff !important;
+}
+
+/* Bottom submit bar */
+.submit-bar {
+    background: #0b3a82 !important;
+    color: #ffffff !important;
+}
+
+.submit-bar strong,
+.submit-bar span,
+.submit-bar div,
+.submit-bar p {
+    color: #ffffff !important;
+}
+
+/* Submit button */
+.submit-bar button,
+.button.primary,
+button.primary,
+#submit {
+    background: #ffffff !important;
+    color: #0b3a82 !important;
+    border: 2px solid #ffffff !important;
+    font-weight: 800 !important;
+}
+
+.submit-bar button:hover,
+.button.primary:hover,
+button.primary:hover {
+    background: #eaf2ff !important;
+    color: #072d66 !important;
+}
+
+/* Section numbering / accent text */
+.eyebrow,
+.section-number,
+.section-step {
+    color: #0b3a82 !important;
+    font-weight: 800 !important;
+}
+
+/* Yes / No / N-A controls */
+.requirement input + label,
+.option-button,
+.choice-button {
+    background: #ffffff !important;
+    border-color: #c9d7eb !important;
+    color: #0b3a82 !important;
+    font-weight: 700 !important;
+}
+
+/* Selected controls */
+.requirement input:checked + label,
+.option-button.active,
+.choice-button.active {
+    background: #0b3a82 !important;
+    border-color: #0b3a82 !important;
+    color: #ffffff !important;
+}
+
+/* Cards */
+.card,
+.requirement-group {
+    border-color: #d7e2f0 !important;
+}
+
+/* Main page */
+body {
+    background: #f5f8fc !important;
+}
