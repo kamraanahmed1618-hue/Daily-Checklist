@@ -110,6 +110,17 @@ class ChecklistApplicationTests(unittest.TestCase):
         response = self.client.post("/admin", data={"password": "wrong"})
         self.assertIn(b"Incorrect admin password", response.data)
 
+    def test_trends_tab_renders_with_and_without_data(self):
+        self.login()
+        empty = self.client.get("/admin?view=trends")
+        self.assertEqual(empty.status_code, 200)
+        self.assertIn(b"<svg", empty.data)
+
+        self.client.post("/api/inspections", json=self.payload())
+        with_data = self.client.get("/admin?view=trends")
+        self.assertEqual(with_data.status_code, 200)
+        self.assertIn(b"<svg", with_data.data)
+
     def test_near_miss_form_pages_load(self):
         self.assertEqual(self.client.get("/near-miss").status_code, 200)
         self.assertEqual(self.client.get("/violation").status_code, 200)

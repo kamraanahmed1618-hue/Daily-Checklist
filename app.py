@@ -9,13 +9,15 @@ import re
 import secrets
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 from typing import Any, Iterator
 
 from flask import Flask, Response, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
+
+from charts import bar_chart_svg, grouped_bar_chart_svg, line_chart_svg
 
 try:
     import psycopg
@@ -505,6 +507,61 @@ def filtered_violations(limit: int = 1000) -> list[dict[str, Any]]:
     return filtered_rows("violation_notices", ["violation_no", "employee_name", "company_contractor", "violation_location"], "violation_date", limit)
 
 
+def week_start(date_str: str) -> str | None:
+    try:
+        parsed = datetime.strptime(date_str, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+    return (parsed - timedelta(days=parsed.weekday())).isoformat()
+
+
+def compute_trends(weeks: int = 12) -> list[dict[str, Any]]:
+    today = datetime.now(timezone.utc).date()
+    this_monday = today - timedelta(days=today.weekday())
+    week_starts = [this_monday - timedelta(weeks=i) for i in range(weeks - 1, -1, -1)]
+    cutoff = week_starts[0].isoformat()
+
+    buckets = {
+        w.isoformat(): {"inspections": 0, "score_sum": 0.0, "score_count": 0, "non_compliant": 0, "near_miss": 0, "violations": 0}
+        for w in week_starts
+    }
+
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT inspection_date, score, non_compliant FROM inspections WHERE inspection_date >= ?"), [cutoff])
+        for row in cursor.fetchall():
+            key = week_start(row["inspection_date"])
+            if key in buckets:
+                buckets[key]["inspections"] += 1
+                buckets[key]["score_sum"] += float(row["score"])
+                buckets[key]["score_count"] += 1
+                buckets[key]["non_compliant"] += int(row["non_compliant"])
+        cursor.execute(sql("SELECT incident_date FROM near_miss_reports WHERE incident_date >= ?"), [cutoff])
+        for row in cursor.fetchall():
+            key = week_start(row["incident_date"])
+            if key in buckets:
+                buckets[key]["near_miss"] += 1
+        cursor.execute(sql("SELECT violation_date FROM violation_notices WHERE violation_date >= ?"), [cutoff])
+        for row in cursor.fetchall():
+            key = week_start(row["violation_date"])
+            if key in buckets:
+                buckets[key]["violations"] += 1
+
+    result = []
+    for w in week_starts:
+        bucket = buckets[w.isoformat()]
+        avg_score = round(bucket["score_sum"] / bucket["score_count"], 1) if bucket["score_count"] else None
+        result.append({
+            "label": w.strftime("%b %-d") if os.name != "nt" else w.strftime("%b %#d"),
+            "avg_score": avg_score,
+            "non_compliant": bucket["non_compliant"],
+            "inspections": bucket["inspections"],
+            "near_miss": bucket["near_miss"],
+            "violations": bucket["violations"],
+        })
+    return result
+
+
 @app.after_request
 def security_headers(response: Response) -> Response:
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -682,7 +739,7 @@ def admin() -> str | Response:
         return render_template("login.html", error=error, configured=configured)
 
     view = request.args.get("view", "inspections")
-    if view not in {"inspections", "near-miss", "violations"}:
+    if view not in {"inspections", "near-miss", "violations", "trends"}:
         view = "inspections"
 
     with database() as connection:
@@ -697,6 +754,7 @@ def admin() -> str | Response:
     records: list[dict[str, Any]] = []
     near_miss_records: list[dict[str, Any]] = []
     violations: list[dict[str, Any]] = []
+    trends: list[dict[str, Any]] = []
     total = average = non_compliant = 0
     if view == "inspections":
         records = filtered_records()
@@ -705,8 +763,22 @@ def admin() -> str | Response:
         non_compliant = sum(int(record["non_compliant"]) for record in records)
     elif view == "near-miss":
         near_miss_records = filtered_near_miss()
-    else:
+    elif view == "violations":
         violations = filtered_violations()
+    else:
+        trends = compute_trends()
+
+    trend_charts = {}
+    if view == "trends":
+        trend_charts = {
+            "score": line_chart_svg(trends, "avg_score", "#0A1F8F"),
+            "non_compliant": bar_chart_svg(trends, "non_compliant", "#ad3328"),
+            "volume": grouped_bar_chart_svg(trends, [
+                ("inspections", "#2a78d6", "Inspections"),
+                ("near_miss", "#eb6834", "Near-Miss"),
+                ("violations", "#1baf7a", "Violations"),
+            ]),
+        }
 
     return render_template(
         "admin.html",
@@ -717,6 +789,8 @@ def admin() -> str | Response:
         non_compliant=non_compliant,
         near_miss_records=near_miss_records,
         violations=violations,
+        trends=trends,
+        trend_charts=trend_charts,
         inspections_count=inspections_count,
         near_miss_count=near_miss_count,
         violations_count=violations_count,
