@@ -606,7 +606,7 @@ def submit_near_miss() -> tuple[Response, int] | Response:
             cursor = connection.cursor()
             cursor.execute(sql("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM near_miss_reports"))
             seq = cursor.fetchone()["next_seq"]
-            report_no = f"NM-{seq:04d}"
+            report_no = f"NEAR-MISS-{seq:03d}"
             values = [
                 record_id, seq, report_no, record["department_project"], record["incident_date"], record["incident_time"],
                 record["location"], record["reported_by"], record["what_happened"], record["could_have_happened"],
@@ -644,7 +644,7 @@ def submit_violation() -> tuple[Response, int] | Response:
             cursor = connection.cursor()
             cursor.execute(sql("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM violation_notices"))
             seq = cursor.fetchone()["next_seq"]
-            violation_no = f"VN-{seq:04d}"
+            violation_no = f"VIOLATION-{seq:03d}"
             values = [
                 record_id, seq, violation_no, record["project_name"], record["violation_date"], record["employee_name"],
                 record["employee_id"], record["company_contractor"], record["job_title"], record["violation_location"],
