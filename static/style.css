@@ -60,6 +60,14 @@ h1, h2, p { margin-top: 0; }
 
 .field-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
 .field-grid .wide { grid-column: span 2; }
+.field-grid.one-col { grid-template-columns: 1fr; }
+.field-grid + .field-grid, .field-grid + .checkbox-grid, .checkbox-grid + .field-grid { margin-top: 16px; }
+.checkbox-grid { margin: 4px 0 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
+.checkbox-tile { display: flex; align-items: center; gap: 9px; padding: 11px 13px; background: #f5f7fb; border: 1px solid #d7deea; border-radius: 9px; font-size: 13px; font-weight: 650; cursor: pointer; }
+.checkbox-tile input { width: 16px; height: 16px; accent-color: var(--navy); }
+.list-fields { margin-bottom: 16px; display: grid; gap: 8px; }
+.list-fields > span { display: block; margin-bottom: 2px; color: #26324a; font-size: 12px; font-weight: 750; }
+.field-note { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
 label > span { display: block; margin-bottom: 7px; color: #26324a; font-size: 12px; font-weight: 750; }
 label small { color: var(--muted); font-weight: 500; }
 input, select, textarea { width: 100%; padding: 12px 13px; color: var(--ink); background: #fbfcfe; border: 1px solid #cdd5e3; border-radius: 10px; outline: none; transition: border-color .15s, box-shadow .15s; }
@@ -135,6 +143,11 @@ input:focus, select:focus, textarea:focus { border-color: var(--navy-2); box-sha
 
 .admin-hero { padding-bottom: 30px; }
 .admin-hero h1 { font-size: clamp(38px, 5vw, 58px); }
+.record-tabs { margin-bottom: 22px; display: flex; gap: 8px; flex-wrap: wrap; }
+.record-tab { padding: 10px 16px; color: var(--navy); background: white; border: 1px solid var(--line); border-radius: 10px; font-size: 13px; font-weight: 750; text-decoration: none; }
+.record-tab span { margin-left: 6px; padding: 1px 7px; color: var(--muted); background: var(--sand); border-radius: 20px; font-size: 11px; font-weight: 800; }
+.record-tab.active { color: white; background: var(--navy); border-color: var(--navy); }
+.record-tab.active span { color: white; background: rgba(255,255,255,.2); }
 .stats-grid { margin-bottom: 22px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
 .stats-grid article { padding: 21px 23px; background: white; border: 1px solid var(--line); border-radius: 14px; }
 .stats-grid span, .stats-grid strong { display: block; }
@@ -182,6 +195,16 @@ td small { margin-top: 3px; color: var(--muted); }
 }
 .doc-info td.info-label, .doc-footer td.info-label { background: #A5C9EB; width: 20%; white-space: nowrap; }
 .doc-info td:not(.info-label), .doc-footer td:not(.info-label) { width: 30%; }
+.doc-info td.info-label.tan, .doc-footer td.info-label.tan { background: #DDD9C3; }
+.doc-info.stacked td { width: 100%; white-space: normal; }
+
+.doc-band { margin: 14px 0 0; padding: 8px 12px; color: white; background: #002060; font-weight: 700; font-size: 14px; text-align: center; text-transform: uppercase; letter-spacing: .02em; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+.doc-band:first-child { margin-top: 0; }
+.doc-plain td:first-child { width: 30%; font-weight: 700; background: #f5f5f5; }
+.doc-checkbox-row { margin: 8px 0; padding: 4px 0; display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; }
+.doc-checkbox.checked { font-weight: 700; }
+.doc-note { margin: 8px 0; font-size: 13px; }
+.doc-note.bold { margin: 16px 0 4px; color: #1F3864; font-weight: 700; text-transform: uppercase; font-size: 13px; }
 
 .doc-checklist thead th { background: #9DC3E6; font-weight: 700; text-align: left; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 .doc-checklist thead th:last-child, .doc-checklist td.result-cell { text-align: center; width: 15%; }
@@ -256,6 +279,7 @@ td small { margin-top: 3px; color: var(--muted); }
   .doc-sheet * { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   .doc-sheet td, .doc-sheet th { padding: 2px 5px; font-size: 7.5pt; }
   .doc-title { font-size: 13pt; }
-  .doc-banner { font-size: 18pt; }
-  .doc-checklist tr, .doc-noncompliance tr, .doc-summary tr, .doc-footer tr { break-inside: avoid; }
+  .doc-banner, .doc-band { font-size: 11pt; }
+  .doc-checkbox-row { font-size: 8.5pt; }
+  .doc-checklist tr, .doc-noncompliance tr, .doc-summary tr, .doc-footer tr, .doc-info tr, .doc-plain tr { break-inside: avoid; }
 }

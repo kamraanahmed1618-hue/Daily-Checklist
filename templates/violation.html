@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Violation Notice · 1 Hotel Diriyah OHS{% endblock %}
+{% block body_class %}form-page{% endblock %}
+{% block content %}
+<section class="hero">
+  <div>
+    <div class="partner-logos">
+      <img src="{{ url_for('static', filename='egis.png') }}" alt="Egis">
+      <img src="{{ url_for('static', filename='dewan.png') }}" alt="Dewan">
+      <img src="{{ url_for('static', filename='bec-ashoka.png') }}" alt="BEC Ashoka">
+    </div>
+    <span class="eyebrow">Daily site assurance</span>
+    <h1>OHS Violation Notice</h1>
+    <p>Record a safety violation, the employee involved, and the action taken.</p>
+  </div>
+</section>
+
+<div id="success-panel" class="success-panel hidden" role="status" aria-live="polite">
+  <span class="success-icon">✓</span>
+  <div>
+    <span class="eyebrow">Notice saved</span>
+    <h2>Violation notice submitted</h2>
+    <p id="success-copy"></p>
+    <button class="button primary" id="new-report" type="button">Issue another notice</button>
+  </div>
+</div>
+
+<form id="violation-form" novalidate>
+  <section class="card">
+    <div class="section-heading">
+      <div><span class="step-number">01</span><h2>Project information</h2></div>
+      <p>Fields marked <span class="required">*</span> are required</p>
+    </div>
+    <div class="field-grid">
+      <label><span>Project name <b>*</b></span><input name="projectName" required maxlength="200" value="1 Hotel Diriyah"></label>
+      <label><span>Date <b>*</b></span><input name="violationDate" type="date" required></label>
+      <label><span>Violation number <small>(optional)</small></span><input name="violationNo" maxlength="80" placeholder="Generated automatically if blank"></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-heading"><div><span class="step-number">02</span><h2>Violating employee details</h2></div></div>
+    <div class="field-grid">
+      <label><span>Name <b>*</b></span><input name="employeeName" required maxlength="200"></label>
+      <label><span>Employee ID / Iqama No.</span><input name="employeeId" maxlength="80"></label>
+      <label><span>Company / Contractor <b>*</b></span><input name="companyContractor" required maxlength="200"></label>
+      <label><span>Job title</span><input name="jobTitle" maxlength="200"></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-heading"><div><span class="step-number">03</span><h2>Violation details</h2></div></div>
+    <div class="field-grid">
+      <label><span>Violation location <b>*</b></span><input name="violationLocation" required maxlength="200"></label>
+      <label><span>Type of violation <b>*</b></span><input name="violationType" required maxlength="200"></label>
+    </div>
+    <div class="field-grid one-col">
+      <label><span>Description of violation <b>*</b></span><textarea name="violationDescription" rows="3" maxlength="3000" required></textarea></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-heading"><div><span class="step-number">04</span><h2>Action taken</h2></div></div>
+    <div class="checkbox-grid">
+      {% for action in actions %}
+      <label class="checkbox-tile"><input type="checkbox" name="actions" value="{{ action }}"><span>{{ action }}</span></label>
+      {% endfor %}
+    </div>
+    <div class="field-grid">
+      <label><span>Deduction amount (if any)</span><input name="deductionAmount" maxlength="80" placeholder="e.g. SAR 200"></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-heading"><div><span class="step-number">05</span><h2>Attachments</h2></div></div>
+    <div class="checkbox-grid">
+      <label class="checkbox-tile"><input type="checkbox" name="photosAttached"><span>Violation photos attached</span></label>
+      <label class="checkbox-tile"><input type="checkbox" name="documentsAttached"><span>Supporting documents attached</span></label>
+    </div>
+    <p class="field-note">Attach the actual photos/documents to the physical or shared-drive copy of this notice — file uploads aren't supported here yet.</p>
+  </section>
+
+  <section class="card signoff-card">
+    <div class="section-heading"><div><span class="step-number">06</span><h2>Issued by</h2></div></div>
+    <div class="field-grid">
+      <label><span>Name <b>*</b></span><input name="issuedByName" required maxlength="200" placeholder="Full name"></label>
+      <label><span>Position</span><input name="issuedByPosition" maxlength="200"></label>
+    </div>
+  </section>
+
+  <div id="form-error" class="form-error hidden" role="alert"></div>
+  <div class="submit-bar">
+    <div><strong>Violation notice</strong><span>Submit to add it to the records dashboard</span></div>
+    <button class="button primary submit-button" type="submit">Submit notice</button>
+  </div>
+</form>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='violation.js') }}" defer></script>{% endblock %}

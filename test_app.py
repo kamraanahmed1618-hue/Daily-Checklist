@@ -19,6 +19,8 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.client = app.test_client()
         with database() as connection:
             connection.execute("DELETE FROM inspections")
+            connection.execute("DELETE FROM near_miss_reports")
+            connection.execute("DELETE FROM violation_notices")
 
     def payload(self):
         return {
@@ -39,6 +41,31 @@ class ChecklistApplicationTests(unittest.TestCase):
 
     def login(self):
         return self.client.post("/admin", data={"password": "test-admin-password"})
+
+    def near_miss_payload(self):
+        return {
+            "departmentProject": "Zone 3",
+            "incidentDate": "2026-08-16",
+            "incidentTime": "10:00",
+            "location": "Podium Level 2",
+            "reportedBy": "Foreman A",
+            "whatHappened": "Ladder slipped on a wet floor.",
+            "nearMissTypes": ["Unsafe Condition"],
+            "reportedBySignoff": "Foreman A",
+        }
+
+    def violation_payload(self):
+        return {
+            "projectName": "1 Hotel Diriyah",
+            "violationDate": "2026-08-16",
+            "employeeName": "John Doe",
+            "companyContractor": "BEC Arabia Contracting",
+            "violationLocation": "Zone 2",
+            "violationType": "No PPE",
+            "violationDescription": "Worker observed without a hard hat in an active work zone.",
+            "actions": ["First Warning"],
+            "issuedByName": "Site HSE Officer",
+        }
 
     def test_checklist_has_all_source_requirements(self):
         response = self.client.get("/api/checklist")
@@ -82,6 +109,66 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         response = self.client.post("/admin", data={"password": "wrong"})
         self.assertIn(b"Incorrect admin password", response.data)
+
+    def test_near_miss_form_pages_load(self):
+        self.assertEqual(self.client.get("/near-miss").status_code, 200)
+        self.assertEqual(self.client.get("/violation").status_code, 200)
+
+    def test_near_miss_requires_at_least_one_type(self):
+        payload = self.near_miss_payload()
+        payload["nearMissTypes"] = []
+        response = self.client.post("/api/near-miss", json=payload)
+        self.assertEqual(response.status_code, 400)
+
+    def test_submit_review_and_export_near_miss(self):
+        response = self.client.post("/api/near-miss", json=self.near_miss_payload())
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json["reportNo"], "NM-0001")
+        record_id = response.json["id"]
+
+        self.login()
+        dashboard = self.client.get("/admin?view=near-miss")
+        self.assertIn(b"NM-0001", dashboard.data)
+        detail = self.client.get(f"/admin/near-miss/{record_id}")
+        self.assertEqual(detail.status_code, 200)
+        self.assertIn(b"NEAR MISS REPORTING FORM", detail.data)
+        self.assertIn(b"Unsafe Condition", detail.data)
+
+        export = self.client.get("/admin/export/near-miss")
+        self.assertEqual(export.status_code, 200)
+        self.assertIn("NM-0001", export.get_data(as_text=True))
+
+    def test_violation_requires_employee_name(self):
+        payload = self.violation_payload()
+        payload["employeeName"] = ""
+        response = self.client.post("/api/violations", json=payload)
+        self.assertEqual(response.status_code, 400)
+
+    def test_submit_review_and_export_violation(self):
+        response = self.client.post("/api/violations", json=self.violation_payload())
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json["violationNo"], "VN-0001")
+        record_id = response.json["id"]
+
+        self.login()
+        dashboard = self.client.get("/admin?view=violations")
+        self.assertIn(b"VN-0001", dashboard.data)
+        detail = self.client.get(f"/admin/violations/{record_id}")
+        self.assertEqual(detail.status_code, 200)
+        self.assertIn(b"VIOLATION NOTICE", detail.data.upper())
+        self.assertIn(b"First Warning", detail.data)
+
+        export = self.client.get("/admin/export/violations")
+        self.assertEqual(export.status_code, 200)
+        self.assertIn("VN-0001", export.get_data(as_text=True))
+
+    def test_sequential_report_numbers(self):
+        first = self.client.post("/api/inspections", json=self.payload())
+        second_payload = self.payload()
+        second_payload["reportNo"] = ""
+        second = self.client.post("/api/inspections", json=second_payload)
+        self.assertEqual(first.json["reportNo"], "QA-TEST-001")
+        self.assertTrue(second.json["reportNo"].startswith("OHS-"))
 
 
 if __name__ == "__main__":

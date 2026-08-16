@@ -68,6 +68,7 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=60 * 60 * 12,
     MAX_CONTENT_LENGTH=512 * 1024,
 )
+app.jinja_env.filters["from_json"] = json.loads
 
 
 def is_postgres() -> bool:
@@ -128,6 +129,64 @@ def init_db() -> None:
         "CREATE INDEX IF NOT EXISTS inspections_date_idx ON inspections (inspection_date)",
         "CREATE INDEX IF NOT EXISTS inspections_created_idx ON inspections (created_at)",
         "CREATE INDEX IF NOT EXISTS inspections_contractor_idx ON inspections (contractor)",
+        """CREATE TABLE IF NOT EXISTS near_miss_reports (
+            id TEXT PRIMARY KEY,
+            seq INTEGER,
+            report_no TEXT NOT NULL UNIQUE,
+            department_project TEXT NOT NULL,
+            incident_date TEXT NOT NULL,
+            incident_time TEXT NOT NULL,
+            location TEXT NOT NULL,
+            reported_by TEXT NOT NULL,
+            what_happened TEXT NOT NULL,
+            could_have_happened TEXT NOT NULL DEFAULT '',
+            near_miss_types TEXT NOT NULL DEFAULT '[]',
+            near_miss_type_other TEXT NOT NULL DEFAULT '',
+            immediate_actions TEXT NOT NULL DEFAULT '',
+            hazard_eliminated TEXT NOT NULL DEFAULT '',
+            hazard_actions_required TEXT NOT NULL DEFAULT '',
+            investigation_lead TEXT NOT NULL DEFAULT '',
+            investigation_date TEXT NOT NULL DEFAULT '',
+            root_causes TEXT NOT NULL DEFAULT '[]',
+            root_cause_other TEXT NOT NULL DEFAULT '',
+            root_cause_detail TEXT NOT NULL DEFAULT '',
+            corrective_actions TEXT NOT NULL DEFAULT '[]',
+            preventive_measures TEXT NOT NULL DEFAULT '[]',
+            person_responsible TEXT NOT NULL DEFAULT '',
+            target_completion_date TEXT NOT NULL DEFAULT '',
+            reported_by_signoff TEXT NOT NULL,
+            hse_manager_signoff TEXT NOT NULL DEFAULT '',
+            followup_by TEXT NOT NULL DEFAULT '',
+            followup_date TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT '',
+            status_reason TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL
+        )""",
+        "CREATE INDEX IF NOT EXISTS near_miss_date_idx ON near_miss_reports (incident_date)",
+        "CREATE INDEX IF NOT EXISTS near_miss_created_idx ON near_miss_reports (created_at)",
+        """CREATE TABLE IF NOT EXISTS violation_notices (
+            id TEXT PRIMARY KEY,
+            seq INTEGER,
+            violation_no TEXT NOT NULL UNIQUE,
+            project_name TEXT NOT NULL,
+            violation_date TEXT NOT NULL,
+            employee_name TEXT NOT NULL,
+            employee_id TEXT NOT NULL DEFAULT '',
+            company_contractor TEXT NOT NULL,
+            job_title TEXT NOT NULL DEFAULT '',
+            violation_location TEXT NOT NULL,
+            violation_type TEXT NOT NULL,
+            violation_description TEXT NOT NULL,
+            actions TEXT NOT NULL DEFAULT '[]',
+            deduction_amount TEXT NOT NULL DEFAULT '',
+            photos_attached INTEGER NOT NULL DEFAULT 0,
+            documents_attached INTEGER NOT NULL DEFAULT 0,
+            issued_by_name TEXT NOT NULL,
+            issued_by_position TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL
+        )""",
+        "CREATE INDEX IF NOT EXISTS violations_date_idx ON violation_notices (violation_date)",
+        "CREATE INDEX IF NOT EXISTS violations_created_idx ON violation_notices (created_at)",
     ]
     with database() as connection:
         cursor = connection.cursor()
@@ -140,12 +199,13 @@ def init_db() -> None:
             if not any(row[1] == "seq" for row in cursor.fetchall()):
                 cursor.execute("ALTER TABLE inspections ADD COLUMN seq INTEGER")
         # Backfill sequential numbers for any pre-existing records in submission order.
-        cursor.execute(sql("SELECT COALESCE(MAX(seq), 0) AS next_seq FROM inspections"))
-        next_seq = cursor.fetchone()["next_seq"] or 0
-        cursor.execute(sql("SELECT id FROM inspections WHERE seq IS NULL ORDER BY created_at ASC"))
-        for row in cursor.fetchall():
-            next_seq += 1
-            cursor.execute(sql("UPDATE inspections SET seq = ? WHERE id = ?"), [next_seq, row["id"]])
+        for table in ("inspections", "near_miss_reports", "violation_notices"):
+            cursor.execute(sql(f"SELECT COALESCE(MAX(seq), 0) AS next_seq FROM {table}"))
+            next_seq = cursor.fetchone()["next_seq"] or 0
+            cursor.execute(sql(f"SELECT id FROM {table} WHERE seq IS NULL ORDER BY created_at ASC"))
+            for row in cursor.fetchall():
+                next_seq += 1
+                cursor.execute(sql(f"UPDATE {table} SET seq = ? WHERE id = ?"), [next_seq, row["id"]])
 
 
 def clean_text(value: Any, field: str, maximum: int = 200, required: bool = True) -> str:
@@ -215,6 +275,113 @@ def validate_inspection(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+NEAR_MISS_TYPES = ["Unsafe Act", "Unsafe Condition", "Equipment Failure", "Human Error", "Other"]
+ROOT_CAUSES = [
+    "Lack of Awareness/Training", "Inadequate Supervision", "Equipment/Tool Defect",
+    "Procedural Failure", "Time Pressure/Workload", "Other",
+]
+NEAR_MISS_STATUSES = ["Completed", "In Progress", "Not Completed"]
+VIOLATION_ACTIONS = [
+    "First Warning", "Final Warning", "Salary Deduction",
+    "Deduction from Subcontractor Payment", "Removal from Site",
+]
+
+
+def clean_choices(value: Any, field: str, allowed: list[str]) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    seen = [item for item in value if isinstance(item, str) and item in allowed]
+    return list(dict.fromkeys(seen))
+
+
+def clean_list_text(value: Any, field: str, max_items: int, maximum: int = 300) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    items = [clean_text(entry, field, maximum, False) for entry in value[:max_items]]
+    return [item for item in items if item]
+
+
+def validate_near_miss(payload: dict[str, Any]) -> dict[str, Any]:
+    record = {
+        "department_project": clean_text(payload.get("departmentProject"), "Department / Project"),
+        "incident_date": clean_text(payload.get("incidentDate"), "Date of near miss", 10),
+        "incident_time": clean_text(payload.get("incidentTime"), "Time of near miss", 5),
+        "location": clean_text(payload.get("location"), "Location of near miss"),
+        "reported_by": clean_text(payload.get("reportedBy"), "Reported by"),
+        "what_happened": clean_text(payload.get("whatHappened"), "What happened", 3000),
+        "could_have_happened": clean_text(payload.get("couldHaveHappened"), "What could have happened", 3000, False),
+        "near_miss_type_other": clean_text(payload.get("nearMissTypeOther"), "Near miss type (other)", 200, False),
+        "immediate_actions": clean_text(payload.get("immediateActions"), "Immediate actions taken", 3000, False),
+        "hazard_eliminated": clean_text(payload.get("hazardEliminated"), "Was the hazard eliminated", 10, False),
+        "hazard_actions_required": clean_text(payload.get("hazardActionsRequired"), "Required actions to eliminate the hazard", 2000, False),
+        "investigation_lead": clean_text(payload.get("investigationLead"), "Investigation lead", 200, False),
+        "investigation_date": clean_text(payload.get("investigationDate"), "Date of investigation", 10, False),
+        "root_cause_other": clean_text(payload.get("rootCauseOther"), "Root cause (other)", 200, False),
+        "root_cause_detail": clean_text(payload.get("rootCauseDetail"), "Detailed description of root cause", 3000, False),
+        "person_responsible": clean_text(payload.get("personResponsible"), "Person responsible for action", 200, False),
+        "target_completion_date": clean_text(payload.get("targetCompletionDate"), "Target completion date", 10, False),
+        "reported_by_signoff": clean_text(payload.get("reportedBySignoff"), "Reported by (sign-off)"),
+        "hse_manager_signoff": clean_text(payload.get("hseManagerSignoff"), "HSE Manager (sign-off)", 200, False),
+        "followup_by": clean_text(payload.get("followupBy"), "Follow-up conducted by", 200, False),
+        "followup_date": clean_text(payload.get("followupDate"), "Follow-up date", 10, False),
+        "status_reason": clean_text(payload.get("statusReason"), "Reason (status not completed)", 1000, False),
+    }
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", record["incident_date"]):
+        raise ValueError("Enter a valid date of near miss.")
+    if not re.fullmatch(r"\d{2}:\d{2}", record["incident_time"]):
+        raise ValueError("Enter a valid time of near miss.")
+
+    near_miss_types = clean_choices(payload.get("nearMissTypes"), "Type of near miss", NEAR_MISS_TYPES)
+    if not near_miss_types:
+        raise ValueError("Select at least one type of near miss.")
+
+    hazard_eliminated = record["hazard_eliminated"]
+    if hazard_eliminated and hazard_eliminated not in {"Yes", "No"}:
+        raise ValueError("Was the hazard eliminated must be Yes or No.")
+
+    root_causes = clean_choices(payload.get("rootCauses"), "Root cause", ROOT_CAUSES)
+
+    status = clean_text(payload.get("status"), "Status of corrective actions", 20, False)
+    if status and status not in NEAR_MISS_STATUSES:
+        raise ValueError("Select a valid status of corrective actions.")
+
+    return {
+        **record,
+        "near_miss_types": near_miss_types,
+        "root_causes": root_causes,
+        "corrective_actions": clean_list_text(payload.get("correctiveActions"), "Corrective action", 4),
+        "preventive_measures": clean_list_text(payload.get("preventiveMeasures"), "Preventive measure", 4),
+        "status": status,
+        "report_no": clean_text(payload.get("reportNo"), "Report number", 80, False),
+    }
+
+
+def validate_violation(payload: dict[str, Any]) -> dict[str, Any]:
+    record = {
+        "project_name": clean_text(payload.get("projectName"), "Project name"),
+        "violation_date": clean_text(payload.get("violationDate"), "Date", 10),
+        "employee_name": clean_text(payload.get("employeeName"), "Employee name"),
+        "employee_id": clean_text(payload.get("employeeId"), "Employee ID / Iqama No.", 80, False),
+        "company_contractor": clean_text(payload.get("companyContractor"), "Company / Contractor"),
+        "job_title": clean_text(payload.get("jobTitle"), "Job title", 200, False),
+        "violation_location": clean_text(payload.get("violationLocation"), "Violation location"),
+        "violation_type": clean_text(payload.get("violationType"), "Type of violation", 200),
+        "violation_description": clean_text(payload.get("violationDescription"), "Description of violation", 3000),
+        "deduction_amount": clean_text(payload.get("deductionAmount"), "Deduction amount", 80, False),
+        "issued_by_name": clean_text(payload.get("issuedByName"), "Issued by (name)"),
+        "issued_by_position": clean_text(payload.get("issuedByPosition"), "Issued by (position)", 200, False),
+        "violation_no": clean_text(payload.get("violationNo"), "Violation number", 80, False),
+    }
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", record["violation_date"]):
+        raise ValueError("Enter a valid date.")
+    return {
+        **record,
+        "actions": clean_choices(payload.get("actions"), "Action taken", VIOLATION_ACTIONS),
+        "photos_attached": 1 if payload.get("photosAttached") is True else 0,
+        "documents_attached": 1 if payload.get("documentsAttached") is True else 0,
+    }
+
+
 def admin_required(view: Any) -> Any:
     @wraps(view)
     def wrapped(*args: Any, **kwargs: Any) -> Any:
@@ -224,7 +391,7 @@ def admin_required(view: Any) -> Any:
     return wrapped
 
 
-def filtered_records(limit: int = 1000) -> list[dict[str, Any]]:
+def filtered_rows(table: str, search_columns: list[str], date_column: str, limit: int = 1000) -> list[dict[str, Any]]:
     clauses: list[str] = []
     params: list[Any] = []
     query = request.args.get("q", "").strip()
@@ -232,20 +399,32 @@ def filtered_records(limit: int = 1000) -> list[dict[str, Any]]:
     date_to = request.args.get("date_to", "").strip()
     if query:
         pattern = f"%{query.lower().replace('%', '').replace('_', '')}%"
-        clauses.append("(LOWER(report_no) LIKE ? OR LOWER(inspected_by) LIKE ? OR LOWER(contractor) LIKE ? OR LOWER(work_location) LIKE ?)")
-        params.extend([pattern] * 4)
+        clauses.append("(" + " OR ".join(f"LOWER({column}) LIKE ?" for column in search_columns) + ")")
+        params.extend([pattern] * len(search_columns))
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_from):
-        clauses.append("inspection_date >= ?")
+        clauses.append(f"{date_column} >= ?")
         params.append(date_from)
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_to):
-        clauses.append("inspection_date <= ?")
+        clauses.append(f"{date_column} <= ?")
         params.append(date_to)
     where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
     with database() as connection:
         cursor = connection.cursor()
-        cursor.execute(sql(f"SELECT * FROM inspections{where} ORDER BY created_at DESC LIMIT ?"), [*params, limit])
+        cursor.execute(sql(f"SELECT * FROM {table}{where} ORDER BY created_at DESC LIMIT ?"), [*params, limit])
         rows = cursor.fetchall()
     return [dict(row) for row in rows]
+
+
+def filtered_records(limit: int = 1000) -> list[dict[str, Any]]:
+    return filtered_rows("inspections", ["report_no", "inspected_by", "contractor", "work_location"], "inspection_date", limit)
+
+
+def filtered_near_miss(limit: int = 1000) -> list[dict[str, Any]]:
+    return filtered_rows("near_miss_reports", ["report_no", "reported_by", "department_project", "location"], "incident_date", limit)
+
+
+def filtered_violations(limit: int = 1000) -> list[dict[str, Any]]:
+    return filtered_rows("violation_notices", ["violation_no", "employee_name", "company_contractor", "violation_location"], "violation_date", limit)
 
 
 @app.after_request
@@ -261,6 +440,16 @@ def security_headers(response: Response) -> Response:
 @app.get("/")
 def index() -> str:
     return render_template("index.html", total_items=len(CHECKLIST_ITEMS))
+
+
+@app.get("/near-miss")
+def near_miss_form() -> str:
+    return render_template("near_miss.html", near_miss_types=NEAR_MISS_TYPES, root_causes=ROOT_CAUSES, statuses=NEAR_MISS_STATUSES)
+
+
+@app.get("/violation")
+def violation_form() -> str:
+    return render_template("violation.html", actions=VIOLATION_ACTIONS)
 
 
 @app.get("/api/checklist")
@@ -302,6 +491,78 @@ def submit_inspection() -> tuple[Response, int] | Response:
         return jsonify({"error": "The inspection could not be saved."}), 500
 
 
+@app.post("/api/near-miss")
+def submit_near_miss() -> tuple[Response, int] | Response:
+    try:
+        payload = request.get_json(force=True, silent=False)
+        if not isinstance(payload, dict):
+            raise ValueError("The near-miss report data is invalid.")
+        record = validate_near_miss(payload)
+        record_id = secrets.token_hex(16)
+        created_at = datetime.now(timezone.utc).isoformat()
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute(sql("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM near_miss_reports"))
+            seq = cursor.fetchone()["next_seq"]
+            report_no = record["report_no"] or f"NM-{seq:04d}"
+            values = [
+                record_id, seq, report_no, record["department_project"], record["incident_date"], record["incident_time"],
+                record["location"], record["reported_by"], record["what_happened"], record["could_have_happened"],
+                json.dumps(record["near_miss_types"]), record["near_miss_type_other"], record["immediate_actions"],
+                record["hazard_eliminated"], record["hazard_actions_required"], record["investigation_lead"],
+                record["investigation_date"], json.dumps(record["root_causes"]), record["root_cause_other"],
+                record["root_cause_detail"], json.dumps(record["corrective_actions"]), json.dumps(record["preventive_measures"]),
+                record["person_responsible"], record["target_completion_date"], record["reported_by_signoff"],
+                record["hse_manager_signoff"], record["followup_by"], record["followup_date"], record["status"],
+                record["status_reason"], created_at,
+            ]
+            placeholders = ",".join("?" for _ in values)
+            cursor.execute(sql(f"INSERT INTO near_miss_reports VALUES ({placeholders})"), values)
+        return jsonify({"id": record_id, "reportNo": report_no}), 201
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+    except Exception as error:
+        message = str(error)
+        if "unique" in message.lower():
+            return jsonify({"error": "That report number already exists. Enter another report number."}), 409
+        app.logger.exception("Near-miss report submission failed")
+        return jsonify({"error": "The near-miss report could not be saved."}), 500
+
+
+@app.post("/api/violations")
+def submit_violation() -> tuple[Response, int] | Response:
+    try:
+        payload = request.get_json(force=True, silent=False)
+        if not isinstance(payload, dict):
+            raise ValueError("The violation notice data is invalid.")
+        record = validate_violation(payload)
+        record_id = secrets.token_hex(16)
+        created_at = datetime.now(timezone.utc).isoformat()
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute(sql("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM violation_notices"))
+            seq = cursor.fetchone()["next_seq"]
+            violation_no = record["violation_no"] or f"VN-{seq:04d}"
+            values = [
+                record_id, seq, violation_no, record["project_name"], record["violation_date"], record["employee_name"],
+                record["employee_id"], record["company_contractor"], record["job_title"], record["violation_location"],
+                record["violation_type"], record["violation_description"], json.dumps(record["actions"]),
+                record["deduction_amount"], record["photos_attached"], record["documents_attached"],
+                record["issued_by_name"], record["issued_by_position"], created_at,
+            ]
+            placeholders = ",".join("?" for _ in values)
+            cursor.execute(sql(f"INSERT INTO violation_notices VALUES ({placeholders})"), values)
+        return jsonify({"id": record_id, "violationNo": violation_no}), 201
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+    except Exception as error:
+        message = str(error)
+        if "unique" in message.lower():
+            return jsonify({"error": "That violation number already exists. Enter another violation number."}), 409
+        app.logger.exception("Violation notice submission failed")
+        return jsonify({"error": "The violation notice could not be saved."}), 500
+
+
 @app.route("/admin", methods=["GET", "POST"])
 def admin() -> str | Response:
     error = ""
@@ -318,11 +579,46 @@ def admin() -> str | Response:
     if not session.get("admin"):
         return render_template("login.html", error=error, configured=configured)
 
-    records = filtered_records()
-    total = len(records)
-    average = round(sum(float(record["score"]) for record in records) / total, 1) if total else 0
-    non_compliant = sum(int(record["non_compliant"]) for record in records)
-    return render_template("admin.html", records=records, total=total, average=average, non_compliant=non_compliant)
+    view = request.args.get("view", "inspections")
+    if view not in {"inspections", "near-miss", "violations"}:
+        view = "inspections"
+
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute("SELECT COUNT(*) AS c FROM inspections")
+        inspections_count = cursor.fetchone()["c"]
+        cursor.execute("SELECT COUNT(*) AS c FROM near_miss_reports")
+        near_miss_count = cursor.fetchone()["c"]
+        cursor.execute("SELECT COUNT(*) AS c FROM violation_notices")
+        violations_count = cursor.fetchone()["c"]
+
+    records: list[dict[str, Any]] = []
+    near_miss_records: list[dict[str, Any]] = []
+    violations: list[dict[str, Any]] = []
+    total = average = non_compliant = 0
+    if view == "inspections":
+        records = filtered_records()
+        total = len(records)
+        average = round(sum(float(record["score"]) for record in records) / total, 1) if total else 0
+        non_compliant = sum(int(record["non_compliant"]) for record in records)
+    elif view == "near-miss":
+        near_miss_records = filtered_near_miss()
+    else:
+        violations = filtered_violations()
+
+    return render_template(
+        "admin.html",
+        view=view,
+        records=records,
+        total=total,
+        average=average,
+        non_compliant=non_compliant,
+        near_miss_records=near_miss_records,
+        violations=violations,
+        inspections_count=inspections_count,
+        near_miss_count=near_miss_count,
+        violations_count=violations_count,
+    )
 
 
 @app.post("/admin/logout")
@@ -346,6 +642,35 @@ def record_detail(record_id: str) -> str | tuple[str, int]:
     return render_template("record.html", record=record, sections=CHECKLIST)
 
 
+@app.get("/admin/near-miss/<record_id>")
+@admin_required
+def near_miss_detail(record_id: str) -> str | tuple[str, int]:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT * FROM near_miss_reports WHERE id = ?"), [record_id])
+        row = cursor.fetchone()
+    if not row:
+        return "Record not found", 404
+    record = dict(row)
+    for field in ("near_miss_types", "root_causes", "corrective_actions", "preventive_measures"):
+        record[field] = json.loads(record[field])
+    return render_template("near_miss_record.html", record=record)
+
+
+@app.get("/admin/violations/<record_id>")
+@admin_required
+def violation_detail(record_id: str) -> str | tuple[str, int]:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT * FROM violation_notices WHERE id = ?"), [record_id])
+        row = cursor.fetchone()
+    if not row:
+        return "Record not found", 404
+    record = dict(row)
+    record["actions"] = json.loads(record["actions"])
+    return render_template("violation_record.html", record=record)
+
+
 @app.get("/admin/export")
 @admin_required
 def export_records() -> Response:
@@ -367,6 +692,53 @@ def export_records() -> Response:
             writer.writerow([record["report_no"], record["inspection_date"], record["inspection_time"], record["project_name"], record["work_location"], record["contractor"], record["inspected_by"], record["shift"], record["total_inspected"], record["compliant"], record["non_compliant"], record["not_applicable"], record["score"], record["remarks"], record["signoff_name"], record["created_at"]])
         kind = "summary"
     filename = f'diriyah-ohs-{kind}-{datetime.now(timezone.utc).date().isoformat()}.csv'
+    return Response("\ufeff" + output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@app.get("/admin/export/near-miss")
+@admin_required
+def export_near_miss() -> Response:
+    records = filtered_near_miss(limit=5000)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Report No.", "Date", "Time", "Department / Project", "Location", "Reported By", "Type of Near Miss",
+        "What Happened", "What Could Have Happened", "Immediate Actions", "Hazard Eliminated",
+        "Root Causes", "Corrective Actions", "Preventive Measures", "Person Responsible",
+        "Target Completion Date", "Status", "Submitted At",
+    ])
+    for record in records:
+        writer.writerow([
+            record["report_no"], record["incident_date"], record["incident_time"], record["department_project"],
+            record["location"], record["reported_by"], "; ".join(json.loads(record["near_miss_types"])),
+            record["what_happened"], record["could_have_happened"], record["immediate_actions"],
+            record["hazard_eliminated"], "; ".join(json.loads(record["root_causes"])),
+            "; ".join(json.loads(record["corrective_actions"])), "; ".join(json.loads(record["preventive_measures"])),
+            record["person_responsible"], record["target_completion_date"], record["status"], record["created_at"],
+        ])
+    filename = f'diriyah-near-miss-{datetime.now(timezone.utc).date().isoformat()}.csv'
+    return Response("\ufeff" + output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@app.get("/admin/export/violations")
+@admin_required
+def export_violations() -> Response:
+    records = filtered_violations(limit=5000)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Violation No.", "Date", "Project", "Employee Name", "Employee ID", "Company / Contractor", "Job Title",
+        "Location", "Type of Violation", "Description", "Action Taken", "Deduction Amount",
+        "Issued By", "Position", "Submitted At",
+    ])
+    for record in records:
+        writer.writerow([
+            record["violation_no"], record["violation_date"], record["project_name"], record["employee_name"],
+            record["employee_id"], record["company_contractor"], record["job_title"], record["violation_location"],
+            record["violation_type"], record["violation_description"], "; ".join(json.loads(record["actions"])),
+            record["deduction_amount"], record["issued_by_name"], record["issued_by_position"], record["created_at"],
+        ])
+    filename = f'diriyah-violations-{datetime.now(timezone.utc).date().isoformat()}.csv'
     return Response("\ufeff" + output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
