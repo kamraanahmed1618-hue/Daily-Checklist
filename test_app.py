@@ -123,12 +123,12 @@ class ChecklistApplicationTests(unittest.TestCase):
     def test_submit_review_and_export_near_miss(self):
         response = self.client.post("/api/near-miss", json=self.near_miss_payload())
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.json["reportNo"], "NM-0001")
+        self.assertEqual(response.json["reportNo"], "NEAR-MISS-001")
         record_id = response.json["id"]
 
         self.login()
         dashboard = self.client.get("/admin?view=near-miss")
-        self.assertIn(b"NM-0001", dashboard.data)
+        self.assertIn(b"NEAR-MISS-001", dashboard.data)
         detail = self.client.get(f"/admin/near-miss/{record_id}")
         self.assertEqual(detail.status_code, 200)
         self.assertIn(b"NEAR MISS REPORTING FORM", detail.data)
@@ -136,7 +136,7 @@ class ChecklistApplicationTests(unittest.TestCase):
 
         export = self.client.get("/admin/export/near-miss")
         self.assertEqual(export.status_code, 200)
-        self.assertIn("NM-0001", export.get_data(as_text=True))
+        self.assertIn("NEAR-MISS-001", export.get_data(as_text=True))
 
     def test_violation_requires_employee_name(self):
         payload = self.violation_payload()
@@ -147,12 +147,12 @@ class ChecklistApplicationTests(unittest.TestCase):
     def test_submit_review_and_export_violation(self):
         response = self.client.post("/api/violations", json=self.violation_payload())
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.json["violationNo"], "VN-0001")
+        self.assertEqual(response.json["violationNo"], "VIOLATION-001")
         record_id = response.json["id"]
 
         self.login()
         dashboard = self.client.get("/admin?view=violations")
-        self.assertIn(b"VN-0001", dashboard.data)
+        self.assertIn(b"VIOLATION-001", dashboard.data)
         detail = self.client.get(f"/admin/violations/{record_id}")
         self.assertEqual(detail.status_code, 200)
         self.assertIn(b"VIOLATION NOTICE", detail.data.upper())
@@ -160,7 +160,7 @@ class ChecklistApplicationTests(unittest.TestCase):
 
         export = self.client.get("/admin/export/violations")
         self.assertEqual(export.status_code, 200)
-        self.assertIn("VN-0001", export.get_data(as_text=True))
+        self.assertIn("VIOLATION-001", export.get_data(as_text=True))
 
     def test_sequential_report_numbers(self):
         first = self.client.post("/api/inspections", json=self.payload())
