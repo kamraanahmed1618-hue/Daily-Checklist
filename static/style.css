@@ -578,3 +578,9 @@ button.primary:hover {
 .step-number {
     color: #FFFFFF !important;
 }
+/* Keep 01 and 03 white inside blue section bars */
+.section-heading .step-number,
+.card .section-heading .step-number,
+.signoff-card .section-heading .step-number {
+    color: #FFFFFF !important;
+}
