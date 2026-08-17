@@ -196,6 +196,20 @@ class ChecklistApplicationTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 503)
 
+    def test_b2_client_uses_path_style_and_disables_chunked_checksums(self):
+        with patch.dict(os.environ, {
+            "B2_ENDPOINT": "s3.us-west-004.backblazeb2.com",
+            "B2_KEY_ID": "test-key-id",
+            "B2_APPLICATION_KEY": "test-app-key",
+        }):
+            from app import b2_client
+            client = b2_client()
+        config = client.meta.config
+        self.assertEqual(config.s3["addressing_style"], "path")
+        self.assertEqual(config.request_checksum_calculation, "when_required")
+        self.assertEqual(config.response_checksum_validation, "when_required")
+        self.assertEqual(client.meta.region_name, "us-west-004")
+
     def test_upload_over_max_content_length_returns_json_not_html(self):
         oversized = io.BytesIO(b"x" * (13 * 1024 * 1024))
         with patch("app.b2_configured", return_value=True):
