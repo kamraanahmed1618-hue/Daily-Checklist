@@ -1025,6 +1025,11 @@ def health() -> Response:
 @app.errorhandler(Exception)
 def handle_unexpected_error(error: Exception) -> Any:
     if isinstance(error, HTTPException):
+        # JSON API routes (fetch()-driven, e.g. photo upload) need a parseable body even
+        # for errors Werkzeug raises itself, like a 413 for a request over MAX_CONTENT_LENGTH —
+        # otherwise the client tries to JSON.parse() Werkzeug's HTML error page and breaks.
+        if request.path.startswith("/api/"):
+            return jsonify({"error": error.description}), error.code
         return error
     app.logger.exception("Unhandled exception")
     # Only ever shown to an authenticated admin, so a raw traceback is safe here

@@ -4,6 +4,7 @@ import os
 import tempfile
 import unittest
 import zipfile
+from unittest.mock import patch
 
 
 TEST_FILES = tempfile.TemporaryDirectory()
@@ -194,6 +195,18 @@ class ChecklistApplicationTests(unittest.TestCase):
             content_type="multipart/form-data",
         )
         self.assertEqual(response.status_code, 503)
+
+    def test_upload_over_max_content_length_returns_json_not_html(self):
+        oversized = io.BytesIO(b"x" * (13 * 1024 * 1024))
+        with patch("app.b2_configured", return_value=True):
+            response = self.client.post(
+                "/api/uploads/abcdef1234567890",
+                data={"photo": (oversized, "photo.jpg")},
+                content_type="multipart/form-data",
+            )
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(response.content_type, "application/json")
+        self.assertIn("error", response.json)
 
     def test_delete_requires_admin(self):
         record_id = self.client.post("/api/inspections", json=self.payload()).json["id"]
