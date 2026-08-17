@@ -55,23 +55,12 @@ function initPhotoUpload(rootId, maxPhotos = 8) {
       return;
     }
 
+    const formData = new FormData();
+    formData.append("photo", file);
     try {
-      const presignResponse = await fetch(`/api/uploads/${token}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contentType }),
-      });
-      const presigned = await presignResponse.json();
-      if (!presignResponse.ok) throw new Error(presigned.error || "Upload failed");
-
-      const uploadResponse = await fetch(presigned.uploadUrl, {
-        method: "PUT",
-        headers: { "Content-Type": contentType },
-        body: file,
-      });
-      if (!uploadResponse.ok) throw new Error("Upload failed");
-
-      const result = { key: presigned.key };
+      const response = await fetch(`/api/uploads/${token}`, { method: "POST", body: formData });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Upload failed");
       keys.push(result.key);
       tile.classList.remove("uploading");
       tile.dataset.key = result.key;
