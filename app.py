@@ -648,7 +648,11 @@ def upload_photo(token: str) -> tuple[Response, int] | Response:
         message = "The photo could not be uploaded."
         # Only ever shown to a logged-in admin testing the form, never to a site worker submitting a report.
         if session.get("admin"):
-            message = f"{message} ({error})"
+            # botocore's own message is often generic (e.g. ConnectionClosedError); the
+            # underlying urllib3/socket error it wraps has the actually useful detail.
+            underlying = getattr(error, "kwargs", {}).get("error") if hasattr(error, "kwargs") else None
+            detail = f"{error!r} <- {underlying!r}" if underlying else repr(error)
+            message = f"{message} ({detail})"
         return jsonify({"error": message}), 500
     return jsonify({"key": key}), 201
 
