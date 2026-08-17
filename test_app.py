@@ -185,16 +185,32 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertEqual(second.json["reportNo"], "OHS-002")
 
     def test_photo_upload_rejects_bad_token(self):
-        response = self.client.post("/api/uploads/bad token!", data={}, content_type="multipart/form-data")
+        response = self.client.post("/api/uploads/bad token!", json={"contentType": "image/jpeg"})
         self.assertEqual(response.status_code, 400)
 
     def test_photo_upload_without_storage_configured(self):
-        response = self.client.post(
-            "/api/uploads/abcdef1234567890",
-            data={"photo": (io.BytesIO(b"not-a-real-image"), "photo.jpg")},
-            content_type="multipart/form-data",
-        )
+        response = self.client.post("/api/uploads/abcdef1234567890", json={"contentType": "image/jpeg"})
         self.assertEqual(response.status_code, 503)
+
+    def test_photo_upload_rejects_unsupported_content_type(self):
+        with patch("app.b2_configured", return_value=True):
+            response = self.client.post("/api/uploads/abcdef1234567890", json={"contentType": "application/pdf"})
+        self.assertEqual(response.status_code, 400)
+
+    def test_csp_allows_direct_browser_upload_to_b2(self):
+        csp = self.client.get("/near-miss").headers["Content-Security-Policy"]
+        self.assertIn("connect-src 'self' https://*.backblazeb2.com", csp)
+
+    def test_photo_upload_returns_presigned_url(self):
+        with patch.dict(os.environ, {
+            "B2_ENDPOINT": "s3.us-west-004.backblazeb2.com",
+            "B2_KEY_ID": "test-key-id",
+            "B2_APPLICATION_KEY": "test-app-key",
+        }), patch("app.b2_configured", return_value=True), patch("app.B2_BUCKET", "test-bucket"):
+            response = self.client.post("/api/uploads/abcdef1234567890", json={"contentType": "image/jpeg"})
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.json["uploadUrl"].startswith("https://s3.us-west-004.backblazeb2.com/"))
+        self.assertRegex(response.json["key"], r"^uploads/abcdef1234567890/[0-9a-f]{20}\.jpg$")
 
     def test_b2_client_uses_path_style_and_disables_chunked_checksums(self):
         with patch.dict(os.environ, {
@@ -210,14 +226,10 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertEqual(config.response_checksum_validation, "when_required")
         self.assertEqual(client.meta.region_name, "us-west-004")
 
-    def test_upload_over_max_content_length_returns_json_not_html(self):
-        oversized = io.BytesIO(b"x" * (13 * 1024 * 1024))
-        with patch("app.b2_configured", return_value=True):
-            response = self.client.post(
-                "/api/uploads/abcdef1234567890",
-                data={"photo": (oversized, "photo.jpg")},
-                content_type="multipart/form-data",
-            )
+    def test_over_max_content_length_returns_json_not_html_on_api_routes(self):
+        payload = self.near_miss_payload()
+        payload["whatHappened"] = "x" * (13 * 1024 * 1024)
+        response = self.client.post("/api/near-miss", json=payload)
         self.assertEqual(response.status_code, 413)
         self.assertEqual(response.content_type, "application/json")
         self.assertIn("error", response.json)

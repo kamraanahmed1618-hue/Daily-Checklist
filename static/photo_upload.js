@@ -1,5 +1,8 @@
 "use strict";
 
+const PHOTO_MAX_BYTES = 8 * 1024 * 1024;
+const ALLOWED_PHOTO_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
 function initPhotoUpload(rootId, maxPhotos = 8) {
   const root = document.getElementById(rootId);
   if (!root) return { getKeys: () => [] };
@@ -29,12 +32,36 @@ function initPhotoUpload(rootId, maxPhotos = 8) {
     const { tile, label } = makeTile(file);
     grid.appendChild(tile);
 
-    const formData = new FormData();
-    formData.append("photo", file);
+    if (!ALLOWED_PHOTO_TYPES.has(file.type)) {
+      tile.classList.remove("uploading");
+      tile.classList.add("error");
+      label.textContent = "Only JPEG, PNG, or WEBP photos are supported.";
+      return;
+    }
+    if (file.size > PHOTO_MAX_BYTES) {
+      tile.classList.remove("uploading");
+      tile.classList.add("error");
+      label.textContent = "Photo is too large (max 8 MB).";
+      return;
+    }
+
     try {
-      const response = await fetch(`/api/uploads/${token}`, { method: "POST", body: formData });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Upload failed");
+      const presignResponse = await fetch(`/api/uploads/${token}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contentType: file.type }),
+      });
+      const presigned = await presignResponse.json();
+      if (!presignResponse.ok) throw new Error(presigned.error || "Upload failed");
+
+      const uploadResponse = await fetch(presigned.uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+      if (!uploadResponse.ok) throw new Error("Upload failed");
+
+      const result = { key: presigned.key };
       keys.push(result.key);
       tile.classList.remove("uploading");
       tile.dataset.key = result.key;
