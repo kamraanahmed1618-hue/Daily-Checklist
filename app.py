@@ -8,6 +8,7 @@ import os
 import re
 import secrets
 import sqlite3
+import traceback
 import zipfile
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -16,6 +17,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from flask import Flask, Response, jsonify, redirect, render_template, request, send_from_directory, session, url_for
+from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from charts import bar_chart_svg, grouped_bar_chart_svg, line_chart_svg
@@ -157,6 +159,15 @@ def clean_photo_keys(value: Any) -> list[str]:
         return []
     keys = [item for item in value if isinstance(item, str) and PHOTO_KEY_PATTERN.fullmatch(item)]
     return list(dict.fromkeys(keys))[:PHOTO_MAX_COUNT]
+
+
+def safe_json_list(value: Any) -> list[Any]:
+    try:
+        parsed = json.loads(value)
+    except (TypeError, ValueError):
+        app.logger.warning("Invalid JSON in stored field, defaulting to empty list: %r", value)
+        return []
+    return parsed if isinstance(parsed, list) else []
 
 
 @contextmanager
@@ -857,7 +868,7 @@ def near_miss_detail(record_id: str) -> str | tuple[str, int]:
         return "Record not found", 404
     record = dict(row)
     for field in ("near_miss_types", "root_causes", "corrective_actions", "preventive_measures", "photos"):
-        record[field] = json.loads(record[field])
+        record[field] = safe_json_list(record[field])
     return render_template("near_miss_record.html", record=record, photo_urls=photo_urls(record["photos"]))
 
 
@@ -870,7 +881,7 @@ def delete_near_miss(record_id: str) -> Response:
         row = cursor.fetchone()
         cursor.execute(sql("DELETE FROM near_miss_reports WHERE id = ?"), [record_id])
     if row:
-        delete_photos(json.loads(row["photos"]))
+        delete_photos(safe_json_list(row["photos"]))
     return redirect(url_for("admin", view="near-miss"))
 
 
@@ -884,8 +895,8 @@ def violation_detail(record_id: str) -> str | tuple[str, int]:
     if not row:
         return "Record not found", 404
     record = dict(row)
-    record["actions"] = json.loads(record["actions"])
-    record["photos"] = json.loads(record["photos"])
+    record["actions"] = safe_json_list(record["actions"])
+    record["photos"] = safe_json_list(record["photos"])
     return render_template("violation_record.html", record=record, photo_urls=photo_urls(record["photos"]))
 
 
@@ -898,7 +909,7 @@ def delete_violation(record_id: str) -> Response:
         row = cursor.fetchone()
         cursor.execute(sql("DELETE FROM violation_notices WHERE id = ?"), [record_id])
     if row:
-        delete_photos(json.loads(row["photos"]))
+        delete_photos(safe_json_list(row["photos"]))
     return redirect(url_for("admin", view="violations"))
 
 
@@ -931,10 +942,10 @@ def near_miss_csv(records: list[dict[str, Any]]) -> str:
     for record in records:
         writer.writerow([
             record["report_no"], record["incident_date"], record["incident_time"], record["department_project"],
-            record["location"], record["reported_by"], "; ".join(json.loads(record["near_miss_types"])),
+            record["location"], record["reported_by"], "; ".join(safe_json_list(record["near_miss_types"])),
             record["what_happened"], record["could_have_happened"], record["immediate_actions"],
-            record["hazard_eliminated"], "; ".join(json.loads(record["root_causes"])),
-            "; ".join(json.loads(record["corrective_actions"])), "; ".join(json.loads(record["preventive_measures"])),
+            record["hazard_eliminated"], "; ".join(safe_json_list(record["root_causes"])),
+            "; ".join(safe_json_list(record["corrective_actions"])), "; ".join(safe_json_list(record["preventive_measures"])),
             record["person_responsible"], record["target_completion_date"], record["status"], record["created_at"],
         ])
     return output.getvalue()
@@ -952,7 +963,7 @@ def violations_csv(records: list[dict[str, Any]]) -> str:
         writer.writerow([
             record["violation_no"], record["violation_date"], record["project_name"], record["employee_name"],
             record["employee_id"], record["company_contractor"], record["job_title"], record["violation_location"],
-            record["violation_type"], record["violation_description"], "; ".join(json.loads(record["actions"])),
+            record["violation_type"], record["violation_description"], "; ".join(safe_json_list(record["actions"])),
             record["deduction_amount"], record["issued_by_name"], record["issued_by_position"], record["created_at"],
         ])
     return output.getvalue()
@@ -1005,6 +1016,18 @@ def backup_all() -> Response | tuple[Response, int]:
 @app.get("/health")
 def health() -> Response:
     return jsonify({"status": "ok"})
+
+
+@app.errorhandler(Exception)
+def handle_unexpected_error(error: Exception) -> Any:
+    if isinstance(error, HTTPException):
+        return error
+    app.logger.exception("Unhandled exception")
+    # Only ever shown to an authenticated admin, so a raw traceback is safe here
+    # and lets a real crash be diagnosed straight from the page instead of the host's logs.
+    if session.get("admin"):
+        return Response(f"Internal Server Error\n\n{traceback.format_exc()}", mimetype="text/plain"), 500
+    return jsonify({"error": "Internal Server Error"}), 500
 
 
 init_db()
