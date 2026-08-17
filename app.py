@@ -114,7 +114,15 @@ def b2_client() -> Any:
         endpoint_url=endpoint,
         aws_access_key_id=os.environ["B2_KEY_ID"],
         aws_secret_access_key=os.environ["B2_APPLICATION_KEY"],
-        config=BotoConfig(signature_version="s3v4", s3={"addressing_style": "path"}),
+        config=BotoConfig(
+            signature_version="s3v4",
+            s3={"addressing_style": "path"},
+            # B2's S3-compatible gateway doesn't support the chunked trailing-checksum
+            # uploads botocore sends by default, and silently drops the connection instead
+            # of returning an error — this puts requests back to plain SigV4 signing.
+            request_checksum_calculation="when_required",
+            response_checksum_validation="when_required",
+        ),
         region_name=region,
     )
 
