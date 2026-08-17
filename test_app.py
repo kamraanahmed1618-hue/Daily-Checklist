@@ -228,6 +228,33 @@ class ChecklistApplicationTests(unittest.TestCase):
         detail = self.client.get(f"/admin/violations/{record_id}")
         self.assertEqual(detail.status_code, 404)
 
+    def test_near_miss_and_violation_detail_pages_render(self):
+        near_miss_id = self.client.post("/api/near-miss", json=self.near_miss_payload()).json["id"]
+        violation_id = self.client.post("/api/violations", json=self.violation_payload()).json["id"]
+        self.login()
+        near_miss_detail = self.client.get(f"/admin/near-miss/{near_miss_id}")
+        self.assertEqual(near_miss_detail.status_code, 200)
+        violation_detail = self.client.get(f"/admin/violations/{violation_id}")
+        self.assertEqual(violation_detail.status_code, 200)
+
+    def test_detail_pages_survive_malformed_legacy_json(self):
+        near_miss_id = self.client.post("/api/near-miss", json=self.near_miss_payload()).json["id"]
+        violation_id = self.client.post("/api/violations", json=self.violation_payload()).json["id"]
+        with database() as connection:
+            connection.execute(
+                "UPDATE near_miss_reports SET near_miss_types = ?, photos = ? WHERE id = ?",
+                ["not-json", "not-json", near_miss_id],
+            )
+            connection.execute(
+                "UPDATE violation_notices SET actions = ?, photos = ? WHERE id = ?",
+                ["not-json", "not-json", violation_id],
+            )
+        self.login()
+        near_miss_detail = self.client.get(f"/admin/near-miss/{near_miss_id}")
+        self.assertEqual(near_miss_detail.status_code, 200)
+        violation_detail = self.client.get(f"/admin/violations/{violation_id}")
+        self.assertEqual(violation_detail.status_code, 200)
+
     def test_backup_rejects_missing_or_wrong_token(self):
         self.assertEqual(self.client.get("/admin/backup").status_code, 401)
         self.assertEqual(self.client.get("/admin/backup?token=wrong").status_code, 401)
