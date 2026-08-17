@@ -635,9 +635,13 @@ def upload_photo(token: str) -> tuple[Response, int] | Response:
     key = f"uploads/{token}/{secrets.token_hex(10)}.{ext}"
     try:
         b2_client().put_object(Bucket=B2_BUCKET, Key=key, Body=data, ContentType=f"image/{ext}")
-    except Exception:
+    except Exception as error:
         app.logger.exception("Photo upload failed")
-        return jsonify({"error": "The photo could not be uploaded."}), 500
+        message = "The photo could not be uploaded."
+        # Only ever shown to a logged-in admin testing the form, never to a site worker submitting a report.
+        if session.get("admin"):
+            message = f"{message} ({error})"
+        return jsonify({"error": message}), 500
     return jsonify({"key": key}), 201
 
 
