@@ -114,7 +114,7 @@ def b2_client() -> Any:
         endpoint_url=endpoint,
         aws_access_key_id=os.environ["B2_KEY_ID"],
         aws_secret_access_key=os.environ["B2_APPLICATION_KEY"],
-        config=BotoConfig(signature_version="s3v4"),
+        config=BotoConfig(signature_version="s3v4", s3={"addressing_style": "path"}),
         region_name=region,
     )
 
