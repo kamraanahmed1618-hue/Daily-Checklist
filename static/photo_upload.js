@@ -2,6 +2,15 @@
 
 const PHOTO_MAX_BYTES = 8 * 1024 * 1024;
 const ALLOWED_PHOTO_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const EXTENSION_CONTENT_TYPES = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp" };
+
+// Some phones/browsers don't report a MIME type for certain extensions (.jpeg is a common
+// gap), leaving file.type empty — fall back to the filename extension in that case.
+function resolveContentType(file) {
+  if (ALLOWED_PHOTO_TYPES.has(file.type)) return file.type;
+  const extension = file.name.split(".").pop().toLowerCase();
+  return EXTENSION_CONTENT_TYPES[extension] || null;
+}
 
 function initPhotoUpload(rootId, maxPhotos = 8) {
   const root = document.getElementById(rootId);
@@ -32,7 +41,8 @@ function initPhotoUpload(rootId, maxPhotos = 8) {
     const { tile, label } = makeTile(file);
     grid.appendChild(tile);
 
-    if (!ALLOWED_PHOTO_TYPES.has(file.type)) {
+    const contentType = resolveContentType(file);
+    if (!contentType) {
       tile.classList.remove("uploading");
       tile.classList.add("error");
       label.textContent = "Only JPEG, PNG, or WEBP photos are supported.";
@@ -45,23 +55,12 @@ function initPhotoUpload(rootId, maxPhotos = 8) {
       return;
     }
 
+    const formData = new FormData();
+    formData.append("photo", file);
     try {
-      const presignResponse = await fetch(`/api/uploads/${token}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contentType: file.type }),
-      });
-      const presigned = await presignResponse.json();
-      if (!presignResponse.ok) throw new Error(presigned.error || "Upload failed");
-
-      const uploadResponse = await fetch(presigned.uploadUrl, {
-        method: "PUT",
-        headers: { "Content-Type": file.type },
-        body: file,
-      });
-      if (!uploadResponse.ok) throw new Error("Upload failed");
-
-      const result = { key: presigned.key };
+      const response = await fetch(`/api/uploads/${token}`, { method: "POST", body: formData });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Upload failed");
       keys.push(result.key);
       tile.classList.remove("uploading");
       tile.dataset.key = result.key;

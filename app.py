@@ -588,7 +588,7 @@ def security_headers(response: Response) -> Response:
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "same-origin")
     response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-    response.headers.setdefault("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https://*.backblazeb2.com; style-src 'self'; script-src 'self'; connect-src 'self' https://*.backblazeb2.com; base-uri 'self'; frame-ancestors 'none'")
+    response.headers.setdefault("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https://*.backblazeb2.com; style-src 'self'; script-src 'self'; connect-src 'self'; base-uri 'self'; frame-ancestors 'none'")
     return response
 
 
@@ -614,30 +614,39 @@ def violation_form() -> str:
     return render_template("violation.html", actions=VIOLATION_ACTIONS)
 
 
-UPLOAD_CONTENT_TYPES = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
+def detect_image_type(data: bytes) -> str | None:
+    if data.startswith(b"\xff\xd8\xff"):
+        return "jpg"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    return None
+
+
+PHOTO_MAX_BYTES = 8 * 1024 * 1024
 
 
 @app.post("/api/uploads/<token>")
-def presign_upload(token: str) -> tuple[Response, int] | Response:
+def upload_photo(token: str) -> tuple[Response, int] | Response:
     if not re.fullmatch(r"[a-zA-Z0-9_-]{8,64}", token):
         return jsonify({"error": "Invalid upload session."}), 400
     if not b2_configured():
         return jsonify({"error": "Photo storage is not configured."}), 503
-    payload = request.get_json(silent=True) or {}
-    ext = UPLOAD_CONTENT_TYPES.get(payload.get("contentType"))
+    uploaded = request.files.get("photo")
+    if not uploaded:
+        return jsonify({"error": "No photo provided."}), 400
+    data = uploaded.read(PHOTO_MAX_BYTES + 1)
+    if len(data) > PHOTO_MAX_BYTES:
+        return jsonify({"error": "Photo is too large (max 8 MB)."}), 400
+    ext = detect_image_type(data)
     if not ext:
         return jsonify({"error": "Only JPEG, PNG, or WEBP photos are supported."}), 400
     key = f"uploads/{token}/{secrets.token_hex(10)}.{ext}"
     try:
-        # The browser uploads the photo bytes straight to B2 with this URL — our server
-        # never proxies the file itself, only signs where it's allowed to go.
-        upload_url = b2_client().generate_presigned_url(
-            "put_object",
-            Params={"Bucket": B2_BUCKET, "Key": key, "ContentType": payload["contentType"]},
-            ExpiresIn=300,
-        )
+        b2_client().put_object(Bucket=B2_BUCKET, Key=key, Body=data, ContentType=f"image/{ext}")
     except Exception as error:
-        app.logger.exception("Could not create an upload URL")
+        app.logger.exception("Photo upload failed")
         message = "The photo could not be uploaded."
         # Only ever shown to a logged-in admin testing the form, never to a site worker submitting a report.
         if session.get("admin"):
@@ -647,7 +656,7 @@ def presign_upload(token: str) -> tuple[Response, int] | Response:
             detail = f"{error!r} <- {underlying!r}" if underlying else repr(error)
             message = f"{message} ({detail})"
         return jsonify({"error": message}), 500
-    return jsonify({"uploadUrl": upload_url, "key": key}), 201
+    return jsonify({"key": key}), 201
 
 
 @app.get("/api/checklist")
