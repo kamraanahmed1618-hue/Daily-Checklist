@@ -1,14 +1,16 @@
 "use strict";
 
-const CACHE_NAME = "ohs-diriyah-v2";
+const CACHE_NAME = "ohs-diriyah-v3";
 const APP_SHELL = [
   "/",
   "/near-miss",
   "/violation",
+  "/ptw",
   "/static/style.css",
   "/static/form.js",
   "/static/near_miss.js",
   "/static/violation.js",
+  "/static/ptw.js",
   "/static/photo_upload.js",
   "/static/icons/icon-192.png",
   "/static/icons/icon-512.png",

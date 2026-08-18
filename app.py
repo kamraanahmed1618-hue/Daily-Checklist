@@ -281,6 +281,31 @@ def init_db() -> None:
         )""",
         "CREATE INDEX IF NOT EXISTS violations_date_idx ON violation_notices (violation_date)",
         "CREATE INDEX IF NOT EXISTS violations_created_idx ON violation_notices (created_at)",
+        """CREATE TABLE IF NOT EXISTS ptw_logs (
+            id TEXT PRIMARY KEY,
+            seq INTEGER,
+            ptw_number TEXT NOT NULL,
+            issuer TEXT NOT NULL,
+            receiver TEXT NOT NULL,
+            ptw_type TEXT NOT NULL,
+            work_description TEXT NOT NULL DEFAULT '',
+            area_hse_personnel TEXT NOT NULL DEFAULT '',
+            location TEXT NOT NULL DEFAULT '',
+            shift TEXT NOT NULL DEFAULT '',
+            start_date TEXT NOT NULL,
+            start_time TEXT NOT NULL DEFAULT '',
+            end_date TEXT NOT NULL DEFAULT '',
+            end_time TEXT NOT NULL DEFAULT '',
+            company TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'open',
+            workers_count INTEGER,
+            reviewed_by TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )""",
+        "CREATE INDEX IF NOT EXISTS ptw_start_date_idx ON ptw_logs (start_date)",
+        "CREATE INDEX IF NOT EXISTS ptw_created_idx ON ptw_logs (created_at)",
+        "CREATE INDEX IF NOT EXISTS ptw_status_idx ON ptw_logs (status)",
     ]
     with database() as connection:
         cursor = connection.cursor()
@@ -299,7 +324,7 @@ def init_db() -> None:
         ensure_column("near_miss_reports", "photos", "TEXT NOT NULL DEFAULT '[]'")
         ensure_column("violation_notices", "photos", "TEXT NOT NULL DEFAULT '[]'")
         # Backfill sequential numbers for any pre-existing records in submission order.
-        for table in ("inspections", "near_miss_reports", "violation_notices"):
+        for table in ("inspections", "near_miss_reports", "violation_notices", "ptw_logs"):
             cursor.execute(sql(f"SELECT COALESCE(MAX(seq), 0) AS next_seq FROM {table}"))
             next_seq = cursor.fetchone()["next_seq"] or 0
             cursor.execute(sql(f"SELECT id FROM {table} WHERE seq IS NULL ORDER BY created_at ASC"))
@@ -384,6 +409,12 @@ VIOLATION_ACTIONS = [
     "First Warning", "Final Warning", "Salary Deduction",
     "Deduction from Subcontractor Payment", "Removal from Site",
 ]
+PTW_TYPES = [
+    "Cold work", "Hot work", "Lifting", "Excavation", "Scaffolding",
+    "Work at Height", "Concrete", "Ground network", "Other",
+]
+PTW_SHIFTS = ["Day", "Night"]
+PTW_STATUSES = ["open", "closed"]
 
 
 def clean_choices(value: Any, field: str, allowed: list[str]) -> list[str]:
@@ -482,6 +513,58 @@ def validate_violation(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def clean_date(value: Any, field: str, required: bool = True) -> str:
+    cleaned = clean_text(value, field, 10, required)
+    if cleaned and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", cleaned):
+        raise ValueError(f"Enter a valid {field}.")
+    return cleaned
+
+
+def clean_time(value: Any, field: str, required: bool = True) -> str:
+    cleaned = clean_text(value, field, 5, required)
+    if cleaned and not re.fullmatch(r"\d{2}:\d{2}", cleaned):
+        raise ValueError(f"Enter a valid {field}.")
+    return cleaned
+
+
+def validate_ptw(payload: dict[str, Any]) -> dict[str, Any]:
+    record = {
+        "ptw_number": clean_text(payload.get("ptwNumber"), "PTW number", 80),
+        "issuer": clean_text(payload.get("issuer"), "PTW issuer"),
+        "receiver": clean_text(payload.get("receiver"), "PTW receiver"),
+        "ptw_type": clean_text(payload.get("ptwType"), "Type of PTW", 80),
+        "work_description": clean_text(payload.get("workDescription"), "Work description", 2000),
+        "area_hse_personnel": clean_text(payload.get("areaHsePersonnel"), "Area HSE personnel", 200, False),
+        "location": clean_text(payload.get("location"), "Location"),
+        "shift": clean_text(payload.get("shift"), "Shift", 20, False),
+        "start_date": clean_date(payload.get("startDate"), "PTW start date"),
+        "start_time": clean_time(payload.get("startTime"), "PTW start time"),
+        "end_date": clean_date(payload.get("endDate"), "PTW end date"),
+        "end_time": clean_time(payload.get("endTime"), "PTW end time"),
+        "company": clean_text(payload.get("company"), "Company name", 200),
+        "status": clean_text(payload.get("status"), "Status", 20, False) or "open",
+        "reviewed_by": clean_text(payload.get("reviewedBy"), "Reviewed by", 200, False),
+    }
+    if record["ptw_type"] not in PTW_TYPES:
+        raise ValueError("Select a valid type of PTW.")
+    if record["shift"] and record["shift"] not in PTW_SHIFTS:
+        raise ValueError("Shift must be Day or Night.")
+    if record["status"] not in PTW_STATUSES:
+        raise ValueError("Status must be open or closed.")
+
+    workers_raw = payload.get("workersCount")
+    workers_count = None
+    if workers_raw not in (None, ""):
+        try:
+            workers_count = int(workers_raw)
+        except (TypeError, ValueError):
+            raise ValueError("Number of workers must be a whole number.")
+        if workers_count < 0 or workers_count > 9999:
+            raise ValueError("Number of workers must be between 0 and 9999.")
+
+    return {**record, "workers_count": workers_count}
+
+
 def admin_required(view: Any) -> Any:
     @wraps(view)
     def wrapped(*args: Any, **kwargs: Any) -> Any:
@@ -525,6 +608,10 @@ def filtered_near_miss(limit: int = 1000) -> list[dict[str, Any]]:
 
 def filtered_violations(limit: int = 1000) -> list[dict[str, Any]]:
     return filtered_rows("violation_notices", ["violation_no", "employee_name", "company_contractor", "violation_location"], "violation_date", limit)
+
+
+def filtered_ptw(limit: int = 1000) -> list[dict[str, Any]]:
+    return filtered_rows("ptw_logs", ["ptw_number", "issuer", "receiver", "location", "company"], "start_date", limit)
 
 
 def week_start(date_str: str) -> str | None:
@@ -612,6 +699,11 @@ def near_miss_form() -> str:
 @app.get("/violation")
 def violation_form() -> str:
     return render_template("violation.html", actions=VIOLATION_ACTIONS)
+
+
+@app.get("/ptw")
+def ptw_form() -> str:
+    return render_template("ptw.html", ptw_types=PTW_TYPES, shifts=PTW_SHIFTS)
 
 
 def detect_image_type(data: bytes) -> str | None:
@@ -776,6 +868,37 @@ def submit_violation() -> tuple[Response, int] | Response:
         return jsonify({"error": "The violation notice could not be saved."}), 500
 
 
+@app.post("/api/ptw")
+def submit_ptw() -> tuple[Response, int] | Response:
+    try:
+        payload = request.get_json(force=True, silent=False)
+        if not isinstance(payload, dict):
+            raise ValueError("The PTW log data is invalid.")
+        record = validate_ptw(payload)
+        record_id = secrets.token_hex(16)
+        now = datetime.now(timezone.utc).isoformat()
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute(sql("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM ptw_logs"))
+            seq = cursor.fetchone()["next_seq"]
+            values = [
+                record_id, seq, record["ptw_number"], record["issuer"], record["receiver"], record["ptw_type"],
+                record["work_description"], record["area_hse_personnel"], record["location"], record["shift"],
+                record["start_date"], record["start_time"], record["end_date"], record["end_time"],
+                record["company"], record["status"], record["workers_count"], record["reviewed_by"], now, now,
+            ]
+            placeholders = ",".join("?" for _ in values)
+            cursor.execute(sql(f"INSERT INTO ptw_logs VALUES ({placeholders})"), values)
+        return jsonify({"id": record_id, "ptwNumber": record["ptw_number"]}), 201
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+    except HTTPException:
+        raise
+    except Exception:
+        app.logger.exception("PTW log submission failed")
+        return jsonify({"error": "The PTW log entry could not be saved."}), 500
+
+
 @app.route("/admin", methods=["GET", "POST"])
 def admin() -> str | Response:
     error = ""
@@ -793,7 +916,7 @@ def admin() -> str | Response:
         return render_template("login.html", error=error, configured=configured)
 
     view = request.args.get("view", "inspections")
-    if view not in {"inspections", "near-miss", "violations", "trends"}:
+    if view not in {"inspections", "near-miss", "violations", "ptw", "trends"}:
         view = "inspections"
 
     with database() as connection:
@@ -804,10 +927,13 @@ def admin() -> str | Response:
         near_miss_count = cursor.fetchone()["c"]
         cursor.execute("SELECT COUNT(*) AS c FROM violation_notices")
         violations_count = cursor.fetchone()["c"]
+        cursor.execute("SELECT COUNT(*) AS c FROM ptw_logs")
+        ptw_count = cursor.fetchone()["c"]
 
     records: list[dict[str, Any]] = []
     near_miss_records: list[dict[str, Any]] = []
     violations: list[dict[str, Any]] = []
+    ptw_logs: list[dict[str, Any]] = []
     trends: list[dict[str, Any]] = []
     total = average = non_compliant = 0
     if view == "inspections":
@@ -819,6 +945,8 @@ def admin() -> str | Response:
         near_miss_records = filtered_near_miss()
     elif view == "violations":
         violations = filtered_violations()
+    elif view == "ptw":
+        ptw_logs = filtered_ptw()
     else:
         trends = compute_trends()
 
@@ -843,11 +971,13 @@ def admin() -> str | Response:
         non_compliant=non_compliant,
         near_miss_records=near_miss_records,
         violations=violations,
+        ptw_logs=ptw_logs,
         trends=trends,
         trend_charts=trend_charts,
         inspections_count=inspections_count,
         near_miss_count=near_miss_count,
         violations_count=violations_count,
+        ptw_count=ptw_count,
     )
 
 
@@ -937,6 +1067,59 @@ def delete_violation(record_id: str) -> Response:
     return redirect(url_for("admin", view="violations"))
 
 
+PTW_FORM_FIELDS = {
+    "ptwNumber": "ptw_number", "issuer": "issuer", "receiver": "receiver", "ptwType": "ptw_type",
+    "workDescription": "work_description", "areaHsePersonnel": "area_hse_personnel", "location": "location",
+    "shift": "shift", "startDate": "start_date", "startTime": "start_time", "endDate": "end_date",
+    "endTime": "end_time", "company": "company", "status": "status", "workersCount": "workers_count",
+    "reviewedBy": "reviewed_by",
+}
+
+
+@app.route("/admin/ptw/<record_id>", methods=["GET", "POST"])
+@admin_required
+def ptw_detail(record_id: str) -> str | tuple[str, int] | Response:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT * FROM ptw_logs WHERE id = ?"), [record_id])
+        row = cursor.fetchone()
+    if not row:
+        return "Record not found", 404
+    record = dict(row)
+    error = ""
+    if request.method == "POST":
+        form_payload = {key: request.form.get(key) for key in PTW_FORM_FIELDS}
+        try:
+            updated = validate_ptw(form_payload)
+            with database() as connection:
+                cursor = connection.cursor()
+                cursor.execute(sql(
+                    "UPDATE ptw_logs SET ptw_number=?, issuer=?, receiver=?, ptw_type=?, work_description=?, "
+                    "area_hse_personnel=?, location=?, shift=?, start_date=?, start_time=?, end_date=?, end_time=?, "
+                    "company=?, status=?, workers_count=?, reviewed_by=?, updated_at=? WHERE id=?"
+                ), [
+                    updated["ptw_number"], updated["issuer"], updated["receiver"], updated["ptw_type"],
+                    updated["work_description"], updated["area_hse_personnel"], updated["location"], updated["shift"],
+                    updated["start_date"], updated["start_time"], updated["end_date"], updated["end_time"],
+                    updated["company"], updated["status"], updated["workers_count"], updated["reviewed_by"],
+                    datetime.now(timezone.utc).isoformat(), record_id,
+                ])
+            return redirect(url_for("admin", view="ptw"))
+        except ValueError as err:
+            error = str(err)
+            record = {**record, **{db_key: form_payload[form_key] for form_key, db_key in PTW_FORM_FIELDS.items()}}
+    return render_template("ptw_edit.html", record=record, ptw_types=PTW_TYPES, shifts=PTW_SHIFTS, statuses=PTW_STATUSES, error=error)
+
+
+@app.post("/admin/ptw/<record_id>/delete")
+@admin_required
+def delete_ptw(record_id: str) -> Response:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("DELETE FROM ptw_logs WHERE id = ?"), [record_id])
+    return redirect(url_for("admin", view="ptw"))
+
+
 def inspections_csv(records: list[dict[str, Any]], detailed: bool) -> str:
     output = io.StringIO()
     writer = csv.writer(output)
@@ -993,6 +1176,25 @@ def violations_csv(records: list[dict[str, Any]]) -> str:
     return output.getvalue()
 
 
+def ptw_csv(records: list[dict[str, Any]]) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "S.N", "PTW Number", "PTW Issuer", "PTW Receiver", "Type of PTW", "Work Description",
+        "Area HSE Personnel", "Location", "Shift", "PTW Start Date & Time", "PTW End Date & Time",
+        "Company Name", "Status", "No. of Workers", "Reviewed By",
+    ])
+    for record in records:
+        writer.writerow([
+            record["seq"], record["ptw_number"], record["issuer"], record["receiver"], record["ptw_type"],
+            record["work_description"], record["area_hse_personnel"], record["location"], record["shift"],
+            f'{record["start_date"]} {record["start_time"]}'.strip(), f'{record["end_date"]} {record["end_time"]}'.strip(),
+            record["company"], record["status"], record["workers_count"] if record["workers_count"] is not None else "",
+            record["reviewed_by"],
+        ])
+    return output.getvalue()
+
+
 @app.get("/admin/export")
 @admin_required
 def export_records() -> Response:
@@ -1018,6 +1220,14 @@ def export_violations() -> Response:
     return Response("\ufeff" + csv_text, mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
+@app.get("/admin/export/ptw")
+@admin_required
+def export_ptw() -> Response:
+    csv_text = ptw_csv(filtered_ptw(limit=5000))
+    filename = f'diriyah-ptw-log-{datetime.now(timezone.utc).date().isoformat()}.csv'
+    return Response("\ufeff" + csv_text, mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
 @app.get("/admin/backup")
 def backup_all() -> Response | tuple[Response, int]:
     expected = os.environ.get("EXPORT_TOKEN")
@@ -1032,6 +1242,7 @@ def backup_all() -> Response | tuple[Response, int]:
         archive.writestr(f"inspections-detailed-{today}.csv", "\ufeff" + inspections_csv(filtered_records(limit=5000), detailed=True))
         archive.writestr(f"near-miss-{today}.csv", "\ufeff" + near_miss_csv(filtered_near_miss(limit=5000)))
         archive.writestr(f"violations-{today}.csv", "\ufeff" + violations_csv(filtered_violations(limit=5000)))
+        archive.writestr(f"ptw-log-{today}.csv", "\ufeff" + ptw_csv(filtered_ptw(limit=5000)))
     buffer.seek(0)
     filename = f"diriyah-ohs-backup-{today}.zip"
     return Response(buffer.getvalue(), mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})

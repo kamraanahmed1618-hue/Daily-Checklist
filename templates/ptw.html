@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}PTW Log · 1 Hotel Diriyah OHS{% endblock %}
+{% block body_class %}form-page{% endblock %}
+{% block content %}
+<section class="hero">
+  <div>
+    <div class="partner-logos">
+      <img src="{{ url_for('static', filename='egis.png') }}" alt="Egis">
+      <img src="{{ url_for('static', filename='dewan.png') }}" alt="Dewan">
+      <img src="{{ url_for('static', filename='bec-ashoka.png') }}" alt="BEC Ashoka">
+    </div>
+    <span class="eyebrow">Daily site assurance</span>
+    <h1>Permit To Work Log</h1>
+    <p>Log a permit to work as it's issued or received. Your HSE coordinator can update its status and export the full log at any time.</p>
+  </div>
+</section>
+
+<div id="success-panel" class="success-panel hidden" role="status" aria-live="polite">
+  <span class="success-icon">✓</span>
+  <div>
+    <span class="eyebrow">Logged</span>
+    <h2>PTW entry saved</h2>
+    <p id="success-copy"></p>
+    <button class="button primary" id="new-report" type="button">Log another PTW</button>
+  </div>
+</div>
+
+<form id="ptw-form" novalidate>
+  <section class="card">
+    <div class="section-heading">
+      <div><span class="step-number">01</span><h2>Permit details</h2></div>
+      <p>Fields marked <span class="required">*</span> are required</p>
+    </div>
+    <div class="field-grid">
+      <label><span>PTW number <b>*</b></span><input name="ptwNumber" required maxlength="80" placeholder="e.g. BAJV-829"></label>
+      <label><span>Type of PTW <b>*</b></span>
+        <select name="ptwType" required>
+          <option value="">Select</option>
+          {% for type in ptw_types %}<option value="{{ type }}">{{ type }}</option>{% endfor %}
+        </select>
+      </label>
+      <label><span>PTW issuer <b>*</b></span><input name="issuer" required maxlength="200"></label>
+      <label><span>PTW receiver <b>*</b></span><input name="receiver" required maxlength="200"></label>
+      <label><span>Company name (contractor / sub-contractor) <b>*</b></span><input name="company" required maxlength="200"></label>
+      <label><span>Location <b>*</b></span><input name="location" required maxlength="200" placeholder="Area / zone"></label>
+      <label><span>Area HSE personnel</span><input name="areaHsePersonnel" maxlength="200"></label>
+      <label><span>Shift</span>
+        <select name="shift">
+          <option value="">Select</option>
+          {% for item in shifts %}<option value="{{ item }}">{{ item }}</option>{% endfor %}
+        </select>
+      </label>
+      <label><span>Number of workers</span><input name="workersCount" type="number" min="0" max="9999"></label>
+      <label><span>Reviewed by (HSE incharge / PTW coordinator)</span><input name="reviewedBy" maxlength="200"></label>
+    </div>
+    <div class="field-grid one-col">
+      <label><span>Work description <b>*</b></span><textarea name="workDescription" rows="3" maxlength="2000" required></textarea></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-heading"><div><span class="step-number">02</span><h2>Duration &amp; status</h2></div></div>
+    <div class="field-grid">
+      <label><span>PTW start date <b>*</b></span><input name="startDate" type="date" required></label>
+      <label><span>PTW start time <b>*</b></span><input name="startTime" type="time" required></label>
+      <label><span>PTW end date <b>*</b></span><input name="endDate" type="date" required></label>
+      <label><span>PTW end time <b>*</b></span><input name="endTime" type="time" required></label>
+    </div>
+  </section>
+
+  <div id="form-error" class="form-error hidden" role="alert"></div>
+  <div class="submit-bar">
+    <div><strong>PTW log entry</strong><span>New entries start as "open" — your coordinator closes them once work finishes</span></div>
+    <button class="button primary submit-button" type="submit">Save entry</button>
+  </div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='ptw.js') }}" defer></script>
+{% endblock %}
