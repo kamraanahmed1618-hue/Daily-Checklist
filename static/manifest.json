@@ -1,7 +1,7 @@
 {
   "name": "1 Hotel Diriyah OHS",
   "short_name": "OHS Diriyah",
-  "description": "Daily OHS inspections, near-miss reports, and violation notices for 1 Hotel Diriyah.",
+  "description": "Daily OHS inspections, near-miss reports, violation notices, and PTW logs for 1 Hotel Diriyah.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

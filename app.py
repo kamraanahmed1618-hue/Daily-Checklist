@@ -614,6 +614,25 @@ def filtered_ptw(limit: int = 1000) -> list[dict[str, Any]]:
     return filtered_rows("ptw_logs", ["ptw_number", "issuer", "receiver", "location", "company"], "start_date", limit)
 
 
+def record_counts() -> dict[str, int]:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute("SELECT COUNT(*) AS c FROM inspections")
+        inspections = cursor.fetchone()["c"]
+        cursor.execute("SELECT COUNT(*) AS c FROM near_miss_reports")
+        near_miss = cursor.fetchone()["c"]
+        cursor.execute("SELECT COUNT(*) AS c FROM violation_notices")
+        violations = cursor.fetchone()["c"]
+        cursor.execute("SELECT COUNT(*) AS c FROM ptw_logs")
+        ptw = cursor.fetchone()["c"]
+        cursor.execute(sql("SELECT COUNT(*) AS c FROM ptw_logs WHERE status = ?"), ["open"])
+        ptw_open = cursor.fetchone()["c"]
+    return {
+        "inspections": inspections, "near_miss": near_miss, "violations": violations,
+        "ptw": ptw, "ptw_open": ptw_open,
+    }
+
+
 def week_start(date_str: str) -> str | None:
     try:
         parsed = datetime.strptime(date_str, "%Y-%m-%d").date()
@@ -680,7 +699,12 @@ def security_headers(response: Response) -> Response:
 
 
 @app.get("/")
-def index() -> str:
+def home() -> str:
+    return render_template("home.html", counts=record_counts())
+
+
+@app.get("/inspection")
+def inspection_form() -> str:
     return render_template("index.html", total_items=len(CHECKLIST_ITEMS))
 
 
@@ -919,16 +943,7 @@ def admin() -> str | Response:
     if view not in {"inspections", "near-miss", "violations", "ptw", "trends"}:
         view = "inspections"
 
-    with database() as connection:
-        cursor = connection.cursor()
-        cursor.execute("SELECT COUNT(*) AS c FROM inspections")
-        inspections_count = cursor.fetchone()["c"]
-        cursor.execute("SELECT COUNT(*) AS c FROM near_miss_reports")
-        near_miss_count = cursor.fetchone()["c"]
-        cursor.execute("SELECT COUNT(*) AS c FROM violation_notices")
-        violations_count = cursor.fetchone()["c"]
-        cursor.execute("SELECT COUNT(*) AS c FROM ptw_logs")
-        ptw_count = cursor.fetchone()["c"]
+    counts = record_counts()
 
     records: list[dict[str, Any]] = []
     near_miss_records: list[dict[str, Any]] = []
@@ -974,10 +989,10 @@ def admin() -> str | Response:
         ptw_logs=ptw_logs,
         trends=trends,
         trend_charts=trend_charts,
-        inspections_count=inspections_count,
-        near_miss_count=near_miss_count,
-        violations_count=violations_count,
-        ptw_count=ptw_count,
+        inspections_count=counts["inspections"],
+        near_miss_count=counts["near_miss"],
+        violations_count=counts["violations"],
+        ptw_count=counts["ptw"],
     )
 
 

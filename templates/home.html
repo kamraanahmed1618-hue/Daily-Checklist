@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}1 Hotel Diriyah OHS{% endblock %}
+{% block body_class %}home-page{% endblock %}
+{% block content %}
+<section class="hero">
+  <div>
+    <div class="partner-logos">
+      <img src="{{ url_for('static', filename='egis.png') }}" alt="Egis">
+      <img src="{{ url_for('static', filename='dewan.png') }}" alt="Dewan">
+      <img src="{{ url_for('static', filename='bec-ashoka.png') }}" alt="BEC Ashoka">
+    </div>
+    <span class="eyebrow">1 Hotel Diriyah · Occupational Health &amp; Safety</span>
+    <h1>Site safety &amp; permit systems</h1>
+    <p>One place to file daily inspections, report near-misses and violations, and log permits to work. Pick a system below to get started.</p>
+  </div>
+</section>
+
+<section class="stats-grid cols-4">
+  <article><span>Inspections logged</span><strong>{{ counts.inspections }}</strong></article>
+  <article><span>Near-miss reports</span><strong>{{ counts.near_miss }}</strong></article>
+  <article><span>Violation notices</span><strong>{{ counts.violations }}</strong></article>
+  <article><span>Open PTW permits</span><strong>{{ counts.ptw_open }}</strong></article>
+</section>
+
+<div class="home-grid">
+  <a class="home-card inspection" href="{{ url_for('inspection_form') }}">
+    <h2>New Inspection</h2>
+    <p>Complete the daily OHS site inspection checklist and sign off before submission.</p>
+    <span class="home-card-arrow">Start inspection →</span>
+  </a>
+  <a class="home-card near-miss" href="{{ url_for('near_miss_form') }}">
+    <h2>Near-Miss Report</h2>
+    <p>Report an event that could have caused harm, before it happens again.</p>
+    <span class="home-card-arrow">Report near-miss →</span>
+  </a>
+  <a class="home-card violation" href="{{ url_for('violation_form') }}">
+    <h2>Violation Notice</h2>
+    <p>Record an occupational health &amp; safety violation and the action taken.</p>
+    <span class="home-card-arrow">Issue notice →</span>
+  </a>
+  <a class="home-card ptw" href="{{ url_for('ptw_form') }}">
+    <h2>PTW Log</h2>
+    <p>Log a permit to work as it's issued or received on site.</p>
+    <span class="home-card-arrow">Log permit →</span>
+  </a>
+  <a class="home-card records" href="{{ url_for('admin') }}">
+    <h2>Records</h2>
+    <p>Search, review, print, and export everything submitted across all four systems.</p>
+    <span class="home-card-arrow">Open records →</span>
+  </a>
+</div>
+{% endblock %}

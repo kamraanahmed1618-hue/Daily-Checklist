@@ -1,8 +1,9 @@
 "use strict";
 
-const CACHE_NAME = "ohs-diriyah-v3";
+const CACHE_NAME = "ohs-diriyah-v4";
 const APP_SHELL = [
   "/",
+  "/inspection",
   "/near-miss",
   "/violation",
   "/ptw",
