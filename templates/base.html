@@ -26,13 +26,13 @@
     <header class="site-header">
         <div class="header-inner">
 
-            <div class="brand">
+            <a class="brand" href="{{ url_for('home') }}">
                 <span class="project-name">1 Hotel Diriyah</span>
                 <span class="department-name">Occupational Health & Safety</span>
-            </div>
+            </a>
 
             <nav class="main-nav">
-                <a href="{{ url_for('index') }}">New Inspection</a>
+                <a href="{{ url_for('inspection_form') }}">New Inspection</a>
                 <a href="{{ url_for('near_miss_form') }}">Near-Miss Report</a>
                 <a href="{{ url_for('violation_form') }}">Violation Notice</a>
                 <a href="{{ url_for('ptw_form') }}">PTW Log</a>

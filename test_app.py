@@ -84,6 +84,17 @@ class ChecklistApplicationTests(unittest.TestCase):
             "endTime": "17:00",
         }
 
+    def test_homepage_links_to_all_systems(self):
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        for path in ("/inspection", "/near-miss", "/violation", "/ptw", "/admin"):
+            self.assertIn(path.encode(), response.data)
+
+    def test_inspection_form_moved_from_root(self):
+        response = self.client.get("/inspection")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"OHS Team Inspection Checklist", response.data)
+
     def test_checklist_has_all_source_requirements(self):
         response = self.client.get("/api/checklist")
         self.assertEqual(response.status_code, 200)
