@@ -27,11 +27,11 @@ a { color: inherit; }
 .hidden { display: none !important; }
 
 .site-header { min-height: 76px; padding: 12px max(24px, calc((100vw - 1180px) / 2)); background: var(--navy); color: white; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
-.header-inner { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.header-inner { width: 100%; display: flex; flex-wrap: wrap; row-gap: 8px; align-items: center; justify-content: space-between; gap: 24px; }
 .brand { display: flex; align-items: center; gap: 14px; color: white; text-decoration: none; }
 .project-name { font-size: 17px; font-weight: 800; letter-spacing: .01em; }
 .department-name { padding-left: 14px; color: rgba(255,255,255,.72); font-size: 12px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; border-left: 1px solid rgba(255,255,255,.3); }
-.main-nav { display: flex; gap: 8px; }
+.main-nav { display: flex; flex-wrap: wrap; gap: 8px; }
 .main-nav a { padding: 9px 13px; color: rgba(255,255,255,.82); border-radius: 9px; font-size: 14px; font-weight: 650; text-decoration: none; }
 .main-nav a:hover { background: rgba(255,255,255,.12); color: white; }
 
@@ -167,6 +167,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--navy-2); box-sha
 .chart-legend { margin-bottom: 10px; display: flex; gap: 16px; flex-wrap: wrap; }
 .chart-legend span { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 700; }
 .chart-legend i { width: 10px; height: 10px; border-radius: 2px; }
+.chart-legend i.inspections { background: #2a78d6; }
+.chart-legend i.near-miss { background: #eb6834; }
+.chart-legend i.violations { background: #1baf7a; }
 .stats-grid { margin-bottom: 22px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
 .stats-grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
 .stats-grid article { padding: 21px 23px; background: white; border: 1px solid var(--line); border-radius: 14px; }
@@ -276,7 +279,8 @@ td small { margin-top: 3px; color: var(--muted); }
   main { width: min(100% - 24px, 1180px); }
   .site-header { padding: 10px 14px; }
   .department-name { display: none; }
-  .main-nav a { padding: 8px; font-size: 12px; }
+  .main-nav { width: 100%; gap: 6px; }
+  .main-nav a { padding: 7px 9px; font-size: 12px; }
   .hero, .admin-hero { padding: 38px 2px 25px; align-items: stretch; flex-direction: column; gap: 20px; }
   .hero h1, .admin-hero h1 { font-size: 39px; }
   .hero p { font-size: 15px; }
