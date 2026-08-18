@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}{{ record.ptw_number }} · PTW Log{% endblock %}
+{% block body_class %}form-page{% endblock %}
+{% block content %}
+<section class="record-toolbar no-print">
+  <a class="text-link" href="{{ url_for('admin', view='ptw') }}">← Back to records</a>
+  <form class="delete-form" method="post" action="{{ url_for('delete_ptw', record_id=record.id) }}">
+    <button class="button ghost danger" type="submit">Delete entry</button>
+  </form>
+</section>
+
+<section class="hero">
+  <div>
+    <span class="eyebrow">PTW log entry</span>
+    <h1>{{ record.ptw_number }}</h1>
+    <p>Update this entry's details or close it out once the work is finished.</p>
+  </div>
+</section>
+
+{% if error %}<div class="form-error" role="alert">{{ error }}</div>{% endif %}
+
+<form method="post">
+  <section class="card">
+    <div class="section-heading">
+      <div><span class="step-number">01</span><h2>Permit details</h2></div>
+      <p>Fields marked <span class="required">*</span> are required</p>
+    </div>
+    <div class="field-grid">
+      <label><span>PTW number <b>*</b></span><input name="ptwNumber" required maxlength="80" value="{{ record.ptw_number }}"></label>
+      <label><span>Type of PTW <b>*</b></span>
+        <select name="ptwType" required>
+          <option value="">Select</option>
+          {% for type in ptw_types %}<option value="{{ type }}" {{ 'selected' if type == record.ptw_type }}>{{ type }}</option>{% endfor %}
+        </select>
+      </label>
+      <label><span>PTW issuer <b>*</b></span><input name="issuer" required maxlength="200" value="{{ record.issuer }}"></label>
+      <label><span>PTW receiver <b>*</b></span><input name="receiver" required maxlength="200" value="{{ record.receiver }}"></label>
+      <label><span>Company name (contractor / sub-contractor) <b>*</b></span><input name="company" required maxlength="200" value="{{ record.company }}"></label>
+      <label><span>Location <b>*</b></span><input name="location" required maxlength="200" value="{{ record.location }}"></label>
+      <label><span>Area HSE personnel</span><input name="areaHsePersonnel" maxlength="200" value="{{ record.area_hse_personnel }}"></label>
+      <label><span>Shift</span>
+        <select name="shift">
+          <option value="">Select</option>
+          {% for item in shifts %}<option value="{{ item }}" {{ 'selected' if item == record.shift }}>{{ item }}</option>{% endfor %}
+        </select>
+      </label>
+      <label><span>Number of workers</span><input name="workersCount" type="number" min="0" max="9999" value="{{ record.workers_count if record.workers_count is not none else '' }}"></label>
+      <label><span>Reviewed by (HSE incharge / PTW coordinator)</span><input name="reviewedBy" maxlength="200" value="{{ record.reviewed_by }}"></label>
+    </div>
+    <div class="field-grid one-col">
+      <label><span>Work description <b>*</b></span><textarea name="workDescription" rows="3" maxlength="2000" required>{{ record.work_description }}</textarea></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-heading"><div><span class="step-number">02</span><h2>Duration &amp; status</h2></div></div>
+    <div class="field-grid">
+      <label><span>PTW start date <b>*</b></span><input name="startDate" type="date" required value="{{ record.start_date }}"></label>
+      <label><span>PTW start time <b>*</b></span><input name="startTime" type="time" required value="{{ record.start_time }}"></label>
+      <label><span>PTW end date <b>*</b></span><input name="endDate" type="date" required value="{{ record.end_date }}"></label>
+      <label><span>PTW end time <b>*</b></span><input name="endTime" type="time" required value="{{ record.end_time }}"></label>
+      <label><span>Status <b>*</b></span>
+        <select name="status" required>
+          {% for item in statuses %}<option value="{{ item }}" {{ 'selected' if item == record.status }}>{{ item|capitalize }}</option>{% endfor %}
+        </select>
+      </label>
+    </div>
+  </section>
+
+  <div class="submit-bar">
+    <div><strong>{{ record.ptw_number }}</strong><span>Last updated {{ record.updated_at }}</span></div>
+    <button class="button primary submit-button" type="submit">Save changes</button>
+  </div>
+</form>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='record.js') }}" defer></script>{% endblock %}

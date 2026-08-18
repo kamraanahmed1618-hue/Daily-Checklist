@@ -69,6 +69,21 @@ class ChecklistApplicationTests(unittest.TestCase):
             "issuedByName": "Site HSE Officer",
         }
 
+    def ptw_payload(self):
+        return {
+            "ptwNumber": "BAJV-829",
+            "ptwType": "Hot work",
+            "issuer": "Faisal",
+            "receiver": "Sayed",
+            "company": "BAJV",
+            "location": "Basement",
+            "workDescription": "Drilling, grinding & pipe installation",
+            "startDate": "2026-08-18",
+            "startTime": "08:00",
+            "endDate": "2026-08-18",
+            "endTime": "17:00",
+        }
+
     def test_checklist_has_all_source_requirements(self):
         response = self.client.get("/api/checklist")
         self.assertEqual(response.status_code, 200)
@@ -127,6 +142,7 @@ class ChecklistApplicationTests(unittest.TestCase):
     def test_near_miss_form_pages_load(self):
         self.assertEqual(self.client.get("/near-miss").status_code, 200)
         self.assertEqual(self.client.get("/violation").status_code, 200)
+        self.assertEqual(self.client.get("/ptw").status_code, 200)
 
     def test_near_miss_requires_at_least_one_type(self):
         payload = self.near_miss_payload()
@@ -175,6 +191,76 @@ class ChecklistApplicationTests(unittest.TestCase):
         export = self.client.get("/admin/export/violations")
         self.assertEqual(export.status_code, 200)
         self.assertIn("VIOLATION-001", export.get_data(as_text=True))
+
+    def test_ptw_requires_valid_type(self):
+        payload = self.ptw_payload()
+        payload["ptwType"] = "Not a real type"
+        response = self.client.post("/api/ptw", json=payload)
+        self.assertEqual(response.status_code, 400)
+
+    def test_ptw_requires_ptw_number(self):
+        payload = self.ptw_payload()
+        payload["ptwNumber"] = ""
+        response = self.client.post("/api/ptw", json=payload)
+        self.assertEqual(response.status_code, 400)
+
+    def test_submit_review_and_export_ptw(self):
+        response = self.client.post("/api/ptw", json=self.ptw_payload())
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json["ptwNumber"], "BAJV-829")
+        record_id = response.json["id"]
+
+        self.login()
+        dashboard = self.client.get("/admin?view=ptw")
+        self.assertIn(b"BAJV-829", dashboard.data)
+        detail = self.client.get(f"/admin/ptw/{record_id}")
+        self.assertEqual(detail.status_code, 200)
+        self.assertIn(b"BAJV-829", detail.data)
+        # New entries default to open until a coordinator closes them out.
+        self.assertIn(b"open", detail.data.lower())
+
+        export = self.client.get("/admin/export/ptw")
+        self.assertEqual(export.status_code, 200)
+        self.assertIn("BAJV-829", export.get_data(as_text=True))
+
+    def test_ptw_edit_updates_status_and_persists(self):
+        record_id = self.client.post("/api/ptw", json=self.ptw_payload()).json["id"]
+        self.login()
+        payload = self.ptw_payload()
+        payload["status"] = "closed"
+        payload["reviewedBy"] = "Faisal"
+        response = self.client.post(f"/admin/ptw/{record_id}", data={
+            "ptwNumber": payload["ptwNumber"], "issuer": payload["issuer"], "receiver": payload["receiver"],
+            "ptwType": payload["ptwType"], "workDescription": payload["workDescription"], "areaHsePersonnel": "",
+            "location": payload["location"], "shift": "", "startDate": payload["startDate"],
+            "startTime": payload["startTime"], "endDate": payload["endDate"], "endTime": payload["endTime"],
+            "company": payload["company"], "status": "closed", "workersCount": "", "reviewedBy": "Faisal",
+        })
+        self.assertEqual(response.status_code, 302)
+        detail = self.client.get(f"/admin/ptw/{record_id}")
+        self.assertIn(b'value="Faisal"', detail.data)
+        export = self.client.get("/admin/export/ptw")
+        self.assertIn("closed", export.get_data(as_text=True))
+
+    def test_ptw_edit_rejects_invalid_update_and_keeps_entered_values(self):
+        record_id = self.client.post("/api/ptw", json=self.ptw_payload()).json["id"]
+        self.login()
+        response = self.client.post(f"/admin/ptw/{record_id}", data={
+            "ptwNumber": "", "issuer": "Faisal", "receiver": "Sayed", "ptwType": "Hot work",
+            "workDescription": "Drilling", "areaHsePersonnel": "", "location": "Basement", "shift": "",
+            "startDate": "2026-08-18", "startTime": "08:00", "endDate": "2026-08-18", "endTime": "17:00",
+            "company": "BAJV", "status": "open", "workersCount": "", "reviewedBy": "",
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"PTW number is required", response.data)
+
+    def test_delete_ptw(self):
+        record_id = self.client.post("/api/ptw", json=self.ptw_payload()).json["id"]
+        self.login()
+        response = self.client.post(f"/admin/ptw/{record_id}/delete")
+        self.assertEqual(response.status_code, 302)
+        detail = self.client.get(f"/admin/ptw/{record_id}")
+        self.assertEqual(detail.status_code, 404)
 
     def test_sequential_report_numbers(self):
         first = self.client.post("/api/inspections", json=self.payload())
@@ -286,6 +372,7 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.client.post("/api/inspections", json=self.payload())
         self.client.post("/api/near-miss", json=self.near_miss_payload())
         self.client.post("/api/violations", json=self.violation_payload())
+        self.client.post("/api/ptw", json=self.ptw_payload())
 
         response = self.client.get("/admin/backup?token=test-export-token")
         self.assertEqual(response.status_code, 200)
@@ -293,11 +380,12 @@ class ChecklistApplicationTests(unittest.TestCase):
 
         archive = zipfile.ZipFile(io.BytesIO(response.data))
         names = archive.namelist()
-        self.assertEqual(len(names), 4)
+        self.assertEqual(len(names), 5)
         self.assertTrue(any(name.startswith("inspections-summary-") for name in names))
         self.assertTrue(any(name.startswith("inspections-detailed-") for name in names))
         self.assertTrue(any(name.startswith("near-miss-") for name in names))
         self.assertTrue(any(name.startswith("violations-") for name in names))
+        self.assertTrue(any(name.startswith("ptw-log-") for name in names))
 
 
 if __name__ == "__main__":

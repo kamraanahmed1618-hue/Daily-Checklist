@@ -21,6 +21,7 @@
     <a class="record-tab {{ 'active' if view == 'inspections' }}" href="{{ url_for('admin', view='inspections') }}">OHS Inspections <span>{{ inspections_count }}</span></a>
     <a class="record-tab {{ 'active' if view == 'near-miss' }}" href="{{ url_for('admin', view='near-miss') }}">Near-Miss Reports <span>{{ near_miss_count }}</span></a>
     <a class="record-tab {{ 'active' if view == 'violations' }}" href="{{ url_for('admin', view='violations') }}">Violation Notices <span>{{ violations_count }}</span></a>
+    <a class="record-tab {{ 'active' if view == 'ptw' }}" href="{{ url_for('admin', view='ptw') }}">PTW Log <span>{{ ptw_count }}</span></a>
     <a class="record-tab {{ 'active' if view == 'trends' }}" href="{{ url_for('admin', view='trends') }}">Trends</a>
 </div>
 
@@ -80,8 +81,10 @@
                 <a class="button primary" href="{{ url_for('export_records', kind='detailed', q=request.args.get('q', ''), date_from=request.args.get('date_from', ''), date_to=request.args.get('date_to', '')) }}">Export detailed</a>
             {% elif view == 'near-miss' %}
                 <a class="button primary" href="{{ url_for('export_near_miss', q=request.args.get('q', ''), date_from=request.args.get('date_from', ''), date_to=request.args.get('date_to', '')) }}">Export CSV</a>
-            {% else %}
+            {% elif view == 'violations' %}
                 <a class="button primary" href="{{ url_for('export_violations', q=request.args.get('q', ''), date_from=request.args.get('date_from', ''), date_to=request.args.get('date_to', '')) }}">Export CSV</a>
+            {% else %}
+                <a class="button primary" href="{{ url_for('export_ptw', q=request.args.get('q', ''), date_from=request.args.get('date_from', ''), date_to=request.args.get('date_to', '')) }}">Export CSV</a>
             {% endif %}
         </div>
     </div>
@@ -126,7 +129,7 @@
             {% endfor %}
             </tbody>
         </table>
-        {% else %}
+        {% elif view == 'violations' %}
         <table>
             <thead><tr><th>Notice</th><th>Date</th><th>Employee</th><th>Contractor</th><th>Type</th><th>Action</th><th></th></tr></thead>
             <tbody>
@@ -142,6 +145,26 @@
                 </tr>
             {% else %}
                 <tr><td colspan="7" class="empty-state">No violation notices found.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <table>
+            <thead><tr><th>PTW No.</th><th>Type</th><th>Location</th><th>Company</th><th>Start</th><th>End</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+            {% for record in ptw_logs %}
+                <tr>
+                    <td><strong>{{ record.ptw_number }}</strong><small>{{ record.issuer }} → {{ record.receiver }}</small></td>
+                    <td>{{ record.ptw_type }}</td>
+                    <td>{{ record.location }}</td>
+                    <td>{{ record.company }}</td>
+                    <td>{{ record.start_date }} {{ record.start_time }}</td>
+                    <td>{{ record.end_date }} {{ record.end_time }}</td>
+                    <td><span class="score-pill {{ 'medium' if record.status == 'open' else '' }}">{{ record.status }}</span></td>
+                    <td><a class="row-link" href="{{ url_for('ptw_detail', record_id=record.id) }}">Open</a></td>
+                </tr>
+            {% else %}
+                <tr><td colspan="8" class="empty-state">No PTW log entries found.</td></tr>
             {% endfor %}
             </tbody>
         </table>
