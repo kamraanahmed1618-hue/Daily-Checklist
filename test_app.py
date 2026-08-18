@@ -150,6 +150,14 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertEqual(with_data.status_code, 200)
         self.assertIn(b"<svg", with_data.data)
 
+    def test_trends_legend_uses_css_classes_not_inline_style(self):
+        # Inline style="" attributes are silently dropped by the strict
+        # style-src 'self' CSP — the legend color swatches must use CSS
+        # classes instead, or they render invisible with no error shown.
+        self.login()
+        response = self.client.get("/admin?view=trends")
+        self.assertNotIn(b'<i style=', response.data)
+
     def test_near_miss_form_pages_load(self):
         self.assertEqual(self.client.get("/near-miss").status_code, 200)
         self.assertEqual(self.client.get("/violation").status_code, 200)
