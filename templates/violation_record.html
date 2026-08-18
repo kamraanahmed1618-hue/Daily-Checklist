@@ -13,6 +13,7 @@
 </section>
 
 <article class="doc-sheet">
+  <div class="doc-letterhead"><img src="{{ url_for('static', filename='bec-arabia-contracting.png') }}" alt="BEC Arabia Contracting"></div>
   <div class="doc-band">Occupational Health &amp; Safety Violation Notice</div>
 
   <p class="doc-note bold">Project Information</p>
@@ -53,6 +54,13 @@
     <span class="doc-checkbox {{ 'checked' if record.documents_attached else '' }}">{{ '☑' if record.documents_attached else '☐' }} Supporting Documents</span>
   </div>
 
+  <p class="doc-note bold">Issued By</p>
+  <table class="doc-plain">
+    <tr><td>Name</td><td>{{ record.issued_by_name }}</td></tr>
+    <tr><td>Position</td><td>{{ record.issued_by_position or '—' }}</td></tr>
+    <tr><td>Signature</td><td>Digitally signed · {{ record.created_at }}</td></tr>
+  </table>
+
   <p class="doc-note bold">Evidence</p>
   {% if photo_urls %}
   <div class="doc-evidence">
@@ -62,12 +70,10 @@
   <p class="doc-note">No photos attached.</p>
   {% endif %}
 
-  <p class="doc-note bold">Issued By</p>
-  <table class="doc-plain">
-    <tr><td>Name</td><td>{{ record.issued_by_name }}</td></tr>
-    <tr><td>Position</td><td>{{ record.issued_by_position or '—' }}</td></tr>
-    <tr><td>Signature</td><td>Digitally signed · {{ record.created_at }}</td></tr>
-  </table>
+  <div class="doc-classification">
+    <span>Classification: BEC Arabia - External - Unrestricted Use</span>
+    <span>BECCO-COR-OHS-ADD-VNC-000002-R01</span>
+  </div>
 </article>
 {% endblock %}
 {% block scripts %}<script src="{{ url_for('static', filename='record.js') }}" defer></script>{% endblock %}
