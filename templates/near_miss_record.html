@@ -13,6 +13,7 @@
 </section>
 
 <article class="doc-sheet">
+  <div class="doc-letterhead"><img src="{{ url_for('static', filename='bec-arabia-contracting.png') }}" alt="BEC Arabia Contracting"></div>
   <div class="doc-band">NEAR MISS REPORTING FORM</div>
 
   <table class="doc-info">
@@ -89,6 +90,11 @@
   {% else %}
   <p class="doc-note">No photos attached.</p>
   {% endif %}
+
+  <div class="doc-classification">
+    <span>Classification: BEC Arabia - External - Unrestricted Use</span>
+    <span>BECCO-COR-OHS-ADD-MMR-000001-R01</span>
+  </div>
 </article>
 {% endblock %}
 {% block scripts %}<script src="{{ url_for('static', filename='record.js') }}" defer></script>{% endblock %}

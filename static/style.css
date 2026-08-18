@@ -207,6 +207,11 @@ td small { margin-top: 3px; color: var(--muted); }
 .doc-logos img { display: block; max-height: 40px; max-width: 90%; margin: 0 auto 3px; }
 .doc-logos .logo-label { display: block; font-size: 11px; font-weight: 700; letter-spacing: .02em; }
 
+.doc-letterhead { margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #000; }
+.doc-letterhead img { display: block; height: 30px; width: auto; }
+
+.doc-classification { margin-top: 16px; padding-top: 6px; border-top: 1px solid #000; display: flex; justify-content: space-between; gap: 12px; font-size: 10px; color: #555; }
+
 .doc-banner { padding: 10px 12px; color: white; background: #002060; border: 1px solid #000; border-top: none; font-size: 22px; font-weight: 700; letter-spacing: .03em; text-align: center; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 
 .doc-title { margin: 14px 0 10px; color: #1F3864; font-size: 16px; font-weight: 700; text-align: center; text-decoration: underline; }
@@ -304,6 +309,8 @@ td small { margin-top: 3px; color: var(--muted); }
   .doc-title { font-size: 13pt; }
   .doc-banner, .doc-band { font-size: 11pt; }
   .doc-checkbox-row { font-size: 8.5pt; }
+  .doc-letterhead img { height: 24px; }
+  .doc-classification { font-size: 7pt; }
   .doc-checklist tr, .doc-noncompliance tr, .doc-summary tr, .doc-footer tr, .doc-info tr, .doc-plain tr { break-inside: avoid; }
   .doc-evidence { grid-template-columns: repeat(3, 1fr); break-inside: avoid; }
   .doc-evidence img { height: 100px; }
