@@ -33,6 +33,47 @@
 </section>
 {% endif %}
 
+{% if view == 'ptw' %}
+<section class="stats-grid cols-4">
+    <article><span>Open permits</span><strong>{{ ptw_stats.total_open }}</strong></article>
+    <article><span>Hot work (open)</span><strong>{{ ptw_stats.hot_work_open }}</strong></article>
+    <article><span>Areas active</span><strong>{{ ptw_stats.areas_active }}</strong></article>
+    <article><span>Busiest area</span><strong class="text">{{ ptw_stats.busiest_area }}</strong></article>
+</section>
+<div class="overview-grid">
+    <section class="card">
+        <div class="chart-heading"><h2>Activity by area</h2><p>Open permits per area, busiest first</p></div>
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>Area</th><th>Open</th><th>Activities</th></tr></thead>
+                <tbody>
+                {% for area in ptw_stats.by_area %}
+                    <tr><td><strong>{{ area.location }}</strong></td><td>{{ area.total }}</td><td>{{ area.types|join(', ') }}</td></tr>
+                {% else %}
+                    <tr><td colspan="3" class="empty-state">No open permits right now.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    <section class="card">
+        <div class="chart-heading"><h2>Activity by type</h2><p>Open permits per activity type</p></div>
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>Type</th><th>Open</th></tr></thead>
+                <tbody>
+                {% for item in ptw_stats.by_type %}
+                    <tr><td>{{ item.ptw_type }}</td><td>{{ item.c }}</td></tr>
+                {% else %}
+                    <tr><td colspan="2" class="empty-state">No open permits right now.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+{% endif %}
+
 {% if view == 'trends' %}
 <section class="card chart-card">
     <div class="chart-heading"><h2>Weekly compliance score</h2><p>Average OHS inspection score, last 12 weeks</p></div>

@@ -242,6 +242,39 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertEqual(export.status_code, 200)
         self.assertIn("BAJV-829", export.get_data(as_text=True))
 
+    def test_ptw_overview_breaks_down_open_permits_by_area_and_type(self):
+        # Two open in Basement (one Hot work, one Lifting), one open in Zone A
+        # (Hot work), and one closed in Basement that should be excluded entirely.
+        basement_hot = self.ptw_payload()
+        self.client.post("/api/ptw", json=basement_hot)
+
+        basement_lift = self.ptw_payload()
+        basement_lift.update({"ptwNumber": "BAJV-830", "ptwType": "Lifting"})
+        self.client.post("/api/ptw", json=basement_lift)
+
+        zone_a_hot = self.ptw_payload()
+        zone_a_hot.update({"ptwNumber": "BAJV-831", "location": "Zone A"})
+        self.client.post("/api/ptw", json=zone_a_hot)
+
+        closed_payload = self.ptw_payload()
+        closed_payload["ptwNumber"] = "BAJV-832"
+        closed_id = self.client.post("/api/ptw", json=closed_payload).json["id"]
+        self.login()
+        self.client.post(f"/admin/ptw/{closed_id}", data={
+            "ptwNumber": "BAJV-832", "issuer": "Faisal", "receiver": "Sayed", "ptwType": "Hot work",
+            "workDescription": "Drilling", "areaHsePersonnel": "", "location": "Basement", "shift": "",
+            "startDate": "2026-08-18", "startTime": "08:00", "endDate": "2026-08-18", "endTime": "17:00",
+            "company": "BAJV", "status": "closed", "workersCount": "", "reviewedBy": "",
+        })
+
+        overview = self.client.get("/admin?view=ptw")
+        self.assertEqual(overview.status_code, 200)
+        body = overview.data.decode()
+        # 3 open total (the closed one excluded); Basement busiest with 2; Hot work count is 2.
+        self.assertIn("Basement", body)
+        self.assertIn("Hot work (1)", body)
+        self.assertIn("Lifting (1)", body)
+
     def test_ptw_edit_updates_status_and_persists(self):
         record_id = self.client.post("/api/ptw", json=self.ptw_payload()).json["id"]
         self.login()

@@ -633,6 +633,43 @@ def record_counts() -> dict[str, int]:
     }
 
 
+def ptw_overview() -> dict[str, Any]:
+    """Snapshot of what's currently open on site: which areas have active permits,
+    what activity is running in each, and how many of each permit type are open."""
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql(
+            "SELECT location, ptw_type, COUNT(*) AS c FROM ptw_logs WHERE status = ? "
+            "GROUP BY location, ptw_type ORDER BY location, ptw_type"
+        ), ["open"])
+        area_type_rows = [dict(row) for row in cursor.fetchall()]
+        cursor.execute(sql(
+            "SELECT ptw_type, COUNT(*) AS c FROM ptw_logs WHERE status = ? GROUP BY ptw_type ORDER BY c DESC"
+        ), ["open"])
+        by_type = [dict(row) for row in cursor.fetchall()]
+
+    by_area: dict[str, dict[str, Any]] = {}
+    for row in area_type_rows:
+        area = row["location"] or "Unspecified"
+        entry = by_area.setdefault(area, {"location": area, "total": 0, "types": []})
+        entry["total"] += row["c"]
+        entry["types"].append(f'{row["ptw_type"]} ({row["c"]})')
+    by_area_list = sorted(by_area.values(), key=lambda entry: entry["total"], reverse=True)
+
+    total_open = sum(item["c"] for item in by_type)
+    hot_work_open = next((item["c"] for item in by_type if item["ptw_type"] == "Hot work"), 0)
+    busiest_area = by_area_list[0]["location"] if by_area_list else "—"
+
+    return {
+        "total_open": total_open,
+        "hot_work_open": hot_work_open,
+        "areas_active": len(by_area_list),
+        "busiest_area": busiest_area,
+        "by_area": by_area_list,
+        "by_type": by_type,
+    }
+
+
 def week_start(date_str: str) -> str | None:
     try:
         parsed = datetime.strptime(date_str, "%Y-%m-%d").date()
@@ -950,6 +987,7 @@ def admin() -> str | Response:
     violations: list[dict[str, Any]] = []
     ptw_logs: list[dict[str, Any]] = []
     trends: list[dict[str, Any]] = []
+    ptw_stats: dict[str, Any] = {}
     total = average = non_compliant = 0
     if view == "inspections":
         records = filtered_records()
@@ -962,6 +1000,7 @@ def admin() -> str | Response:
         violations = filtered_violations()
     elif view == "ptw":
         ptw_logs = filtered_ptw()
+        ptw_stats = ptw_overview()
     else:
         trends = compute_trends()
 
@@ -987,6 +1026,7 @@ def admin() -> str | Response:
         near_miss_records=near_miss_records,
         violations=violations,
         ptw_logs=ptw_logs,
+        ptw_stats=ptw_stats,
         trends=trends,
         trend_charts=trend_charts,
         inspections_count=counts["inspections"],
