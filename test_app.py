@@ -242,6 +242,22 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertEqual(export.status_code, 200)
         self.assertIn("BAJV-829", export.get_data(as_text=True))
 
+    def test_ptw_list_orders_by_permit_number_not_submission_order(self):
+        # Submitted out of numeric order (834 first, then 832, then 833) to
+        # simulate someone backfilling or correcting an entry after the fact.
+        for number in ("BAJV-834", "BAJV-832", "BAJV-833"):
+            payload = self.ptw_payload()
+            payload["ptwNumber"] = number
+            response = self.client.post("/api/ptw", json=payload)
+            self.assertEqual(response.status_code, 201)
+
+        self.login()
+        dashboard = self.client.get("/admin?view=ptw")
+        body = dashboard.data.decode()
+        # Highest number first, regardless of submission order.
+        self.assertLess(body.index("BAJV-834"), body.index("BAJV-833"))
+        self.assertLess(body.index("BAJV-833"), body.index("BAJV-832"))
+
     def test_ptw_overview_breaks_down_open_permits_by_area_and_type(self):
         # Two open in Basement (one Hot work, one Lifting), one open in Zone A
         # (Hot work), and one closed in Basement that should be excluded entirely.

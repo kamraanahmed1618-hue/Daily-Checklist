@@ -610,8 +610,18 @@ def filtered_violations(limit: int = 1000) -> list[dict[str, Any]]:
     return filtered_rows("violation_notices", ["violation_no", "employee_name", "company_contractor", "violation_location"], "violation_date", limit)
 
 
+def ptw_sort_key(record: dict[str, Any]) -> int:
+    # PTW Number is free text (e.g. "BAJV-834") matching an external numbering
+    # scheme, so it can't be auto-generated — but the list should still read in
+    # that number's order rather than submission order, since entries are
+    # sometimes logged out of sequence or renumbered later via edit.
+    match = re.search(r"(\d+)\s*$", record["ptw_number"] or "")
+    return int(match.group(1)) if match else -1
+
+
 def filtered_ptw(limit: int = 1000) -> list[dict[str, Any]]:
-    return filtered_rows("ptw_logs", ["ptw_number", "issuer", "receiver", "location", "company"], "start_date", limit)
+    records = filtered_rows("ptw_logs", ["ptw_number", "issuer", "receiver", "location", "company"], "start_date", limit)
+    return sorted(records, key=ptw_sort_key, reverse=True)
 
 
 def record_counts() -> dict[str, int]:
