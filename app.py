@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 from typing import Any, Iterator
+from zoneinfo import ZoneInfo
 
 from flask import Flask, Response, jsonify, redirect, render_template, request, send_from_directory, session, url_for
 from werkzeug.exceptions import HTTPException
@@ -89,6 +90,7 @@ app.jinja_env.filters["from_json"] = json.loads
 B2_BUCKET = os.environ.get("B2_BUCKET_NAME")
 PHOTO_MAX_COUNT = 8
 PHOTO_KEY_PATTERN = re.compile(r"uploads/[a-zA-Z0-9_-]{8,64}/[0-9a-f]{20}\.(?:jpg|png|webp)")
+SITE_TZ = ZoneInfo("Asia/Riyadh")
 
 
 def is_postgres() -> bool:
@@ -614,6 +616,25 @@ def filtered_violations(limit: int = 1000) -> list[dict[str, Any]]:
     return filtered_rows("violation_notices", ["violation_no", "employee_name", "company_contractor", "violation_location"], "violation_date", limit)
 
 
+def auto_close_expired_ptw() -> None:
+    """Flip any 'open' PTW entry whose end date/time has already passed to
+    'closed', judged in Saudi local time since that's what the start/end
+    fields actually mean to whoever filled in the form. Called at the start
+    of every PTW read path (list, overview, detail, exports, counts) instead
+    of via a separate scheduled job, since Render's free tier has no cron —
+    this keeps the data self-correcting on every page view without needing
+    any extra infrastructure."""
+    now = datetime.now(SITE_TZ)
+    today = now.strftime("%Y-%m-%d")
+    now_time = now.strftime("%H:%M")
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql(
+            "UPDATE ptw_logs SET status = 'closed', updated_at = ? "
+            "WHERE status = 'open' AND (end_date < ? OR (end_date = ? AND end_time <= ?))"
+        ), [datetime.now(timezone.utc).isoformat(), today, today, now_time])
+
+
 def ptw_sort_key(record: dict[str, Any]) -> int:
     # PTW Number is free text (e.g. "BAJV-834") matching an external numbering
     # scheme, so it can't be auto-generated — but the list should still read in
@@ -624,11 +645,13 @@ def ptw_sort_key(record: dict[str, Any]) -> int:
 
 
 def filtered_ptw(limit: int = 1000) -> list[dict[str, Any]]:
+    auto_close_expired_ptw()
     records = filtered_rows("ptw_logs", ["ptw_number", "issuer", "receiver", "location", "company"], "start_date", limit)
     return sorted(records, key=ptw_sort_key, reverse=True)
 
 
 def record_counts() -> dict[str, int]:
+    auto_close_expired_ptw()
     with database() as connection:
         cursor = connection.cursor()
         cursor.execute("SELECT COUNT(*) AS c FROM inspections")
@@ -650,6 +673,7 @@ def record_counts() -> dict[str, int]:
 def ptw_overview() -> dict[str, Any]:
     """Snapshot of what's currently open on site: which areas have active permits,
     what activity is running in each, and how many of each permit type are open."""
+    auto_close_expired_ptw()
     with database() as connection:
         cursor = connection.cursor()
         cursor.execute(sql(
@@ -1148,6 +1172,8 @@ PTW_FORM_FIELDS = {
 @app.route("/admin/ptw/<record_id>", methods=["GET", "POST"])
 @admin_required
 def ptw_detail(record_id: str) -> str | tuple[str, int] | Response:
+    if request.method == "GET":
+        auto_close_expired_ptw()
     with database() as connection:
         cursor = connection.cursor()
         cursor.execute(sql("SELECT * FROM ptw_logs WHERE id = ?"), [record_id])

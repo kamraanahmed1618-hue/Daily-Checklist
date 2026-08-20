@@ -4,7 +4,9 @@ import os
 import tempfile
 import unittest
 import zipfile
+from datetime import datetime, timedelta
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 import openpyxl
 
@@ -73,6 +75,9 @@ class ChecklistApplicationTests(unittest.TestCase):
         }
 
     def ptw_payload(self):
+        # A day out (rather than a fixed date) so this stays "open" under the
+        # auto-close-on-expiry feature no matter when the suite actually runs.
+        tomorrow = (datetime.now(ZoneInfo("Asia/Riyadh")) + timedelta(days=1)).strftime("%Y-%m-%d")
         return {
             "ptwNumber": "BAJV-829",
             "ptwType": "Hot work",
@@ -81,9 +86,9 @@ class ChecklistApplicationTests(unittest.TestCase):
             "company": "BAJV",
             "location": "Basement",
             "workDescription": "Drilling, grinding & pipe installation",
-            "startDate": "2026-08-18",
+            "startDate": tomorrow,
             "startTime": "08:00",
-            "endDate": "2026-08-18",
+            "endDate": tomorrow,
             "endTime": "17:00",
         }
 
@@ -281,6 +286,27 @@ class ChecklistApplicationTests(unittest.TestCase):
         # Open permit row is highlighted; the closed one is not.
         self.assertEqual(rows["BAJV-829"][1].fill.fgColor.rgb, "00FFFF00")
         self.assertNotEqual(rows["BAJV-830"][1].fill.fgColor.rgb, "00FFFF00")
+
+    def test_ptw_auto_closes_once_end_time_has_passed(self):
+        yesterday = (datetime.now(ZoneInfo("Asia/Riyadh")) - timedelta(days=1)).strftime("%Y-%m-%d")
+        payload = self.ptw_payload()
+        payload["ptwNumber"] = "BAJV-900"
+        payload["startDate"] = yesterday
+        payload["endDate"] = yesterday
+        record_id = self.client.post("/api/ptw", json=payload).json["id"]
+
+        with database() as connection:
+            row = connection.execute("SELECT status FROM ptw_logs WHERE id = ?", [record_id]).fetchone()
+            self.assertEqual(dict(row)["status"], "open")
+
+        self.login()
+        # Merely loading the list (or overview, export, etc.) is what triggers
+        # the self-correction — there's no separate scheduled job to wait for.
+        self.client.get("/admin?view=ptw")
+
+        with database() as connection:
+            row = connection.execute("SELECT status FROM ptw_logs WHERE id = ?", [record_id]).fetchone()
+            self.assertEqual(dict(row)["status"], "closed")
 
     def test_ptw_list_orders_by_permit_number_not_submission_order(self):
         # Submitted out of numeric order (834 first, then 832, then 833) to
