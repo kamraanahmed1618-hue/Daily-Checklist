@@ -6,6 +6,8 @@ import unittest
 import zipfile
 from unittest.mock import patch
 
+import openpyxl
+
 
 TEST_FILES = tempfile.TemporaryDirectory()
 os.environ["OHS_DB_PATH"] = os.path.join(TEST_FILES.name, "test.db")
@@ -24,6 +26,7 @@ class ChecklistApplicationTests(unittest.TestCase):
             connection.execute("DELETE FROM inspections")
             connection.execute("DELETE FROM near_miss_reports")
             connection.execute("DELETE FROM violation_notices")
+            connection.execute("DELETE FROM ptw_logs")
 
     def payload(self):
         return {
@@ -241,6 +244,43 @@ class ChecklistApplicationTests(unittest.TestCase):
         export = self.client.get("/admin/export/ptw")
         self.assertEqual(export.status_code, 200)
         self.assertIn("BAJV-829", export.get_data(as_text=True))
+
+    def test_ptw_xlsx_export_matches_original_columns_and_highlights_open(self):
+        open_id = self.client.post("/api/ptw", json=self.ptw_payload()).json["id"]
+        closed_payload = self.ptw_payload()
+        closed_payload["ptwNumber"] = "BAJV-830"
+        closed_id = self.client.post("/api/ptw", json=closed_payload).json["id"]
+
+        self.login()
+        self.client.post(f"/admin/ptw/{closed_id}", data={
+            "ptwNumber": "BAJV-830", "issuer": "Faisal", "receiver": "Sayed", "ptwType": "Hot work",
+            "workDescription": "Drilling", "areaHsePersonnel": "", "location": "Basement", "shift": "",
+            "startDate": "2026-08-18", "startTime": "08:00", "endDate": "2026-08-18", "endTime": "17:00",
+            "company": "BAJV", "status": "closed", "workersCount": "", "reviewedBy": "",
+        })
+
+        response = self.client.get("/admin/export/ptw.xlsx")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.content_type,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+        workbook = openpyxl.load_workbook(io.BytesIO(response.data))
+        sheet = workbook.active
+        header = [cell.value for cell in sheet[1]]
+        self.assertEqual(header, [
+            "S.N", "PTW Number", "PTW Issuer", "PTW Receiver", "Type of PTW", "Work Description",
+            "Area HSE Personnel", "Location", "Shift", "PTW Start Date & Time", "PTW End Date & Time",
+            "Company Name", "Status", "No. of Workers", "Reviewed By",
+        ])
+
+        rows = {row[1].value: row for row in sheet.iter_rows(min_row=2)}
+        self.assertIn("BAJV-829", rows)
+        self.assertIn("BAJV-830", rows)
+        # Open permit row is highlighted; the closed one is not.
+        self.assertEqual(rows["BAJV-829"][1].fill.fgColor.rgb, "00FFFF00")
+        self.assertNotEqual(rows["BAJV-830"][1].fill.fgColor.rgb, "00FFFF00")
 
     def test_ptw_list_orders_by_permit_number_not_submission_order(self):
         # Submitted out of numeric order (834 first, then 832, then 833) to
