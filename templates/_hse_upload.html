@@ -1,0 +1,70 @@
+<section class="card">
+  <div class="chart-heading">
+    <h2>Upload HSE statistics workbook</h2>
+    <p>Upload the project's daily HSE statistics .xlsx file. Matching dates are updated in place; new dates are added. Nothing is overwritten until the file passes validation.</p>
+  </div>
+
+  {% if hse_last_sync %}
+  <div class="notice success">
+    Last successful sync: <strong>{{ hse_last_sync.uploaded_at }}</strong> from <strong>{{ hse_last_sync.filename }}</strong>
+    &mdash; {{ hse_last_sync.records_inserted }} added, {{ hse_last_sync.records_updated }} updated{% if hse_last_sync.records_rejected %}, {{ hse_last_sync.records_rejected }} rows rejected{% endif %}.
+  </div>
+  {% else %}
+  <div class="notice warn">No workbook has been imported yet. The dashboard will stay empty until one is uploaded.</div>
+  {% endif %}
+
+  <form id="hseUploadForm" action="{{ url_for('hse_upload') }}" method="post" enctype="multipart/form-data">
+    <label class="hse-upload-zone" id="hseUploadZone" for="hseFileInput">
+      <strong>Click to choose a file, or drag one here</strong>
+      <p>.xlsx only &middot; max 8 MB</p>
+      <input type="file" id="hseFileInput" name="workbook" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+      <div class="hse-upload-filename" id="hseUploadFilename"></div>
+    </label>
+    <div class="hse-form-actions">
+      <button class="button primary" type="submit" id="hseUploadSubmit" disabled>Upload &amp; sync</button>
+    </div>
+  </form>
+
+  <div id="hseUploadStatus"></div>
+</section>
+
+<section class="card">
+  <div class="chart-heading">
+    <h2>Import history</h2>
+    <p>Every upload attempt, successful or not, is logged here.</p>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Uploaded</th><th>File</th><th>Status</th><th>Processed</th><th>Inserted</th><th>Updated</th><th>Rejected</th><th>Notes</th></tr>
+      </thead>
+      <tbody>
+        {% for entry in hse_import_history %}
+        <tr>
+          <td>{{ entry.uploaded_at }}</td>
+          <td>{{ entry.filename }}</td>
+          <td><span class="status-pill {{ entry.status }}">{{ entry.status }}</span></td>
+          <td>{{ entry.records_processed }}</td>
+          <td>{{ entry.records_inserted }}</td>
+          <td>{{ entry.records_updated }}</td>
+          <td>{{ entry.records_rejected }}</td>
+          <td>{{ entry.error_message or '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="empty-state">No imports yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card">
+  <div class="chart-heading">
+    <h2>Dashboard management</h2>
+    <p>Confirm the live dashboard can reach the database before an upload, or after troubleshooting.</p>
+  </div>
+  <button class="button secondary" type="button" id="hseStatusCheckBtn">Check database / API status</button>
+  <div id="hseStatusCheckResult" class="hse-status-check-result"></div>
+</section>
+
+<script src="{{ url_for('static', filename='hse_upload.js') }}" defer></script>

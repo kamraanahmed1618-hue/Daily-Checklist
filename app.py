@@ -26,6 +26,10 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from charts import bar_chart_svg, grouped_bar_chart_svg, line_chart_svg
+from hse_stats import COLUMNS as HSE_COLUMNS
+from hse_stats import DB_COLUMNS as HSE_DB_COLUMNS
+from hse_stats import ValidationError as HseValidationError
+from hse_stats import parse_workbook as hse_parse_workbook
 
 try:
     import psycopg
@@ -312,6 +316,29 @@ def init_db() -> None:
         "CREATE INDEX IF NOT EXISTS ptw_start_date_idx ON ptw_logs (start_date)",
         "CREATE INDEX IF NOT EXISTS ptw_created_idx ON ptw_logs (created_at)",
         "CREATE INDEX IF NOT EXISTS ptw_status_idx ON ptw_logs (status)",
+        f"""CREATE TABLE IF NOT EXISTS hse_daily_stats (
+            id TEXT PRIMARY KEY,
+            record_date TEXT NOT NULL UNIQUE,
+            {", ".join(f"{col} {'INTEGER' if kind == 'int' else 'REAL'}" for col, _, _, _, kind in HSE_COLUMNS)},
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )""",
+        "CREATE INDEX IF NOT EXISTS hse_daily_stats_date_idx ON hse_daily_stats (record_date)",
+        """CREATE TABLE IF NOT EXISTS hse_import_history (
+            id TEXT PRIMARY KEY,
+            seq INTEGER,
+            filename TEXT NOT NULL,
+            uploaded_by TEXT NOT NULL DEFAULT 'admin',
+            uploaded_at TEXT NOT NULL,
+            status TEXT NOT NULL,
+            sheet_name TEXT,
+            records_processed INTEGER NOT NULL DEFAULT 0,
+            records_inserted INTEGER NOT NULL DEFAULT 0,
+            records_updated INTEGER NOT NULL DEFAULT 0,
+            records_rejected INTEGER NOT NULL DEFAULT 0,
+            error_message TEXT
+        )""",
+        "CREATE INDEX IF NOT EXISTS hse_import_history_date_idx ON hse_import_history (uploaded_at)",
     ]
     with database() as connection:
         cursor = connection.cursor()
@@ -664,9 +691,11 @@ def record_counts() -> dict[str, int]:
         ptw = cursor.fetchone()["c"]
         cursor.execute(sql("SELECT COUNT(*) AS c FROM ptw_logs WHERE status = ?"), ["open"])
         ptw_open = cursor.fetchone()["c"]
+        cursor.execute("SELECT COUNT(*) AS c FROM hse_daily_stats")
+        hse_stats = cursor.fetchone()["c"]
     return {
         "inspections": inspections, "near_miss": near_miss, "violations": violations,
-        "ptw": ptw, "ptw_open": ptw_open,
+        "ptw": ptw, "ptw_open": ptw_open, "hse_stats": hse_stats,
     }
 
 
@@ -761,6 +790,111 @@ def compute_trends(weeks: int = 12) -> list[dict[str, Any]]:
             "violations": bucket["violations"],
         })
     return result
+
+
+HSE_UPLOAD_MAX_BYTES = 8 * 1024 * 1024
+
+
+def clean_upload_filename(filename: str) -> str | None:
+    name = os.path.basename(filename or "").strip()
+    if not name.lower().endswith(".xlsx"):
+        return None
+    name = re.sub(r"[^A-Za-z0-9 ._-]", "_", name)[:150]
+    return name or None
+
+
+def hse_record_to_api(record: dict[str, Any]) -> dict[str, Any]:
+    """Convert a DB row (snake_case columns) into the header-keyed shape the
+    dashboard frontend works with, e.g. {"Total BEC Manpower": 105, ...}."""
+    out: dict[str, Any] = {"date": record["record_date"]}
+    for col, header, _agg, _section, _kind in HSE_COLUMNS:
+        out[header] = record.get(col)
+    return out
+
+
+def fetch_hse_rows(date_from: str = "", date_to: str = "") -> list[dict[str, Any]]:
+    clauses: list[str] = []
+    params: list[Any] = []
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_from):
+        clauses.append("record_date >= ?")
+        params.append(date_from)
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_to):
+        clauses.append("record_date <= ?")
+        params.append(date_to)
+    where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql(f"SELECT * FROM hse_daily_stats{where} ORDER BY record_date ASC"), params)
+        rows = cursor.fetchall()
+    return [hse_record_to_api(dict(row)) for row in rows]
+
+
+def hse_last_sync() -> dict[str, Any] | None:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql(
+            "SELECT filename, uploaded_at, status, records_inserted, records_updated, records_rejected "
+            "FROM hse_import_history WHERE status IN ('success', 'partial') ORDER BY uploaded_at DESC LIMIT 1"
+        ))
+        row = cursor.fetchone()
+    return dict(row) if row else None
+
+
+def fetch_hse_import_history(limit: int = 30) -> list[dict[str, Any]]:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT * FROM hse_import_history ORDER BY uploaded_at DESC LIMIT ?"), [limit])
+        rows = cursor.fetchall()
+    return [dict(row) for row in rows]
+
+
+def record_hse_import(
+    history_id: str, filename: str, uploaded_at: str, status: str, sheet_name: str | None,
+    processed: int, inserted: int, updated: int, rejected: int, error_message: str | None,
+) -> None:
+    """Always writes to its own transaction, independent of the data import
+    transaction, so an audit trail entry exists even when the import itself
+    failed and was rolled back."""
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM hse_import_history"))
+        seq = cursor.fetchone()["next_seq"]
+        cursor.execute(sql(
+            "INSERT INTO hse_import_history "
+            "(id, seq, filename, uploaded_by, uploaded_at, status, sheet_name, "
+            "records_processed, records_inserted, records_updated, records_rejected, error_message) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        ), [history_id, seq, filename, "admin", uploaded_at, status, sheet_name, processed, inserted, updated, rejected, error_message])
+
+
+def import_hse_rows(rows: list[dict[str, Any]]) -> tuple[int, int]:
+    """Upserts parsed rows into hse_daily_stats inside a single transaction -
+    either every row lands, or (on any error) none of them do, so a bad
+    upload can never leave the table half-written."""
+    if not rows:
+        return 0, 0
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute("SELECT record_date FROM hse_daily_stats")
+        existing_dates = {row["record_date"] for row in cursor.fetchall()}
+
+        insert_cols = ["id", "record_date", *HSE_DB_COLUMNS, "created_at", "updated_at"]
+        placeholders = ", ".join("?" for _ in insert_cols)
+        update_assignments = ", ".join(f"{col} = EXCLUDED.{col}" for col in HSE_DB_COLUMNS)
+        now = datetime.now(timezone.utc).isoformat()
+
+        inserted = updated = 0
+        for row in rows:
+            values = [secrets.token_hex(16), row["record_date"], *(row.get(col) for col in HSE_DB_COLUMNS), now, now]
+            cursor.execute(sql(
+                f"INSERT INTO hse_daily_stats ({', '.join(insert_cols)}) VALUES ({placeholders}) "
+                f"ON CONFLICT (record_date) DO UPDATE SET {update_assignments}, updated_at = EXCLUDED.updated_at"
+            ), values)
+            if row["record_date"] in existing_dates:
+                updated += 1
+            else:
+                inserted += 1
+    return inserted, updated
 
 
 @app.after_request
@@ -1015,7 +1149,7 @@ def admin() -> str | Response:
         return render_template("login.html", error=error, configured=configured)
 
     view = request.args.get("view", "inspections")
-    if view not in {"inspections", "near-miss", "violations", "ptw", "trends"}:
+    if view not in {"inspections", "near-miss", "violations", "ptw", "trends", "hse-stats", "hse-upload"}:
         view = "inspections"
 
     counts = record_counts()
@@ -1026,6 +1160,7 @@ def admin() -> str | Response:
     ptw_logs: list[dict[str, Any]] = []
     trends: list[dict[str, Any]] = []
     ptw_stats: dict[str, Any] = {}
+    hse_import_history: list[dict[str, Any]] = []
     total = average = non_compliant = 0
     if view == "inspections":
         records = filtered_records()
@@ -1039,8 +1174,10 @@ def admin() -> str | Response:
     elif view == "ptw":
         ptw_logs = filtered_ptw()
         ptw_stats = ptw_overview()
-    else:
+    elif view == "trends":
         trends = compute_trends()
+    elif view == "hse-upload":
+        hse_import_history = fetch_hse_import_history()
 
     trend_charts = {}
     if view == "trends":
@@ -1067,10 +1204,13 @@ def admin() -> str | Response:
         ptw_stats=ptw_stats,
         trends=trends,
         trend_charts=trend_charts,
+        hse_import_history=hse_import_history,
+        hse_last_sync=hse_last_sync() if view in {"hse-stats", "hse-upload"} else None,
         inspections_count=counts["inspections"],
         near_miss_count=counts["near_miss"],
         violations_count=counts["violations"],
         ptw_count=counts["ptw"],
+        hse_stats_count=counts["hse_stats"],
     )
 
 
@@ -1078,6 +1218,108 @@ def admin() -> str | Response:
 def logout() -> Response:
     session.clear()
     return redirect(url_for("admin"))
+
+
+@app.post("/admin/hse/upload")
+@admin_required
+def hse_upload() -> tuple[Response, int]:
+    uploaded = request.files.get("workbook")
+    if not uploaded or not uploaded.filename:
+        return jsonify({"status": "failed", "error": "Choose an .xlsx file to upload."}), 400
+
+    filename = clean_upload_filename(uploaded.filename)
+    if not filename:
+        return jsonify({"status": "failed", "error": "Only .xlsx files are supported."}), 400
+
+    data = uploaded.read(HSE_UPLOAD_MAX_BYTES + 1)
+    if len(data) > HSE_UPLOAD_MAX_BYTES:
+        return jsonify({"status": "failed", "error": "File is too large (max 8 MB)."}), 400
+
+    history_id = secrets.token_hex(16)
+    uploaded_at = datetime.now(timezone.utc).isoformat()
+
+    try:
+        meta, rows, rejected, sheet_name = hse_parse_workbook(data)
+    except HseValidationError as error:
+        record_hse_import(history_id, filename, uploaded_at, "failed", None, 0, 0, 0, 0, str(error))
+        return jsonify({"status": "failed", "error": str(error)}), 400
+    except Exception:
+        app.logger.exception("HSE workbook parsing failed")
+        record_hse_import(history_id, filename, uploaded_at, "failed", None, 0, 0, 0, 0, "The workbook could not be read. It may be corrupted.")
+        return jsonify({"status": "failed", "error": "The workbook could not be read. It may be corrupted."}), 400
+
+    try:
+        inserted, updated = import_hse_rows(rows)
+    except Exception:
+        app.logger.exception("HSE workbook import failed")
+        record_hse_import(
+            history_id, filename, uploaded_at, "failed", sheet_name,
+            len(rows) + len(rejected), 0, 0, len(rejected),
+            "The database import failed; no changes were made to the dashboard's data.",
+        )
+        return jsonify({"status": "failed", "error": "The import could not be saved to the database. No changes were made."}), 500
+
+    status = "success" if not rejected else "partial"
+    record_hse_import(
+        history_id, filename, uploaded_at, status, sheet_name,
+        len(rows) + len(rejected), inserted, updated, len(rejected),
+        "; ".join(rejected[:20]) or None,
+    )
+
+    return jsonify({
+        "status": status,
+        "importId": history_id,
+        "filename": filename,
+        "sheetName": sheet_name,
+        "projectName": meta.get("project_name"),
+        "uploadedAt": uploaded_at,
+        "recordsProcessed": len(rows) + len(rejected),
+        "recordsInserted": inserted,
+        "recordsUpdated": updated,
+        "recordsRejected": len(rejected),
+        "rejectedSample": rejected[:20],
+    }), 200
+
+
+@app.get("/api/hse/dashboard")
+@admin_required
+def hse_dashboard_api() -> Response:
+    rows = fetch_hse_rows(request.args.get("date_from", ""), request.args.get("date_to", ""))
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute("SELECT COUNT(*) AS c FROM hse_daily_stats")
+        total_days = cursor.fetchone()["c"]
+    return jsonify({
+        "meta": {"project": "1 Hotel Diriyah – Occupational Health & Safety"},
+        "headers": [header for _, header, *_ in HSE_COLUMNS],
+        "agg": {header: agg for _, header, agg, _section, _kind in HSE_COLUMNS},
+        "sections": {header: section for _, header, _agg, section, _kind in HSE_COLUMNS},
+        "records": rows,
+        "totalDays": total_days,
+        "lastSync": hse_last_sync(),
+        "serverTime": datetime.now(timezone.utc).isoformat(),
+    })
+
+
+@app.get("/api/hse/status")
+@admin_required
+def hse_status_api() -> Response:
+    try:
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT COUNT(*) AS c FROM hse_daily_stats")
+            record_count = cursor.fetchone()["c"]
+        database_ok = True
+    except Exception:
+        app.logger.exception("HSE status check failed")
+        record_count = 0
+        database_ok = False
+    return jsonify({
+        "databaseOk": database_ok,
+        "recordCount": record_count,
+        "lastSync": hse_last_sync() if database_ok else None,
+        "serverTime": datetime.now(timezone.utc).isoformat(),
+    })
 
 
 @app.get("/admin/records/<record_id>")
@@ -1413,8 +1655,8 @@ def handle_unexpected_error(error: Exception) -> Any:
         # JSON API routes (fetch()-driven, e.g. photo upload) need a parseable body even
         # for errors Werkzeug raises itself, like a 413 for a request over MAX_CONTENT_LENGTH —
         # otherwise the client tries to JSON.parse() Werkzeug's HTML error page and breaks.
-        if request.path.startswith("/api/"):
-            return jsonify({"error": error.description}), error.code
+        if request.path.startswith("/api/") or request.path == "/admin/hse/upload":
+            return jsonify({"status": "failed", "error": error.description}), error.code
         return error
     app.logger.exception("Unhandled exception")
     # Only ever shown to an authenticated admin, so a raw traceback is safe here

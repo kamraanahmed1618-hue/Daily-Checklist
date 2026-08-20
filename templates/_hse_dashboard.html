@@ -1,0 +1,148 @@
+<div id="hseDashboardRoot" class="hse-dashboard" data-api-url="{{ url_for('hse_dashboard_api') }}">
+
+  <div class="hse-toolbar no-print">
+    <label>From <input type="date" id="hseStartDate"></label>
+    <label>To <input type="date" id="hseEndDate"></label>
+    <div class="hse-preset-group" id="hsePresetGroup">
+      <button type="button" data-preset="7">Last 7d</button>
+      <button type="button" data-preset="30">Last 30d</button>
+      <button type="button" data-preset="90">Last 90d</button>
+      <button type="button" data-preset="all" class="active">Full range</button>
+    </div>
+    <div class="spacer"></div>
+    <div class="hse-sync-status" id="hseSyncStatus">
+      <span class="hse-sync-dot" id="hseSyncDot"></span>
+      <span id="hseSyncText">Loading&hellip;</span>
+    </div>
+    <button class="button secondary" type="button" id="hseRefreshBtn">Refresh data</button>
+  </div>
+
+  <div id="hseErrorNotice" class="notice danger hidden" role="alert"></div>
+
+  <div id="hseEmptyState" class="card hse-empty-dashboard hidden">
+    <h2>No HSE statistics yet</h2>
+    <p>Upload the project's daily HSE statistics workbook to bring this dashboard live.</p>
+    <a class="button primary" href="{{ url_for('admin', view='hse-upload') }}">Go to Data Management</a>
+  </div>
+
+  <div id="hseDashboardContent" class="hidden">
+
+    <section class="card">
+      <div class="hse-section-title"><span>Overview</span><h2>Project Safety Snapshot</h2></div>
+      <div id="hseZeroHarmBanner"></div>
+      <div class="hse-kpi-grid" id="hseOverviewKpis"></div>
+    </section>
+
+    <section class="card hse-section">
+      <div class="hse-section-title"><span>Administrative &amp; Exposure Data</span><h2>Workforce &amp; Man-Hours</h2></div>
+      <div class="hse-kpi-grid" id="hseWorkforceKpis"></div>
+      <div class="hse-chart-grid cols-2">
+        <div class="hse-chart-box">
+          <h4>Daily manpower on site</h4>
+          <div id="hseChartManpower"></div>
+          <div class="hse-chart-legend">
+            <span class="hse-legend-item"><span class="hse-legend-swatch swatch-navy"></span>BEC manpower</span>
+            <span class="hse-legend-item"><span class="hse-legend-swatch swatch-navy2"></span>Sub-contractor manpower</span>
+            <span class="hse-legend-item"><span class="hse-legend-swatch swatch-navy-light"></span>Total manpower</span>
+          </div>
+        </div>
+        <div class="hse-chart-box">
+          <h4>Total man-hours per day</h4>
+          <div id="hseChartManHours"></div>
+        </div>
+      </div>
+      <div class="hse-chart-grid hse-chart-grid-spaced">
+        <div class="hse-chart-box">
+          <h4>Safe man-hours accrued since last LTI</h4>
+          <div id="hseChartSafeHours"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card hse-section">
+      <div class="hse-section-title"><span>Lagging Indicators</span><h2>Incidents &amp; Injury Rates</h2></div>
+      <div class="hse-kpi-grid" id="hseLaggingKpis"></div>
+      <div class="hse-chart-grid">
+        <div class="hse-chart-box">
+          <h4>Recordable incident categories (period total)</h4>
+          <div id="hseChartIncidentSummary"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card hse-section">
+      <div class="hse-section-title"><span>Leading Indicators</span><h2>Proactive Safety Activity</h2></div>
+      <div class="hse-kpi-grid" id="hseLeadingKpis"></div>
+      <div class="hse-chart-grid cols-2">
+        <div class="hse-chart-box">
+          <h4>Toolbox talk sessions per day</h4>
+          <div id="hseChartTbt"></div>
+        </div>
+        <div class="hse-chart-box">
+          <h4>Near misses reported per day</h4>
+          <div id="hseChartNearMiss"></div>
+        </div>
+        <div class="hse-chart-box">
+          <h4>HSE non-conformance reports (NCRs)</h4>
+          <div id="hseChartNcr"></div>
+          <div class="hse-chart-legend">
+            <span class="hse-legend-item"><span class="hse-legend-swatch swatch-red"></span>Issued</span>
+            <span class="hse-legend-item"><span class="hse-legend-swatch swatch-green"></span>Closed</span>
+          </div>
+        </div>
+        <div class="hse-chart-box">
+          <h4>Leading activity totals (period)</h4>
+          <div id="hseChartLeadingSummary"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card hse-section">
+      <div class="hse-section-title"><span>Inspections &amp; Audits</span><h2>Assurance Activity</h2></div>
+      <div class="hse-kpi-grid" id="hseInspectionsKpis"></div>
+      <div class="hse-chart-grid cols-2">
+        <div class="hse-chart-box">
+          <h4>Audits, walkthroughs &amp; committee (period total)</h4>
+          <div id="hseChartAudits"></div>
+        </div>
+        <div class="hse-chart-box">
+          <h4>Safety observation reports (SOR)</h4>
+          <div id="hseChartSor"></div>
+          <div class="hse-chart-legend">
+            <span class="hse-legend-item"><span class="hse-legend-swatch swatch-amber"></span>Issued</span>
+            <span class="hse-legend-item"><span class="hse-legend-swatch swatch-green"></span>Closed</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card hse-section">
+      <div class="hse-section-title"><span>OHS Trainings</span><h2>Inductions &amp; Training</h2></div>
+      <div class="hse-kpi-grid" id="hseTrainingsKpis"></div>
+      <div class="hse-chart-grid cols-2">
+        <div class="hse-chart-box">
+          <h4>HSE inductions (people) per day</h4>
+          <div id="hseChartInductions"></div>
+        </div>
+        <div class="hse-chart-box">
+          <h4>Training sessions per day</h4>
+          <div id="hseChartTrainingSessions"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card hse-section">
+      <div class="hse-section-title"><span>Permits</span><h2>Permit to Work (PTW)</h2></div>
+      <div class="hse-kpi-grid" id="hsePermitsKpis"></div>
+      <div class="hse-chart-grid">
+        <div class="hse-chart-box">
+          <h4>Permits to work issued per day</h4>
+          <div id="hseChartPtw"></div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='hse_dashboard.js') }}" defer></script>
