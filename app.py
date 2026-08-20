@@ -20,6 +20,10 @@ from flask import Flask, Response, jsonify, redirect, render_template, request, 
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
+
 from charts import bar_chart_svg, grouped_bar_chart_svg, line_chart_svg
 
 try:
@@ -1260,6 +1264,53 @@ def ptw_csv(records: list[dict[str, Any]]) -> str:
     return output.getvalue()
 
 
+PTW_XLSX_HEADERS = [
+    "S.N", "PTW Number", "PTW Issuer", "PTW Receiver", "Type of PTW", "Work Description",
+    "Area HSE Personnel", "Location", "Shift", "PTW Start Date & Time", "PTW End Date & Time",
+    "Company Name", "Status", "No. of Workers", "Reviewed By",
+]
+PTW_XLSX_COLUMN_WIDTHS = [7, 16, 18, 20, 14, 42, 18, 16, 9, 20, 20, 22, 10, 12, 26]
+PTW_XLSX_OPEN_FILL = PatternFill("solid", fgColor="FFFF00")
+
+
+def ptw_xlsx(records: list[dict[str, Any]]) -> bytes:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "PTW Log"
+
+    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="0A1F8F")
+    header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    for col, title in enumerate(PTW_XLSX_HEADERS, start=1):
+        cell = sheet.cell(row=1, column=col, value=title)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_align
+    sheet.row_dimensions[1].height = 30
+    sheet.freeze_panes = "A2"
+
+    for col, width in enumerate(PTW_XLSX_COLUMN_WIDTHS, start=1):
+        sheet.column_dimensions[get_column_letter(col)].width = width
+
+    for row_index, record in enumerate(records, start=2):
+        values = [
+            record["seq"], record["ptw_number"], record["issuer"], record["receiver"], record["ptw_type"],
+            record["work_description"], record["area_hse_personnel"], record["location"], record["shift"],
+            f'{record["start_date"]} {record["start_time"]}'.strip(), f'{record["end_date"]} {record["end_time"]}'.strip(),
+            record["company"], record["status"], record["workers_count"] if record["workers_count"] is not None else "",
+            record["reviewed_by"],
+        ]
+        for col, value in enumerate(values, start=1):
+            cell = sheet.cell(row=row_index, column=col, value=value)
+            # Matches the yellow highlight used by hand in the original spreadsheet for open permits.
+            if record["status"] == "open":
+                cell.fill = PTW_XLSX_OPEN_FILL
+
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
 @app.get("/admin/export")
 @admin_required
 def export_records() -> Response:
@@ -1291,6 +1342,18 @@ def export_ptw() -> Response:
     csv_text = ptw_csv(filtered_ptw(limit=5000))
     filename = f'diriyah-ptw-log-{datetime.now(timezone.utc).date().isoformat()}.csv'
     return Response("\ufeff" + csv_text, mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@app.get("/admin/export/ptw.xlsx")
+@admin_required
+def export_ptw_xlsx() -> Response:
+    workbook_bytes = ptw_xlsx(filtered_ptw(limit=5000))
+    filename = f'diriyah-ptw-log-{datetime.now(timezone.utc).date().isoformat()}.xlsx'
+    return Response(
+        workbook_bytes,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.get("/admin/backup")
