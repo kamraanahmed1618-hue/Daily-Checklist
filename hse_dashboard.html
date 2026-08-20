@@ -103,6 +103,42 @@ table.log tbody tr:nth-child(even):hover td { background: var(--tint); }
 footer { padding: 30px 0 10px; color: var(--muted); font-size: 12px; text-align: center; border-top: 1px solid var(--line); margin-top: 30px; }
 footer a { color: var(--navy-2); }
 
+.data-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin: -6px 0 18px; padding: 12px 18px; background: var(--white); border: 1px solid var(--line); border-radius: 14px; }
+.data-bar .spacer { flex: 1; }
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border: 1px solid var(--line); border-radius: 9px; background: #fff; color: var(--navy-2); font-size: 12.5px; font-weight: 700; cursor: pointer; }
+.btn.primary { background: var(--navy); border-color: var(--navy); color: #fff; }
+.btn.danger { color: var(--red); }
+.btn:hover { filter: brightness(0.97); }
+.file-btn { position: relative; overflow: hidden; }
+.file-btn input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.storage-note { font-size: 12px; color: var(--muted); }
+.storage-note b { color: var(--ink); }
+
+dialog#entryDialog { width: min(760px, calc(100% - 32px)); max-height: calc(100vh - 60px); padding: 0; border: none; border-radius: var(--radius); box-shadow: var(--shadow); }
+dialog#entryDialog::backdrop { background: rgba(10,20,50,.45); }
+.dialog-head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 22px; background: var(--navy); color: #fff; border-radius: var(--radius) var(--radius) 0 0; }
+.dialog-head h3 { margin: 0; font-family: Georgia, serif; font-size: 19px; font-weight: 500; }
+.dialog-close { width: 30px; height: 30px; border: 0; border-radius: 50%; background: rgba(255,255,255,.15); color: #fff; font-size: 15px; cursor: pointer; }
+.dialog-body { padding: 20px 22px; overflow-y: auto; max-height: calc(100vh - 190px); }
+.dialog-foot { position: sticky; bottom: 0; display: flex; align-items: center; gap: 10px; padding: 14px 22px; background: var(--sand); border-top: 1px solid var(--line); border-radius: 0 0 var(--radius) var(--radius); }
+.entry-date-row { display: flex; align-items: flex-end; gap: 14px; margin-bottom: 18px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+.entry-date-row label { display: block; margin-bottom: 6px; font-size: 11px; font-weight: 750; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+.entry-date-row input[type=date] { padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; font-size: 14px; }
+.entry-status { font-size: 12px; font-weight: 700; padding: 6px 11px; border-radius: 999px; }
+.entry-status.new { background: var(--tint); color: var(--navy-2); }
+.entry-status.existing { background: var(--amber-soft); color: var(--amber); }
+.form-section { margin-bottom: 20px; }
+.form-section summary { cursor: pointer; font-size: 13px; font-weight: 750; color: var(--navy-dark); padding: 4px 0; list-style: none; display: flex; align-items: center; gap: 8px; }
+.form-section summary::before { content: "▸"; font-size: 10px; color: var(--navy-2); transition: transform .15s; }
+.form-section[open] summary::before { transform: rotate(90deg); }
+.form-section-fields { margin-top: 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.form-field label { display: block; margin-bottom: 5px; font-size: 11.5px; font-weight: 600; color: #26324a; }
+.form-field input { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; }
+.form-field input:disabled { background: var(--sand); color: var(--muted); }
+.form-field small { display: block; margin-top: 3px; color: var(--muted); font-size: 10.5px; }
+.log-date-btn { background: none; border: 0; padding: 0; color: var(--navy-2); font-weight: 700; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+tr.is-local td:first-child::after { content: "●"; margin-left: 6px; color: var(--navy-2); font-size: 8px; vertical-align: middle; }
+
 @media (max-width: 640px) {
   .site-header { padding: 16px; }
   main { width: calc(100% - 24px); }
@@ -128,7 +164,7 @@ footer a { color: var(--navy-2); }
       <div class="meta-item"><b id="metaEmail">&ndash;</b>Contact</div>
       <div class="meta-item"><b id="metaSp">&ndash;</b>SP Approved Ratio</div>
     </div>
-    <span class="offline-badge">Offline dashboard &middot; no data leaves this file</span>
+    <span class="offline-badge">Offline dashboard &middot; edits stay on this device</span>
   </div>
 </header>
 
@@ -152,6 +188,42 @@ footer a { color: var(--navy-2); }
     <div class="spacer"></div>
     <div class="range-readout" id="rangeReadout"></div>
   </div>
+
+  <div class="data-bar">
+    <button class="btn primary" id="openEntryBtn" type="button">+ Log / edit a day</button>
+    <button class="btn" id="exportBtn" type="button">Export backup (.json)</button>
+    <label class="btn file-btn">Import backup
+      <input type="file" id="importInput" accept="application/json,.json">
+    </label>
+    <button class="btn danger" id="resetBtn" type="button">Clear local edits</button>
+    <div class="spacer"></div>
+    <div class="storage-note" id="storageNote"></div>
+  </div>
+
+  <dialog id="entryDialog">
+    <form id="entryForm">
+      <div class="dialog-head">
+        <h3>Log a day's HSE stats</h3>
+        <button type="button" class="dialog-close" id="closeEntryBtn" aria-label="Close">&times;</button>
+      </div>
+      <div class="dialog-body">
+        <div class="entry-date-row">
+          <div>
+            <label for="entryDate">Date</label>
+            <input type="date" id="entryDate" required>
+          </div>
+          <span class="entry-status" id="entryStatus"></span>
+        </div>
+        <div id="entryFieldsHost"></div>
+      </div>
+      <div class="dialog-foot">
+        <button type="button" class="btn danger" id="deleteEntryBtn" style="display:none;">Delete this entry</button>
+        <div class="spacer"></div>
+        <button type="button" class="btn" id="cancelEntryBtn">Cancel</button>
+        <button type="submit" class="btn primary">Save entry</button>
+      </div>
+    </form>
+  </dialog>
 
   <section class="card" id="overview">
     <div class="section-heading">
@@ -206,11 +278,7 @@ footer a { color: var(--navy-2); }
       </div>
     </div>
     <div class="kpi-grid" id="laggingKpis" style="margin-bottom:22px;"></div>
-    <div class="chart-grid cols-2">
-      <div class="chart-box">
-        <h4>Near misses reported per day</h4>
-        <div id="chartNearMiss"></div>
-      </div>
+    <div class="chart-grid">
       <div class="chart-box">
         <h4>Recordable incident categories (period total)</h4>
         <div id="chartIncidentSummary"></div>
@@ -232,18 +300,14 @@ footer a { color: var(--navy-2); }
         <div id="chartTbt"></div>
       </div>
       <div class="chart-box">
+        <h4>Near misses reported per day</h4>
+        <div id="chartNearMiss"></div>
+      </div>
+      <div class="chart-box">
         <h4>HSE non-conformance reports (NCRs)</h4>
         <div id="chartNcr"></div>
         <div class="chart-legend">
           <span class="legend-item"><span class="legend-swatch" style="background:#ad3328"></span>Issued</span>
-          <span class="legend-item"><span class="legend-swatch" style="background:#1d5a46"></span>Closed</span>
-        </div>
-      </div>
-      <div class="chart-box">
-        <h4>Safety observation reports (SOR)</h4>
-        <div id="chartSor"></div>
-        <div class="chart-legend">
-          <span class="legend-item"><span class="legend-swatch" style="background:#8a5b12"></span>Issued</span>
           <span class="legend-item"><span class="legend-swatch" style="background:#1d5a46"></span>Closed</span>
         </div>
       </div>
@@ -262,10 +326,18 @@ footer a { color: var(--navy-2); }
       </div>
     </div>
     <div class="kpi-grid" id="inspectionsKpis" style="margin-bottom:22px;"></div>
-    <div class="chart-grid">
+    <div class="chart-grid cols-2">
       <div class="chart-box">
-        <h4>Audits, walkthroughs &amp; surveillance (period total)</h4>
+        <h4>Audits, walkthroughs &amp; committee (period total)</h4>
         <div id="chartAudits"></div>
+      </div>
+      <div class="chart-box">
+        <h4>Safety observation reports (SOR)</h4>
+        <div id="chartSor"></div>
+        <div class="chart-legend">
+          <span class="legend-item"><span class="legend-swatch" style="background:#8a5b12"></span>Issued</span>
+          <span class="legend-item"><span class="legend-swatch" style="background:#1d5a46"></span>Closed</span>
+        </div>
       </div>
     </div>
   </section>
@@ -490,10 +562,26 @@ function kpiCard(value, label, sub, alt) {
   return `<div class="kpi${alt ? ' alt' : ''}"><strong>${value}</strong><span>${label}</span>${sub ? `<small>${sub}</small>` : ''}</div>`;
 }
 
-/* ---------- main render ---------- */
-const allRecords = DATA.records.slice().sort((a, b) => a.date < b.date ? -1 : 1);
-const fullMin = allRecords[0].date, fullMax = allRecords[allRecords.length - 1].date;
+/* ---------- local data store (browser-only, no network) ---------- */
+const STORAGE_KEY = 'hseDashboard.overrides.v1';
+function loadOverrides() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); }
+  catch (e) { return {}; }
+}
+function saveOverridesToStorage() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides)); } catch (e) { /* storage unavailable */ }
+}
+let overrides = loadOverrides(); // { 'YYYY-MM-DD': {..all header fields..} }
 
+function getAllRecords() {
+  const map = {};
+  DATA.records.forEach(r => { map[r.date] = r; });
+  Object.keys(overrides).forEach(d => { map[d] = Object.assign({ date: d }, overrides[d]); });
+  return Object.values(map).sort((a, b) => a.date < b.date ? -1 : 1);
+}
+function isLocalOverride(date) { return Object.prototype.hasOwnProperty.call(overrides, date); }
+
+/* ---------- main render ---------- */
 document.getElementById('projectName').textContent = DATA.meta.project || '1Hotel Diriyah';
 document.getElementById('metaResponsible').textContent = DATA.meta.responsible || '–';
 document.getElementById('metaPosition').textContent = DATA.meta.position || '–';
@@ -502,9 +590,22 @@ document.getElementById('metaSp').textContent = (DATA.meta.sp_ratio !== null && 
 
 const startInput = document.getElementById('startDate');
 const endInput = document.getElementById('endDate');
-startInput.min = fullMin; startInput.max = fullMax;
-endInput.min = fullMin; endInput.max = fullMax;
-startInput.value = fullMin; endInput.value = fullMax;
+let allRecords = [], fullMin = '', fullMax = '';
+
+function recomputeBounds() {
+  allRecords = getAllRecords();
+  fullMin = allRecords[0].date;
+  fullMax = allRecords[allRecords.length - 1].date;
+  startInput.min = fullMin; startInput.max = fullMax;
+  endInput.min = fullMin; endInput.max = fullMax;
+  startInput.value = fullMin; endInput.value = fullMax;
+  setPresetActive('all');
+  const editedCount = Object.keys(overrides).length;
+  document.getElementById('storageNote').innerHTML = editedCount
+    ? `<b>${editedCount}</b> day${editedCount === 1 ? '' : 's'} edited in this browser &mdash; export a backup to keep them safe.`
+    : `No local edits yet &mdash; use &ldquo;Log / edit a day&rdquo; to add today's numbers.`;
+}
+recomputeBounds();
 
 function setPresetActive(name) {
   document.querySelectorAll('#presetBtns button').forEach(b => b.classList.toggle('active', b.dataset.preset === name));
@@ -595,14 +696,10 @@ function render() {
     kpiCard(fmtInt(fatalities), 'Fatalities', 'Sum over range'),
     kpiCard(fmtInt(ltis), 'Lost time injuries', 'Sum over range'),
     kpiCard(fmtInt(aggregate(rows, 'Total Recordable Incidents (LTI+Fire+MTC+PD+MVI)')), 'Total recordable incidents'),
-    kpiCard(fmtInt(aggregate(rows, 'Near Miss (NM)')), 'Near misses reported'),
     kpiCard(fmtInt(aggregate(rows, 'First Aid Cases (FAC)')), 'First aid cases'),
     kpiCard(fmtInt(aggregate(rows, 'Medical Treatment Cases (MTC)')), 'Medical treatment cases'),
+    kpiCard(fmtInt(aggregate(rows, 'Property Damages (PD)')), 'Property damages'),
   ].join('');
-
-  barChart(document.getElementById('chartNearMiss'), labels, [
-    { name: 'Near misses', color: COLORS.amber, values: rows.map(r => r['Near Miss (NM)']) },
-  ], { title: 'Near misses' });
 
   const incidentCats = [
     { label: 'Fatalities', value: aggregate(rows, 'Number of Fatalities') || 0, color: COLORS.red },
@@ -620,26 +717,25 @@ function render() {
   /* ---- Leading ---- */
   document.getElementById('leadingKpis').innerHTML = [
     kpiCard(fmtInt(aggregate(rows, 'Toolbox Talks Sessions(TBT)')), 'Toolbox talks'),
+    kpiCard(fmtInt(aggregate(rows, 'Near Miss (NM)')), 'Near misses reported'),
     kpiCard(fmtInt(aggregate(rows, 'HSE NCRs Issued')), 'NCRs issued'),
     kpiCard(fmtInt(aggregate(rows, 'HSE NCRs Closed')), 'NCRs closed'),
     kpiCard(fmtPct(aggregate(rows, 'NCRs Closure Rate')), 'NCR closure rate', 'Last record'),
-    kpiCard(fmtInt(aggregate(rows, 'Safety Observations Issued(SOR)')), 'SORs issued'),
-    kpiCard(fmtPct(aggregate(rows, 'SOR Closeout Ratio')), 'SOR closeout ratio', 'Last record'),
+    kpiCard(fmtInt(aggregate(rows, 'Health Survalience Conducted (# of People)')), 'Health surveillance (people)'),
   ].join('');
 
   barChart(document.getElementById('chartTbt'), labels, [
     { name: 'TBT sessions', color: COLORS.navy, values: rows.map(r => r['Toolbox Talks Sessions(TBT)']) },
   ], { title: 'Toolbox talks' });
 
+  barChart(document.getElementById('chartNearMiss'), labels, [
+    { name: 'Near misses', color: COLORS.amber, values: rows.map(r => r['Near Miss (NM)']) },
+  ], { title: 'Near misses' });
+
   barChart(document.getElementById('chartNcr'), labels, [
     { name: 'Issued', color: COLORS.red, values: rows.map(r => r['HSE NCRs Issued']) },
     { name: 'Closed', color: COLORS.green, values: rows.map(r => r['HSE NCRs Closed']) },
   ], { title: 'NCRs' });
-
-  barChart(document.getElementById('chartSor'), labels, [
-    { name: 'Issued', color: COLORS.amber, values: rows.map(r => r['Safety Observations Issued(SOR)']) },
-    { name: 'Closed', color: COLORS.green, values: rows.map(r => r['Safety Observations Clossed(SOR)']) },
-  ], { title: 'SORs' });
 
   const leadingCats = [
     { label: 'HSE Campaigns', value: aggregate(rows, 'HSE Campaigns') || 0 },
@@ -658,8 +754,9 @@ function render() {
     kpiCard(fmtInt(aggregate(rows, 'External Audits')), 'External audits'),
     kpiCard(fmtInt(aggregate(rows, 'Safety Management Walkthroughs')), 'Safety mgmt walkthroughs'),
     kpiCard(fmtInt(aggregate(rows, 'No. of Site Walkthrough (CM/Site Eng/HSE Team)')), 'Site walkthroughs'),
-    kpiCard(fmtInt(aggregate(rows, 'Health Survalience Conducted (# of People)')), 'Health surveillance (people)'),
     kpiCard(fmtInt(aggregate(rows, 'Project Safety Committee Meeting')), 'Safety committee meetings'),
+    kpiCard(fmtInt(aggregate(rows, 'Safety Observations Issued(SOR)')), 'SORs issued'),
+    kpiCard(fmtPct(aggregate(rows, 'SOR Closeout Ratio')), 'SOR closeout ratio', 'Last record'),
   ].join('');
 
   const auditCats = [
@@ -670,6 +767,11 @@ function render() {
     { label: 'Committee Mtgs', value: aggregate(rows, 'Project Safety Committee Meeting') || 0 },
   ];
   categoryBarChart(document.getElementById('chartAudits'), auditCats, { title: 'Audits & walkthroughs' });
+
+  barChart(document.getElementById('chartSor'), labels, [
+    { name: 'Issued', color: COLORS.amber, values: rows.map(r => r['Safety Observations Issued(SOR)']) },
+    { name: 'Closed', color: COLORS.green, values: rows.map(r => r['Safety Observations Clossed(SOR)']) },
+  ], { title: 'SORs' });
 
   /* ---- Trainings ---- */
   document.getElementById('trainingsKpis').innerHTML = [
@@ -717,11 +819,255 @@ function renderTable() {
   document.getElementById('tableCount').textContent = filtered.length + ' row' + (filtered.length === 1 ? '' : 's');
   const body = filtered.slice().reverse().map(r => {
     const cells = tableCols.map(h => `<td>${fmtCell(r[h])}</td>`).join('');
-    return `<tr><td>${r.date}</td>${cells}</tr>`;
+    const rowClass = isLocalOverride(r.date) ? ' class="is-local"' : '';
+    return `<tr${rowClass}><td><button type="button" class="log-date-btn" data-edit-date="${r.date}">${r.date}</button></td>${cells}</tr>`;
   }).join('');
   document.getElementById('logBody').innerHTML = body || '<tr><td colspan="' + (tableCols.length + 1) + '">No matching rows.</td></tr>';
+  document.getElementById('logBody').querySelectorAll('[data-edit-date]').forEach(btn => {
+    btn.addEventListener('click', () => openEntryDialog(btn.dataset.editDate));
+  });
 }
 document.getElementById('tableSearch').addEventListener('input', renderTable);
+
+/* ---------- entry form: log / edit a day ---------- */
+const FORM_SECTIONS = [
+  { title: 'Workforce & exposure', open: true, fields: [
+    { key: 'Total BEC Manpower', step: 1, carry: true },
+    { key: 'Total Sub. Con Manpower', step: 1, carry: true },
+    { key: 'Working Hours / Day', step: 0.5, carry: true },
+    { key: 'Safety Population Required', step: 1, carry: true },
+    { key: 'Safety Population Available', step: 1, carry: true },
+    { key: 'Hours Worked since last LTI (safe Man Hours)', step: 1, suggest: true, hint: 'Auto-suggested from manpower & LTIs; edit to override.' },
+  ]},
+  { title: 'Lagging indicators', fields: [
+    'Number of Fatalities', 'Number of Lost Time Injuries (LTI)', 'Lost Time Injury Rate (LTIFR)',
+    'First Aid Cases (FAC)', 'Medical Treatment Cases (MTC)', 'Property Damages (PD)',
+    'Fire Incident Level I & ii', 'Fire Incidents Level iii', 'Security Incidents (SIC)', 'Motor Vehicle Incidents (MVI)',
+    'Total Recordable Incidents Rate (TRIR)',
+    { key: 'Total Recordable Incidents (LTI+Fire+MTC+PD+MVI)', suggest: true, hint: 'Auto-suggested as LTI + Fire + MTC + PD + MVI; edit to override.' },
+  ].map(f => typeof f === 'string' ? { key: f, step: f.includes('Rate') ? 0.01 : 1 } : f) },
+  { title: 'Leading indicators', fields: [
+    'Near Miss (NM)', 'HSE NCRs Issued', 'HSE NCRs Closed', { key: 'NCRs Closure Rate', percent: true },
+    'Toolbox Talks Sessions(TBT)', 'HSE Campaigns', 'Drills', 'Mass TBTs', 'Stop Work Notice Issued',
+    'HSE Rewards (# of People)', 'No. SubCon Safety meeting with CM', 'Voilations Issued',
+    'Health Survalience Conducted (# of People)',
+  ].map(f => typeof f === 'string' ? { key: f, step: 1 } : f) },
+  { title: 'Inspections, audits & SOR', fields: [
+    'Internal HSE Audits', 'External Audits', 'Safety Management Walkthroughs',
+    'No. of Site Walkthrough (CM/Site Eng/HSE Team)', 'Project Safety Committee Meeting',
+    { key: '% Safety Committee Meeting & action closure', percent: true },
+    'Safety Observations Issued(SOR)', 'Safety Observations Clossed(SOR)',
+    { key: 'SOR Closeout Ratio', percent: true },
+  ].map(f => typeof f === 'string' ? { key: f, step: 1 } : f) },
+  { title: 'OHS trainings', fields: [
+    'HSE Inductions(NO of People)', { key: 'HSE Inductions Compliance Percentage', percent: true },
+    'Internal / Third Party HSE Trainings (Sessions)', 'Training Manhours',
+  ].map(f => typeof f === 'string' ? { key: f, step: 1 } : f) },
+  { title: 'Permits', fields: [
+    'Permit to Work Issued (PTW)', { key: 'PTW Compliance Percentage', percent: true },
+  ].map(f => typeof f === 'string' ? { key: f, step: 1 } : f) },
+];
+const CARRY_KEYS = FORM_SECTIONS.flatMap(s => s.fields).filter(f => f.carry).map(f => f.key);
+
+
+const entryDialog = document.getElementById('entryDialog');
+const entryForm = document.getElementById('entryForm');
+const entryFieldsHost = document.getElementById('entryFieldsHost');
+const entryDateInput = document.getElementById('entryDate');
+
+function num(v) { const n = parseFloat(v); return isNaN(n) ? 0 : n; }
+
+function fieldInputId(key) { return 'f_' + key.replace(/[^a-zA-Z0-9]/g, '_'); }
+
+entryFieldsHost.innerHTML = FORM_SECTIONS.map((section, si) => `
+  <details class="form-section" ${section.open ? 'open' : ''}>
+    <summary>${esc(section.title)}</summary>
+    <div class="form-section-fields">
+      ${section.fields.map(f => {
+        const id = fieldInputId(f.key);
+        const stepAttr = f.percent ? '0.1' : (f.step || 1);
+        return `<div class="form-field">
+          <label for="${id}">${esc(f.key)}${f.percent ? ' (%)' : ''}</label>
+          <input type="number" step="${stepAttr}" id="${id}" data-key="${esc(f.key)}">
+          ${f.hint ? `<small>${esc(f.hint)}</small>` : ''}
+        </div>`;
+      }).join('')}
+    </div>
+  </details>
+`).join('');
+
+function suggestComputedFields() {
+  FORM_SECTIONS.forEach(section => section.fields.forEach(f => {
+    if (!f.suggest) return;
+    const el = document.getElementById(fieldInputId(f.key));
+    if (!el || el.dataset.touched === '1') return;
+    if (f.key === 'Hours Worked since last LTI (safe Man Hours)') {
+      const bec = num(document.getElementById(fieldInputId('Total BEC Manpower')).value);
+      const sub = num(document.getElementById(fieldInputId('Total Sub. Con Manpower')).value);
+      const hrs = num(document.getElementById(fieldInputId('Working Hours / Day')).value);
+      const lti = num(document.getElementById(fieldInputId('Number of Lost Time Injuries (LTI)')).value);
+      const todayManHours = (bec + sub) * hrs;
+      const prev = previousRecordBefore(entryDateInput.value);
+      const prevSafeHours = prev ? num(prev['Hours Worked since last LTI (safe Man Hours)']) : 0;
+      el.value = lti > 0 ? 0 : Math.round(prevSafeHours + todayManHours);
+    } else if (f.key === 'Total Recordable Incidents (LTI+Fire+MTC+PD+MVI)') {
+      const sum = ['Number of Lost Time Injuries (LTI)', 'Fire Incident Level I & ii', 'Fire Incidents Level iii', 'Medical Treatment Cases (MTC)', 'Property Damages (PD)', 'Motor Vehicle Incidents (MVI)']
+        .reduce((a, k) => a + num(document.getElementById(fieldInputId(k)).value), 0);
+      el.value = sum;
+    }
+  }));
+}
+
+function previousRecordBefore(dateStr) {
+  const before = allRecords.filter(r => r.date < dateStr);
+  return before.length ? before[before.length - 1] : null;
+}
+
+function wireAutoSuggest() {
+  entryFieldsHost.querySelectorAll('input').forEach(el => {
+    el.addEventListener('input', () => { el.dataset.touched = '1'; });
+  });
+  ['Total BEC Manpower', 'Total Sub. Con Manpower', 'Working Hours / Day', 'Number of Lost Time Injuries (LTI)',
+   'Fire Incident Level I & ii', 'Fire Incidents Level iii', 'Medical Treatment Cases (MTC)', 'Property Damages (PD)', 'Motor Vehicle Incidents (MVI)']
+    .forEach(k => {
+      const el = document.getElementById(fieldInputId(k));
+      if (el) el.addEventListener('input', suggestComputedFields);
+    });
+}
+wireAutoSuggest();
+
+function fillFormFromRecord(record, isRealRecord) {
+  FORM_SECTIONS.forEach(section => section.fields.forEach(f => {
+    const el = document.getElementById(fieldInputId(f.key));
+    if (!el) return;
+    delete el.dataset.touched;
+    let v = record ? record[f.key] : null;
+    if (f.percent && v !== null && v !== undefined) v = Math.round(v * 1000) / 10;
+    el.value = (v === null || v === undefined) ? '' : v;
+    // A real saved record's suggested fields are authoritative - don't let
+    // suggestComputedFields() below recompute and clobber them.
+    if (f.suggest && isRealRecord) el.dataset.touched = '1';
+  }));
+}
+
+function openEntryDialog(dateStr) {
+  const existing = allRecords.find(r => r.date === dateStr);
+  const date = dateStr || (() => {
+    const last = new Date(fullMax + 'T00:00:00');
+    last.setDate(last.getDate() + 1);
+    return last.toISOString().slice(0, 10);
+  })();
+  entryDateInput.value = date;
+  const carryFrom = !existing ? allRecords[allRecords.length - 1] : null;
+  const template = existing || (carryFrom ? CARRY_KEYS.reduce((acc, k) => (acc[k] = carryFrom[k], acc), {}) : null);
+  fillFormFromRecord(template, !!existing);
+  suggestComputedFields();
+  updateEntryStatus();
+  document.getElementById('deleteEntryBtn').style.display = isLocalOverride(date) ? '' : 'none';
+  entryDialog.showModal();
+}
+
+function updateEntryStatus() {
+  const date = entryDateInput.value;
+  const el = document.getElementById('entryStatus');
+  const existing = allRecords.find(r => r.date === date);
+  if (existing && isLocalOverride(date)) { el.textContent = 'Editing a locally-logged day'; el.className = 'entry-status existing'; }
+  else if (existing) { el.textContent = 'Editing a workbook-recorded day'; el.className = 'entry-status existing'; }
+  else { el.textContent = 'New day'; el.className = 'entry-status new'; }
+  document.getElementById('deleteEntryBtn').style.display = isLocalOverride(date) ? '' : 'none';
+}
+entryDateInput.addEventListener('change', () => {
+  const existing = allRecords.find(r => r.date === entryDateInput.value);
+  fillFormFromRecord(existing || null, !!existing);
+  suggestComputedFields();
+  updateEntryStatus();
+});
+
+document.getElementById('openEntryBtn').addEventListener('click', () => openEntryDialog(null));
+document.getElementById('closeEntryBtn').addEventListener('click', () => entryDialog.close());
+document.getElementById('cancelEntryBtn').addEventListener('click', () => entryDialog.close());
+
+entryForm.addEventListener('submit', e => {
+  e.preventDefault();
+  const date = entryDateInput.value;
+  if (!date) return;
+  const record = {};
+  FORM_SECTIONS.forEach(section => section.fields.forEach(f => {
+    const el = document.getElementById(fieldInputId(f.key));
+    const raw = el.value.trim();
+    if (raw === '') { record[f.key] = null; return; }
+    let v = parseFloat(raw);
+    if (f.percent) v = v / 100;
+    record[f.key] = v;
+  }));
+  record['Total Man Power'] = num(record['Total BEC Manpower']) + num(record['Total Sub. Con Manpower']);
+  record['Total Man Hours'] = record['Total Man Power'] * num(record['Working Hours / Day']);
+  overrides[date] = record;
+  saveOverridesToStorage();
+  entryDialog.close();
+  recomputeBounds();
+  render();
+});
+
+document.getElementById('deleteEntryBtn').addEventListener('click', () => {
+  const date = entryDateInput.value;
+  if (!date || !isLocalOverride(date)) return;
+  if (!confirm(`Remove your locally-logged entry for ${date}? This cannot be undone.`)) return;
+  delete overrides[date];
+  saveOverridesToStorage();
+  entryDialog.close();
+  recomputeBounds();
+  render();
+});
+
+/* ---------- export / import / reset ---------- */
+document.getElementById('exportBtn').addEventListener('click', () => {
+  const payload = { meta: DATA.meta, headers: DATA.headers, agg: DATA.agg, sections: DATA.sections, records: getAllRecords() };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'hse-dashboard-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+});
+
+document.getElementById('importInput').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const parsed = JSON.parse(reader.result);
+      const records = parsed.records || [];
+      if (!Array.isArray(records) || !records.length) throw new Error('No records found in file.');
+      const seedDates = new Set(DATA.records.map(r => r.date));
+      records.forEach(r => {
+        if (!r.date) return;
+        const seed = DATA.records.find(s => s.date === r.date);
+        if (!seed || JSON.stringify(seed) !== JSON.stringify(r)) overrides[r.date] = r;
+      });
+      saveOverridesToStorage();
+      recomputeBounds();
+      render();
+      alert('Backup imported: ' + records.length + ' day(s) loaded.');
+    } catch (err) {
+      alert('Could not read that file as a dashboard backup: ' + err.message);
+    } finally {
+      e.target.value = '';
+    }
+  };
+  reader.readAsText(file);
+});
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+  if (!Object.keys(overrides).length) { alert('No local edits to clear.'); return; }
+  if (!confirm('Remove all locally-logged edits in this browser? Export a backup first if you want to keep them.')) return;
+  overrides = {};
+  saveOverridesToStorage();
+  recomputeBounds();
+  render();
+});
 
 render();
 </script>
