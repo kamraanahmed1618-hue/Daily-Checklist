@@ -10,7 +10,25 @@ This folder contains the Render-ready edition of the checklist application.
 - Protected records dashboard with search and date filters
 - Summary and item-level CSV downloads
 - Individual printable records (use the browser's **Save as PDF** option)
+- Live HSE Statistics dashboard, fed by an admin-uploaded daily statistics workbook (see below)
 - PostgreSQL storage on Render, with SQLite fallback for local testing
+
+## HSE Statistics dashboard (Excel-driven)
+
+Under **Records → HSE Statistics** / **Data Management**, an admin can upload the project's
+daily HSE statistics `.xlsx` workbook (matching the "Statistics" sheet layout: one row per
+day, headers like `Total BEC Manpower`, `Toolbox Talks Sessions(TBT)`, `PTW Compliance
+Percentage`, etc.). The server validates the file, upserts each day into the `hse_daily_stats`
+table (matching dates are updated in place, not duplicated), and logs every attempt -
+successful or not - to an import history table. Nothing is ever imported partially: a bad
+file is rejected before any row is written, and the previous dataset is left untouched.
+
+The dashboard itself (KPI cards, charts, per-section breakdowns) reads from
+`GET /api/hse/dashboard`, polls that endpoint every 45 seconds, and offers a manual "Refresh
+data" button - so anyone who opens `/admin?view=hse-stats` from any device sees the same
+live data without ever touching the source spreadsheet themselves. See `hse_stats.py` for the
+column mapping and workbook validation, and `templates/_hse_dashboard.html` /
+`static/hse_dashboard.js` for the frontend.
 
 ## Deploy on Render
 

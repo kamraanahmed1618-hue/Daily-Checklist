@@ -23,6 +23,8 @@
     <a class="record-tab {{ 'active' if view == 'violations' }}" href="{{ url_for('admin', view='violations') }}">Violation Notices <span>{{ violations_count }}</span></a>
     <a class="record-tab {{ 'active' if view == 'ptw' }}" href="{{ url_for('admin', view='ptw') }}">PTW Log <span>{{ ptw_count }}</span></a>
     <a class="record-tab {{ 'active' if view == 'trends' }}" href="{{ url_for('admin', view='trends') }}">Trends</a>
+    <a class="record-tab {{ 'active' if view == 'hse-stats' }}" href="{{ url_for('admin', view='hse-stats') }}">HSE Statistics <span>{{ hse_stats_count }}</span></a>
+    <a class="record-tab {{ 'active' if view == 'hse-upload' }}" href="{{ url_for('admin', view='hse-upload') }}">Data Management</a>
 </div>
 
 {% if view == 'inspections' %}
@@ -92,6 +94,10 @@
     <div class="chart-heading"><h2>Non-compliant findings</h2><p>Count of "No" responses recorded per week</p></div>
     {{ trend_charts.non_compliant|safe }}
 </section>
+{% elif view == 'hse-stats' %}
+{% include "_hse_dashboard.html" %}
+{% elif view == 'hse-upload' %}
+{% include "_hse_upload.html" %}
 {% else %}
 
 <section class="card records-card">
