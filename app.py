@@ -636,12 +636,33 @@ def auto_close_expired_ptw() -> None:
 
 
 def ptw_sort_key(record: dict[str, Any]) -> int:
-    # PTW Number is free text (e.g. "BAJV-834") matching an external numbering
-    # scheme, so it can't be auto-generated — but the list should still read in
-    # that number's order rather than submission order, since entries are
-    # sometimes logged out of sequence or renumbered later via edit.
+    # PTW numbers are auto-suggested but the field stays free text, since entries
+    # are occasionally logged out of sequence or renumbered later via edit — so
+    # the list still needs to read in that number's order rather than submission order.
     match = re.search(r"(\d+)\s*$", record["ptw_number"] or "")
     return int(match.group(1)) if match else -1
+
+
+def next_ptw_number() -> str:
+    """Suggest the next PTW number as one past the highest logged so far, reusing
+    whatever prefix that entry used (e.g. "BAJV-840" -> "BAJV-841"), so whoever is
+    filling in the form doesn't have to check the log first to avoid clashing."""
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT ptw_number FROM ptw_logs"))
+        rows = cursor.fetchall()
+    best: tuple[int, str] | None = None
+    for row in rows:
+        match = re.search(r"^(.*?)(\d+)\s*$", row["ptw_number"] or "")
+        if not match:
+            continue
+        number = int(match.group(2))
+        if best is None or number > best[0]:
+            best = (number, match.group(1))
+    if best is None:
+        return "BAJV-1"
+    number, prefix = best
+    return f"{prefix}{number + 1}"
 
 
 def filtered_ptw(limit: int = 1000) -> list[dict[str, Any]]:
@@ -802,7 +823,7 @@ def violation_form() -> str:
 
 @app.get("/ptw")
 def ptw_form() -> str:
-    return render_template("ptw.html", ptw_types=PTW_TYPES, shifts=PTW_SHIFTS)
+    return render_template("ptw.html", ptw_types=PTW_TYPES, shifts=PTW_SHIFTS, next_ptw_number=next_ptw_number())
 
 
 def detect_image_type(data: bytes) -> str | None:

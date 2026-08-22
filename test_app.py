@@ -231,6 +231,17 @@ class ChecklistApplicationTests(unittest.TestCase):
         response = self.client.post("/api/ptw", json=payload)
         self.assertEqual(response.status_code, 400)
 
+    def test_ptw_form_suggests_next_permit_number(self):
+        blank = self.client.get("/ptw")
+        self.assertIn(b'value="BAJV-1"', blank.data)
+
+        payload = self.ptw_payload()
+        payload["ptwNumber"] = "BAJV-840"
+        self.client.post("/api/ptw", json=payload)
+
+        after = self.client.get("/ptw")
+        self.assertIn(b'value="BAJV-841"', after.data)
+
     def test_submit_review_and_export_ptw(self):
         response = self.client.post("/api/ptw", json=self.ptw_payload())
         self.assertEqual(response.status_code, 201)
