@@ -897,8 +897,18 @@ def submit_inspection() -> tuple[Response, int] | Response:
                 record["signoff_name"], record["signed"], record["total_inspected"], record["compliant"],
                 record["non_compliant"], record["not_applicable"], record["score"], created_at,
             ]
+            columns = (
+                "id, seq, report_no, project_name, work_location, contractor, inspected_by, "
+                "inspection_date, inspection_time, shift, responses, response_notes, remarks, "
+                "signoff_name, signed, total_inspected, compliant, non_compliant, not_applicable, "
+                "score, created_at"
+            )
             placeholders = ",".join("?" for _ in values)
-            cursor.execute(sql(f"INSERT INTO inspections VALUES ({placeholders})"), values)
+            # Column names are spelled out (not just positional VALUES) because seq was
+            # added to this table later via ALTER TABLE, which appends physically on any
+            # database created before that migration ran — a positional INSERT there would
+            # silently shift every later value into the wrong column instead of erroring.
+            cursor.execute(sql(f"INSERT INTO inspections ({columns}) VALUES ({placeholders})"), values)
         return jsonify({"id": record_id, "reportNo": report_no, "score": record["score"], "nonCompliant": record["non_compliant"]}), 201
     except ValueError as error:
         return jsonify({"error": str(error)}), 400
@@ -937,8 +947,19 @@ def submit_near_miss() -> tuple[Response, int] | Response:
                 record["hse_manager_signoff"], record["followup_by"], record["followup_date"], record["status"],
                 record["status_reason"], json.dumps(record["photos"]), created_at,
             ]
+            columns = (
+                "id, seq, report_no, department_project, incident_date, incident_time, "
+                "location, reported_by, what_happened, could_have_happened, "
+                "near_miss_types, near_miss_type_other, immediate_actions, "
+                "hazard_eliminated, hazard_actions_required, investigation_lead, "
+                "investigation_date, root_causes, root_cause_other, "
+                "root_cause_detail, corrective_actions, preventive_measures, "
+                "person_responsible, target_completion_date, reported_by_signoff, "
+                "hse_manager_signoff, followup_by, followup_date, status, "
+                "status_reason, photos, created_at"
+            )
             placeholders = ",".join("?" for _ in values)
-            cursor.execute(sql(f"INSERT INTO near_miss_reports VALUES ({placeholders})"), values)
+            cursor.execute(sql(f"INSERT INTO near_miss_reports ({columns}) VALUES ({placeholders})"), values)
         return jsonify({"id": record_id, "reportNo": report_no}), 201
     except ValueError as error:
         return jsonify({"error": str(error)}), 400
@@ -973,8 +994,15 @@ def submit_violation() -> tuple[Response, int] | Response:
                 record["deduction_amount"], record["photos_attached"], record["documents_attached"],
                 record["issued_by_name"], record["issued_by_position"], json.dumps(record["photos"]), created_at,
             ]
+            columns = (
+                "id, seq, violation_no, project_name, violation_date, employee_name, "
+                "employee_id, company_contractor, job_title, violation_location, "
+                "violation_type, violation_description, actions, "
+                "deduction_amount, photos_attached, documents_attached, "
+                "issued_by_name, issued_by_position, photos, created_at"
+            )
             placeholders = ",".join("?" for _ in values)
-            cursor.execute(sql(f"INSERT INTO violation_notices VALUES ({placeholders})"), values)
+            cursor.execute(sql(f"INSERT INTO violation_notices ({columns}) VALUES ({placeholders})"), values)
         return jsonify({"id": record_id, "violationNo": violation_no}), 201
     except ValueError as error:
         return jsonify({"error": str(error)}), 400
@@ -1007,8 +1035,14 @@ def submit_ptw() -> tuple[Response, int] | Response:
                 record["start_date"], record["start_time"], record["end_date"], record["end_time"],
                 record["company"], record["status"], record["workers_count"], record["reviewed_by"], now, now,
             ]
+            columns = (
+                "id, seq, ptw_number, issuer, receiver, ptw_type, "
+                "work_description, area_hse_personnel, location, shift, "
+                "start_date, start_time, end_date, end_time, "
+                "company, status, workers_count, reviewed_by, created_at, updated_at"
+            )
             placeholders = ",".join("?" for _ in values)
-            cursor.execute(sql(f"INSERT INTO ptw_logs VALUES ({placeholders})"), values)
+            cursor.execute(sql(f"INSERT INTO ptw_logs ({columns}) VALUES ({placeholders})"), values)
         return jsonify({"id": record_id, "ptwNumber": record["ptw_number"]}), 201
     except ValueError as error:
         return jsonify({"error": str(error)}), 400
