@@ -801,7 +801,7 @@ def home() -> str:
 
 @app.get("/inspection")
 def inspection_form() -> str:
-    return render_template("index.html", total_items=len(CHECKLIST_ITEMS))
+    return render_template("index.html", total_items=len(CHECKLIST_ITEMS), sections=CHECKLIST)
 
 
 @app.get("/sw.js")

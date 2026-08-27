@@ -40,9 +40,35 @@ function collectState() {
   });
   const responses = {};
   const responseNotes = {};
+  const applicableSections = {};
   document.querySelectorAll("input[data-item-id]:checked").forEach((input) => { responses[input.dataset.itemId] = input.value; });
   document.querySelectorAll("textarea[data-note-id]").forEach((input) => { if (input.value) responseNotes[input.dataset.noteId] = input.value; });
-  return { fields, responses, responseNotes };
+  document.querySelectorAll("input[data-section-toggle]").forEach((input) => { applicableSections[input.dataset.sectionToggle] = input.checked; });
+  return { fields, responses, responseNotes, applicableSections };
+}
+
+// A section left unticked in "Which sections apply today?" is not relevant to this
+// inspection, so every item inside it is auto-answered N/A instead of making the
+// inspector click through dozens of items that don't apply to their work. Ticking the
+// section back on clears that auto-fill so it can be answered by hand, since real
+// per-item answers should never be silently mixed with ones nobody actually reviewed.
+function markSectionNA(sectionId) {
+  const section = sectionsRoot.querySelector(`[data-section="${CSS.escape(sectionId)}"]`);
+  if (!section) return;
+  section.dataset.autoNa = "true";
+  section.querySelectorAll('.requirement input[value="NA"]').forEach((input) => { input.checked = true; });
+}
+
+function clearSectionAuto(sectionId) {
+  const section = sectionsRoot.querySelector(`[data-section="${CSS.escape(sectionId)}"]`);
+  if (!section || section.dataset.autoNa !== "true") return;
+  delete section.dataset.autoNa;
+  section.querySelectorAll(".requirement input[data-item-id]").forEach((input) => { input.checked = false; });
+}
+
+function setSectionApplicable(sectionId, applicable) {
+  if (applicable) clearSectionAuto(sectionId);
+  else markSectionNA(sectionId);
 }
 
 function saveDraft() {
@@ -84,6 +110,10 @@ function applyDraft() {
   Object.entries(draft.responseNotes || {}).forEach(([id, value]) => {
     const input = document.querySelector(`textarea[data-note-id="${CSS.escape(id)}"]`);
     if (input) input.value = value;
+  });
+  Object.entries(draft.applicableSections || {}).forEach(([sectionId, applicable]) => {
+    const toggle = document.querySelector(`input[data-section-toggle="${CSS.escape(sectionId)}"]`);
+    if (toggle) toggle.checked = applicable;
   });
   updateProgress();
 }
@@ -177,7 +207,11 @@ async function start() {
     checklist = payload.sections;
     totalItems = payload.total;
     renderChecklist();
+    checklist.forEach((section) => markSectionNA(section.id));
     applyDraft();
+    document.querySelectorAll("input[data-section-toggle]").forEach((input) => {
+      input.addEventListener("change", () => setSectionApplicable(input.dataset.sectionToggle, input.checked));
+    });
     form.addEventListener("input", () => { updateProgress(); saveDraft(); });
     form.addEventListener("change", () => { updateProgress(); saveDraft(); });
     form.addEventListener("submit", submitInspection);

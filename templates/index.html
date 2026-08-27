@@ -45,9 +45,22 @@
     </div>
   </section>
 
+  <section class="card">
+    <div class="section-heading">
+      <div><span class="step-number">02</span><h2>Which sections apply today?</h2></div>
+      <p>Tick every section this inspection actually covers</p>
+    </div>
+    <p class="section-picker-hint">Anything left unticked is automatically marked N/A across all of its items — you can still open a section and answer any item by hand if needed.</p>
+    <div class="checkbox-grid">
+      {% for section in sections %}
+      <label class="checkbox-tile"><input type="checkbox" data-section-toggle="{{ section.id }}"><span>{{ section.title }}</span></label>
+      {% endfor %}
+    </div>
+  </section>
+
   <section class="checklist-header">
     <div>
-      <span class="step-number">02</span>
+      <span class="step-number">03</span>
       <div><h2>Inspection requirements</h2><p id="progress-copy">0 of {{ total_items }} answered</p></div>
     </div>
     <div class="progress-track" aria-hidden="true"><span id="progress-bar"></span></div>
@@ -59,7 +72,7 @@
 
   <section class="card signoff-card">
     <div class="section-heading">
-      <div><span class="step-number">03</span><h2>Remarks &amp; sign-off</h2></div>
+      <div><span class="step-number">04</span><h2>Remarks &amp; sign-off</h2></div>
     </div>
     <label><span>General remarks</span><textarea name="remarks" rows="4" maxlength="3000" placeholder="Record follow-up actions, responsible persons, or other notes…"></textarea></label>
     <div class="signoff-grid">

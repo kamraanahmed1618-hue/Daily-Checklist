@@ -17,7 +17,7 @@ os.environ["ADMIN_PASSWORD"] = "test-admin-password"
 os.environ["SECRET_KEY"] = "test-secret-key-that-is-only-used-by-the-automated-suite"
 os.environ["EXPORT_TOKEN"] = "test-export-token"
 
-from app import CHECKLIST_ITEMS, app, database  # noqa: E402
+from app import CHECKLIST, CHECKLIST_ITEMS, app, database  # noqa: E402
 
 
 class ChecklistApplicationTests(unittest.TestCase):
@@ -102,6 +102,12 @@ class ChecklistApplicationTests(unittest.TestCase):
         response = self.client.get("/inspection")
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"OHS Team Inspection Checklist", response.data)
+
+    def test_inspection_form_includes_a_section_toggle_for_every_section(self):
+        html = self.client.get("/inspection").get_data(as_text=True)
+        self.assertEqual(html.count("data-section-toggle="), len(CHECKLIST))
+        for section in CHECKLIST:
+            self.assertIn(f'data-section-toggle="{section["id"]}"', html)
 
     def test_checklist_has_all_source_requirements(self):
         response = self.client.get("/api/checklist")
