@@ -65,6 +65,7 @@ h1, h2, p { margin-top: 0; }
 .checkbox-grid { margin: 4px 0 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
 .checkbox-tile { display: flex; align-items: center; gap: 9px; padding: 11px 13px; background: #f5f7fb; border: 1px solid #d7deea; border-radius: 9px; font-size: 13px; font-weight: 650; cursor: pointer; }
 .checkbox-tile input { width: 16px; height: 16px; accent-color: var(--navy); }
+.section-picker-hint { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
 .list-fields { margin-bottom: 16px; display: grid; gap: 8px; }
 .list-fields > span { display: block; margin-bottom: 2px; color: #26324a; font-size: 12px; font-weight: 750; }
 .field-note { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
