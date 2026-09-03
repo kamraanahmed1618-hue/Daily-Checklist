@@ -93,6 +93,28 @@ PHOTO_KEY_PATTERN = re.compile(r"uploads/[a-zA-Z0-9_-]{8,64}/[0-9a-f]{20}\.(?:jp
 SITE_TZ = ZoneInfo("Asia/Riyadh")
 
 
+def _b2_endpoint_host() -> str | None:
+    endpoint = os.environ.get("B2_ENDPOINT")
+    if not endpoint:
+        return None
+    if not endpoint.startswith("http"):
+        endpoint = f"https://{endpoint}"
+    return endpoint.split("//", 1)[-1].split("/", 1)[0]
+
+
+# Photo URLs are presigned against B2's real endpoint host (e.g.
+# "s3.us-west-004.backblazeb2.com"), which is two subdomain labels deep — a CSP
+# host wildcard like "*.backblazeb2.com" only ever matches one label, so it silently
+# blocks the inline <img> (though a direct link to the same URL still opens fine,
+# since img-src doesn't govern navigation). Naming the exact configured host avoids
+# that mismatch instead of guessing at a wildcard pattern.
+_B2_IMG_HOST = _b2_endpoint_host()
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; img-src 'self' data:" + (f" https://{_B2_IMG_HOST}" if _B2_IMG_HOST else "") +
+    "; style-src 'self'; script-src 'self'; connect-src 'self'; base-uri 'self'; frame-ancestors 'none'"
+)
+
+
 def is_postgres() -> bool:
     return bool(os.environ.get("DATABASE_URL"))
 
@@ -790,7 +812,7 @@ def security_headers(response: Response) -> Response:
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "same-origin")
     response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-    response.headers.setdefault("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https://*.backblazeb2.com; style-src 'self'; script-src 'self'; connect-src 'self'; base-uri 'self'; frame-ancestors 'none'")
+    response.headers.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
     return response
 
 
