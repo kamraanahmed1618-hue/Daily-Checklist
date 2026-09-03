@@ -433,6 +433,17 @@ class ChecklistApplicationTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 503)
 
+    def test_b2_endpoint_host_matches_the_exact_presigned_url_host(self):
+        # A CSP host wildcard like "*.backblazeb2.com" only ever matches one DNS
+        # label, but B2's real endpoint is two labels deep (e.g. "s3.<region>.
+        # backblazeb2.com") — so the CSP has to name the exact host instead of
+        # guessing with a wildcard, or the browser silently blocks the photo <img>.
+        from app import _b2_endpoint_host
+        with patch.dict(os.environ, {"B2_ENDPOINT": "s3.us-west-004.backblazeb2.com"}):
+            self.assertEqual(_b2_endpoint_host(), "s3.us-west-004.backblazeb2.com")
+        with patch.dict(os.environ, {"B2_ENDPOINT": "https://s3.eu-central-003.backblazeb2.com"}):
+            self.assertEqual(_b2_endpoint_host(), "s3.eu-central-003.backblazeb2.com")
+
     def test_b2_client_uses_path_style_and_disables_chunked_checksums(self):
         with patch.dict(os.environ, {
             "B2_ENDPOINT": "s3.us-west-004.backblazeb2.com",
