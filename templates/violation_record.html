@@ -12,63 +12,84 @@
   </div>
 </section>
 
-<article class="doc-sheet">
+<article class="doc-sheet violation-notice">
   <div class="doc-letterhead"><img src="{{ url_for('static', filename='bec-arabia-contracting.png') }}" alt="BEC Arabia Contracting"></div>
-  <div class="doc-band">Occupational Health &amp; Safety Violation Notice</div>
+  <p class="doc-title-plain">Occupational Health &amp; Safety Violation Notice</p>
 
-  <p class="doc-note bold">Project Information</p>
-  <table class="doc-plain">
-    <tr><td>Project Name</td><td>{{ record.project_name }}</td></tr>
-    <tr><td>Violation No.</td><td>{{ record.violation_no }}</td></tr>
-    <tr><td>Date</td><td>{{ record.violation_date }}</td></tr>
+  <p class="doc-heading">Project Information</p>
+  <table class="doc-field-table">
+    <thead><tr><th>Field</th><th>Details</th></tr></thead>
+    <tbody>
+      <tr><td>Project Name</td><td>{{ record.project_name }}</td></tr>
+      <tr><td>Violation No.</td><td>{{ record.violation_no }}</td></tr>
+      <tr><td>Date</td><td>{{ record.violation_date }}</td></tr>
+    </tbody>
   </table>
 
-  <p class="doc-note bold">Violating Employee Details</p>
-  <table class="doc-plain">
-    <tr><td>Name</td><td>{{ record.employee_name }}</td></tr>
-    <tr><td>Employee ID / Iqama No.</td><td>{{ record.employee_id or '—' }}</td></tr>
-    <tr><td>Company / Contractor</td><td>{{ record.company_contractor }}</td></tr>
-    <tr><td>Job Title</td><td>{{ record.job_title or '—' }}</td></tr>
+  <p class="doc-heading">Violating Employee Details</p>
+  <table class="doc-field-table">
+    <thead><tr><th>Field</th><th>Details</th></tr></thead>
+    <tbody>
+      <tr><td>Name</td><td>{{ record.employee_name }}</td></tr>
+      <tr><td>Employee ID / Iqama No.</td><td>{{ record.employee_id or '—' }}</td></tr>
+      <tr><td>Company / Contractor</td><td>{{ record.company_contractor }}</td></tr>
+      <tr><td>Job Title</td><td>{{ record.job_title or '—' }}</td></tr>
+    </tbody>
   </table>
 
-  <p class="doc-note bold">Violation Details</p>
-  <table class="doc-plain">
-    <tr><td>Violation Location</td><td>{{ record.violation_location }}</td></tr>
-    <tr><td>Type of Violation</td><td>{{ record.violation_type }}</td></tr>
-    <tr><td>Description of Violation</td><td>{{ record.violation_description }}</td></tr>
+  <p class="doc-heading">Violation Details</p>
+  <table class="doc-field-table">
+    <thead><tr><th>Field</th><th>Details</th></tr></thead>
+    <tbody>
+      <tr><td>Violation Location</td><td>{{ record.violation_location }}</td></tr>
+      <tr><td>Type of Violation</td><td>{{ record.violation_type }}</td></tr>
+      <tr><td>Description of Violation</td><td>{{ record.violation_description }}</td></tr>
+    </tbody>
   </table>
 
-  <p class="doc-note bold">Action Taken</p>
-  <div class="doc-checkbox-row">
-    {% for action in ["First Warning", "Final Warning", "Salary Deduction", "Deduction from Subcontractor Payment", "Removal from Site"] %}
-    <span class="doc-checkbox {{ 'checked' if action in record.actions else '' }}">{{ '☑' if action in record.actions else '☐' }} {{ action }}</span>
-    {% endfor %}
-  </div>
-  <table class="doc-plain">
-    <tr><td>Deduction Amount (if any)</td><td>{{ record.deduction_amount or '—' }}</td></tr>
+  <p class="doc-heading">Action Taken</p>
+  <table class="doc-actions-table">
+    <tr>
+      {% for action in ["First Warning", "Final Warning", "Salary Deduction", "Deduction from Subcontractor Payment", "Removal from Site"] %}
+      <td>{{ '☑' if action in record.actions else '☐' }} {{ action }}</td>
+      {% endfor %}
+    </tr>
+    <tr>
+      <td class="label" colspan="2">Deduction Amount (if any)</td>
+      <td colspan="3">{{ record.deduction_amount or '—' }}</td>
+    </tr>
   </table>
 
-  <p class="doc-note bold">Attachment</p>
-  <div class="doc-checkbox-row">
-    <span class="doc-checkbox {{ 'checked' if record.photos_attached else '' }}">{{ '☑' if record.photos_attached else '☐' }} Violation Photos</span>
-    <span class="doc-checkbox {{ 'checked' if record.documents_attached else '' }}">{{ '☑' if record.documents_attached else '☐' }} Supporting Documents</span>
-  </div>
+  <p class="doc-heading">Attachment</p>
+  <p class="doc-attachment-row">
+    <span>{{ '☑' if record.photos_attached else '☐' }} Violation Photos</span>
+    <span>{{ '☑' if record.documents_attached else '☐' }} Supporting Documents</span>
+  </p>
 
-  <p class="doc-note bold">Issued By</p>
-  <table class="doc-plain">
-    <tr><td>Name</td><td>{{ record.issued_by_name }}</td></tr>
-    <tr><td>Position</td><td>{{ record.issued_by_position or '—' }}</td></tr>
-    <tr><td>Signature</td><td>Digitally signed · {{ record.created_at }}</td></tr>
+  <p class="doc-heading">Issued By</p>
+  <table class="doc-field-table">
+    <thead><tr><th>Field</th><th>Details</th></tr></thead>
+    <tbody>
+      <tr><td>Name</td><td>{{ record.issued_by_name }}</td></tr>
+      <tr><td>Position</td><td>{{ record.issued_by_position or '—' }}</td></tr>
+      <tr><td>Signature</td><td>Digitally signed · {{ record.created_at }}</td></tr>
+    </tbody>
   </table>
 
-  <p class="doc-note bold">Evidence</p>
-  {% if photo_urls %}
-  <div class="doc-evidence">
-    {% for url in photo_urls %}<a href="{{ url }}" target="_blank" rel="noopener"><img src="{{ url }}" alt="Violation evidence photo {{ loop.index }}"></a>{% endfor %}
-  </div>
-  {% else %}
-  <p class="doc-note">No photos attached.</p>
-  {% endif %}
+  <table class="doc-evidence-table">
+    <thead><tr><th colspan="2">Evidence</th></tr></thead>
+    <tbody>
+      {% if photo_urls %}
+      {% for url in photo_urls %}
+      {% if loop.index0 is even %}<tr>{% endif %}
+      <td><a href="{{ url }}" target="_blank" rel="noopener"><img src="{{ url }}" alt="Violation evidence photo {{ loop.index }}"></a></td>
+      {% if loop.index0 is odd or loop.last %}</tr>{% endif %}
+      {% endfor %}
+      {% else %}
+      <tr><td colspan="2">No photos attached.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
 
   <div class="doc-classification">
     <span>Classification: BEC Arabia - External - Unrestricted Use</span>

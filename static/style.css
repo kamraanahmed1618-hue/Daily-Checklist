@@ -247,13 +247,33 @@ td small { margin-top: 3px; color: var(--muted); }
 
 .doc-band { margin: 14px 0 0; padding: 8px 12px; color: white; background: #002060; font-weight: 700; font-size: 14px; text-align: center; text-transform: uppercase; letter-spacing: .02em; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 .doc-band:first-child { margin-top: 0; }
-.doc-plain td:first-child { width: 30%; font-weight: 700; background: #f5f5f5; }
 .doc-checkbox-row { margin: 8px 0; padding: 4px 0; display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; }
 .doc-checkbox.checked { font-weight: 700; }
 .doc-note { margin: 8px 0; font-size: 13px; }
-.doc-note.bold { margin: 16px 0 4px; color: #1F3864; font-weight: 700; text-transform: uppercase; font-size: 13px; }
 .doc-evidence { margin: 8px 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
 .doc-evidence img { width: 100%; height: 140px; object-fit: cover; display: block; border: 1px solid #000; }
+
+/* Violation notice — mirrors the company's official "Occupational Health & Safety
+   Violation Notice" Word template exactly: sans-serif body text, a plain
+   centered/underlined title (no colored banner), bulleted section headings, and
+   every field table carrying its own navy "Field / Details" header row. Scoped to
+   .violation-notice so it doesn't touch the inspection or near-miss doc-sheets,
+   which follow their own separate official templates. */
+.doc-sheet.violation-notice { font-family: "Lato", "Segoe UI", Calibri, Arial, sans-serif; }
+.doc-title-plain { margin: 14px 0 10px; color: #111; font-weight: 700; text-align: center; text-decoration: underline; }
+.doc-heading { margin: 16px 0 4px 20px; color: #111; font-weight: 700; font-size: 13px; }
+.doc-heading::before { content: "•"; margin-right: 8px; }
+.doc-field-table { margin-left: 20px; width: calc(100% - 20px); }
+.doc-field-table thead th { background: #002060; color: white; font-weight: 700; text-align: center; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+.doc-field-table td:first-child, .doc-field-table th:first-child { width: 27%; }
+.doc-actions-table { margin-left: 20px; width: calc(100% - 20px); }
+.doc-actions-table tr:first-child td { text-align: center; }
+.doc-actions-table td.label { background: #002060; color: white; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+.doc-attachment-row { margin: 8px 0 8px 20px; display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; }
+.doc-evidence-table { margin-left: 20px; width: calc(100% - 20px); }
+.doc-evidence-table thead th { background: #002060; color: white; font-weight: 700; text-align: center; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+.doc-evidence-table td { width: 50%; text-align: center; }
+.doc-evidence-table img { width: 100%; height: 160px; object-fit: cover; display: block; }
 
 .doc-checklist thead th { background: #9DC3E6; font-weight: 700; text-align: left; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 .doc-checklist thead th:last-child, .doc-checklist td.result-cell { text-align: center; width: 15%; }
@@ -335,7 +355,12 @@ td small { margin-top: 3px; color: var(--muted); }
   .doc-checkbox-row { font-size: 8.5pt; }
   .doc-letterhead img { height: 24px; }
   .doc-classification { font-size: 7pt; }
-  .doc-checklist tr, .doc-noncompliance tr, .doc-summary tr, .doc-footer tr, .doc-info tr, .doc-plain tr { break-inside: avoid; }
+  .doc-checklist tr, .doc-noncompliance tr, .doc-summary tr, .doc-footer tr, .doc-info tr { break-inside: avoid; }
   .doc-evidence { grid-template-columns: repeat(3, 1fr); break-inside: avoid; }
   .doc-evidence img { height: 100px; }
+  .doc-title-plain { font-size: 13pt; }
+  .doc-heading { font-size: 9pt; }
+  .doc-attachment-row { font-size: 8.5pt; }
+  .doc-field-table tr, .doc-actions-table tr, .doc-evidence-table tr { break-inside: avoid; }
+  .doc-evidence-table img { height: 100px; }
 }
