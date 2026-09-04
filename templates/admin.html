@@ -123,13 +123,16 @@
                 <a class="button primary" href="{{ url_for('export_records', kind='detailed', q=request.args.get('q', ''), date_from=request.args.get('date_from', ''), date_to=request.args.get('date_to', '')) }}">Export detailed</a>
             {% elif view == 'near-miss' %}
                 <a class="button primary" href="{{ url_for('export_near_miss', q=request.args.get('q', ''), date_from=request.args.get('date_from', ''), date_to=request.args.get('date_to', '')) }}">Export CSV</a>
+                <a class="button secondary" href="{{ url_for('export_near_miss_photos', q=request.args.get('q', ''), date_from=request.args.get('date_from', ''), date_to=request.args.get('date_to', '')) }}">Download all photos</a>
             {% elif view == 'violations' %}
                 <a class="button primary" href="{{ url_for('export_violations', q=request.args.get('q', ''), date_from=request.args.get('date_from', ''), date_to=request.args.get('date_to', '')) }}">Export CSV</a>
+                <a class="button secondary" href="{{ url_for('export_violations_photos', q=request.args.get('q', ''), date_from=request.args.get('date_from', ''), date_to=request.args.get('date_to', '')) }}">Download all photos</a>
             {% elif view == 'ptw' %}
                 <a class="button secondary" href="{{ url_for('export_ptw', q=request.args.get('q', ''), date_from=request.args.get('date_from', ''), date_to=request.args.get('date_to', '')) }}">Export CSV</a>
                 <a class="button primary" href="{{ url_for('export_ptw_xlsx', q=request.args.get('q', ''), date_from=request.args.get('date_from', ''), date_to=request.args.get('date_to', '')) }}">Export Excel</a>
             {% else %}
                 <a class="button primary" href="{{ url_for('export_training', q=request.args.get('q', ''), date_from=request.args.get('date_from', ''), date_to=request.args.get('date_to', '')) }}">Export CSV</a>
+                <a class="button secondary" href="{{ url_for('export_training_photos', q=request.args.get('q', ''), date_from=request.args.get('date_from', ''), date_to=request.args.get('date_to', '')) }}">Download all photos</a>
             {% endif %}
         </div>
     </div>

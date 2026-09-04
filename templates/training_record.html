@@ -50,6 +50,7 @@
 
   <div class="doc-band">Photographic Record</div>
   {% if photo_urls %}
+  <p class="no-print"><a class="text-link" href="{{ url_for('training_photos_zip', record_id=record.id) }}">Download all photos</a></p>
   <div class="doc-evidence">
     {% for url in photo_urls %}<a href="{{ url }}" target="_blank" rel="noopener"><img src="{{ url }}" alt="Training photo {{ loop.index }}"></a>{% endfor %}
   </div>
@@ -59,6 +60,7 @@
 
   <div class="doc-band">Attendance Record</div>
   {% if attendance_photo_urls %}
+  <p class="no-print"><a class="text-link" href="{{ url_for('training_attendance_zip', record_id=record.id) }}">Download all attendance sheets</a></p>
   <div class="doc-evidence">
     {% for url in attendance_photo_urls %}<a href="{{ url }}" target="_blank" rel="noopener"><img src="{{ url }}" alt="Attendance sheet {{ loop.index }}"></a>{% endfor %}
   </div>
