@@ -373,13 +373,13 @@ td small { margin-top: 3px; color: var(--muted); }
   .doc-letterhead img { height: 24px; }
   .doc-classification { font-size: 7pt; }
   .doc-checklist tr, .doc-noncompliance tr, .doc-summary tr, .doc-footer tr, .doc-info tr { break-inside: avoid; }
-  .doc-evidence { grid-template-columns: repeat(3, 1fr); break-inside: avoid; }
-  .doc-evidence img { height: 100px; }
+  .doc-evidence { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); break-inside: avoid; }
+  .doc-evidence img { height: 190px; }
   .doc-title-plain { font-size: 13pt; }
   .doc-heading { font-size: 9pt; }
   .doc-attachment-row { font-size: 8.5pt; }
   .doc-field-table tr, .doc-actions-table tr, .doc-evidence-table tr { break-inside: avoid; }
-  .doc-evidence-table img { height: 100px; }
+  .doc-evidence-table img { height: 190px; }
   .doc-eyebrow-label { font-size: 8pt; }
   .doc-topic-title { font-size: 14pt; }
   .doc-topic-subtitle, .doc-summary-box, .doc-lessons-list { font-size: 9pt; }
