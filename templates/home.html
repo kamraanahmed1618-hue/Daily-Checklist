@@ -11,15 +11,16 @@
     </div>
     <span class="eyebrow">1 Hotel Diriyah · Occupational Health &amp; Safety</span>
     <h1>Site safety &amp; permit systems</h1>
-    <p>One place to file daily inspections, report near-misses and violations, and log permits to work. Pick a system below to get started.</p>
+    <p>One place to file daily inspections, report near-misses and violations, log permits to work, and track training &amp; induction. Pick a system below to get started.</p>
   </div>
 </section>
 
-<section class="stats-grid cols-4">
+<section class="stats-grid cols-5">
   <article><span>Inspections logged</span><strong>{{ counts.inspections }}</strong></article>
   <article><span>Near-miss reports</span><strong>{{ counts.near_miss }}</strong></article>
   <article><span>Violation notices</span><strong>{{ counts.violations }}</strong></article>
   <article><span>Open PTW permits</span><strong>{{ counts.ptw_open }}</strong></article>
+  <article><span>Training sessions</span><strong>{{ counts.training }}</strong></article>
 </section>
 
 <div class="home-grid">
@@ -43,9 +44,14 @@
     <p>Log a permit to work as it's issued or received on site.</p>
     <span class="home-card-arrow">Log permit →</span>
   </a>
+  <a class="home-card training" href="{{ url_for('training_form') }}">
+    <h2>Training Log</h2>
+    <p>Log a toolbox talk, induction, or specific training session with its attendance sheet.</p>
+    <span class="home-card-arrow">Log session →</span>
+  </a>
   <a class="home-card records" href="{{ url_for('admin') }}">
     <h2>Records</h2>
-    <p>Search, review, print, and export everything submitted across all four systems.</p>
+    <p>Search, review, print, and export everything submitted across all five systems.</p>
     <span class="home-card-arrow">Open records →</span>
   </a>
 </div>

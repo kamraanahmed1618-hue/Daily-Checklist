@@ -21,7 +21,7 @@ from flask import Flask, Response, jsonify, redirect, render_template, request, 
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
@@ -334,6 +334,24 @@ def init_db() -> None:
         "CREATE INDEX IF NOT EXISTS ptw_start_date_idx ON ptw_logs (start_date)",
         "CREATE INDEX IF NOT EXISTS ptw_created_idx ON ptw_logs (created_at)",
         "CREATE INDEX IF NOT EXISTS ptw_status_idx ON ptw_logs (status)",
+        """CREATE TABLE IF NOT EXISTS training_logs (
+            id TEXT PRIMARY KEY,
+            seq INTEGER,
+            session_type TEXT NOT NULL,
+            topic TEXT NOT NULL,
+            session_date TEXT NOT NULL,
+            trainer TEXT NOT NULL DEFAULT '',
+            location TEXT NOT NULL DEFAULT '',
+            duration TEXT NOT NULL DEFAULT '',
+            attendees_count INTEGER,
+            remarks TEXT NOT NULL DEFAULT '',
+            photos TEXT NOT NULL DEFAULT '[]',
+            attendance_photos TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL
+        )""",
+        "CREATE INDEX IF NOT EXISTS training_date_idx ON training_logs (session_date)",
+        "CREATE INDEX IF NOT EXISTS training_created_idx ON training_logs (created_at)",
+        "CREATE INDEX IF NOT EXISTS training_type_idx ON training_logs (session_type)",
     ]
     with database() as connection:
         cursor = connection.cursor()
@@ -352,7 +370,7 @@ def init_db() -> None:
         ensure_column("near_miss_reports", "photos", "TEXT NOT NULL DEFAULT '[]'")
         ensure_column("violation_notices", "photos", "TEXT NOT NULL DEFAULT '[]'")
         # Backfill sequential numbers for any pre-existing records in submission order.
-        for table in ("inspections", "near_miss_reports", "violation_notices", "ptw_logs"):
+        for table in ("inspections", "near_miss_reports", "violation_notices", "ptw_logs", "training_logs"):
             cursor.execute(sql(f"SELECT COALESCE(MAX(seq), 0) AS next_seq FROM {table}"))
             next_seq = cursor.fetchone()["next_seq"] or 0
             cursor.execute(sql(f"SELECT id FROM {table} WHERE seq IS NULL ORDER BY created_at ASC"))
@@ -443,6 +461,7 @@ PTW_TYPES = [
 ]
 PTW_SHIFTS = ["Day", "Night"]
 PTW_STATUSES = ["open", "closed"]
+TRAINING_TYPES = ["Induction", "TBT", "Specific Training"]
 
 
 def clean_choices(value: Any, field: str, allowed: list[str]) -> list[str]:
@@ -593,6 +612,38 @@ def validate_ptw(payload: dict[str, Any]) -> dict[str, Any]:
     return {**record, "workers_count": workers_count}
 
 
+def validate_training(payload: dict[str, Any]) -> dict[str, Any]:
+    record = {
+        "session_type": clean_text(payload.get("sessionType"), "Session type", 40),
+        "topic": clean_text(payload.get("topic"), "Topic"),
+        "session_date": clean_date(payload.get("sessionDate"), "Session date"),
+        # Not required: bulk-imported weekly training sheets don't record a trainer name.
+        "trainer": clean_text(payload.get("trainer"), "Trainer / conducted by", 200, False),
+        "location": clean_text(payload.get("location"), "Location", 200, False),
+        "duration": clean_text(payload.get("duration"), "Duration", 60, False),
+        "remarks": clean_text(payload.get("remarks"), "Remarks", 2000, False),
+    }
+    if record["session_type"] not in TRAINING_TYPES:
+        raise ValueError("Select a valid session type.")
+
+    attendees_raw = payload.get("attendeesCount")
+    attendees_count = None
+    if attendees_raw not in (None, ""):
+        try:
+            attendees_count = int(attendees_raw)
+        except (TypeError, ValueError):
+            raise ValueError("Number of attendees must be a whole number.")
+        if attendees_count < 0 or attendees_count > 9999:
+            raise ValueError("Number of attendees must be between 0 and 9999.")
+
+    return {
+        **record,
+        "attendees_count": attendees_count,
+        "photos": clean_photo_keys(payload.get("photoKeys")),
+        "attendance_photos": clean_photo_keys(payload.get("attendancePhotoKeys")),
+    }
+
+
 def admin_required(view: Any) -> Any:
     @wraps(view)
     def wrapped(*args: Any, **kwargs: Any) -> Any:
@@ -693,6 +744,10 @@ def filtered_ptw(limit: int = 1000) -> list[dict[str, Any]]:
     return sorted(records, key=ptw_sort_key, reverse=True)
 
 
+def filtered_training(limit: int = 1000) -> list[dict[str, Any]]:
+    return filtered_rows("training_logs", ["topic", "trainer", "location", "session_type"], "session_date", limit)
+
+
 def record_counts() -> dict[str, int]:
     auto_close_expired_ptw()
     with database() as connection:
@@ -707,9 +762,11 @@ def record_counts() -> dict[str, int]:
         ptw = cursor.fetchone()["c"]
         cursor.execute(sql("SELECT COUNT(*) AS c FROM ptw_logs WHERE status = ?"), ["open"])
         ptw_open = cursor.fetchone()["c"]
+        cursor.execute("SELECT COUNT(*) AS c FROM training_logs")
+        training = cursor.fetchone()["c"]
     return {
         "inspections": inspections, "near_miss": near_miss, "violations": violations,
-        "ptw": ptw, "ptw_open": ptw_open,
+        "ptw": ptw, "ptw_open": ptw_open, "training": training,
     }
 
 
@@ -846,6 +903,11 @@ def violation_form() -> str:
 @app.get("/ptw")
 def ptw_form() -> str:
     return render_template("ptw.html", ptw_types=PTW_TYPES, shifts=PTW_SHIFTS, next_ptw_number=next_ptw_number())
+
+
+@app.get("/training")
+def training_form() -> str:
+    return render_template("training.html", training_types=TRAINING_TYPES)
 
 
 def detect_image_type(data: bytes) -> str | None:
@@ -1075,6 +1137,41 @@ def submit_ptw() -> tuple[Response, int] | Response:
         return jsonify({"error": "The PTW log entry could not be saved."}), 500
 
 
+@app.post("/api/training")
+def submit_training() -> tuple[Response, int] | Response:
+    try:
+        payload = request.get_json(force=True, silent=False)
+        if not isinstance(payload, dict):
+            raise ValueError("The training log data is invalid.")
+        record = validate_training(payload)
+        record_id = secrets.token_hex(16)
+        now = datetime.now(timezone.utc).isoformat()
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute(sql("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM training_logs"))
+            seq = cursor.fetchone()["next_seq"]
+            values = [
+                record_id, seq, record["session_type"], record["topic"], record["session_date"],
+                record["trainer"], record["location"], record["duration"], record["attendees_count"],
+                record["remarks"], json.dumps(record["photos"]), json.dumps(record["attendance_photos"]), now,
+            ]
+            columns = (
+                "id, seq, session_type, topic, session_date, "
+                "trainer, location, duration, attendees_count, "
+                "remarks, photos, attendance_photos, created_at"
+            )
+            placeholders = ",".join("?" for _ in values)
+            cursor.execute(sql(f"INSERT INTO training_logs ({columns}) VALUES ({placeholders})"), values)
+        return jsonify({"id": record_id, "topic": record["topic"]}), 201
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+    except HTTPException:
+        raise
+    except Exception:
+        app.logger.exception("Training log submission failed")
+        return jsonify({"error": "The training log entry could not be saved."}), 500
+
+
 @app.route("/admin", methods=["GET", "POST"])
 def admin() -> str | Response:
     error = ""
@@ -1092,7 +1189,7 @@ def admin() -> str | Response:
         return render_template("login.html", error=error, configured=configured)
 
     view = request.args.get("view", "inspections")
-    if view not in {"inspections", "near-miss", "violations", "ptw", "trends"}:
+    if view not in {"inspections", "near-miss", "violations", "ptw", "training", "trends"}:
         view = "inspections"
 
     counts = record_counts()
@@ -1101,6 +1198,7 @@ def admin() -> str | Response:
     near_miss_records: list[dict[str, Any]] = []
     violations: list[dict[str, Any]] = []
     ptw_logs: list[dict[str, Any]] = []
+    training_logs: list[dict[str, Any]] = []
     trends: list[dict[str, Any]] = []
     ptw_stats: dict[str, Any] = {}
     total = average = non_compliant = 0
@@ -1116,6 +1214,8 @@ def admin() -> str | Response:
     elif view == "ptw":
         ptw_logs = filtered_ptw()
         ptw_stats = ptw_overview()
+    elif view == "training":
+        training_logs = filtered_training()
     else:
         trends = compute_trends()
 
@@ -1142,12 +1242,14 @@ def admin() -> str | Response:
         violations=violations,
         ptw_logs=ptw_logs,
         ptw_stats=ptw_stats,
+        training_logs=training_logs,
         trends=trends,
         trend_charts=trend_charts,
         inspections_count=counts["inspections"],
         near_miss_count=counts["near_miss"],
         violations_count=counts["violations"],
         ptw_count=counts["ptw"],
+        training_count=counts["training"],
     )
 
 
@@ -1292,6 +1394,39 @@ def delete_ptw(record_id: str) -> Response:
     return redirect(url_for("admin", view="ptw"))
 
 
+@app.get("/admin/training/<record_id>")
+@admin_required
+def training_detail(record_id: str) -> str | tuple[str, int]:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT * FROM training_logs WHERE id = ?"), [record_id])
+        row = cursor.fetchone()
+    if not row:
+        return "Record not found", 404
+    record = dict(row)
+    record["photos"] = safe_json_list(record["photos"])
+    record["attendance_photos"] = safe_json_list(record["attendance_photos"])
+    return render_template(
+        "training_record.html",
+        record=record,
+        photo_urls=photo_urls(record["photos"]),
+        attendance_photo_urls=photo_urls(record["attendance_photos"]),
+    )
+
+
+@app.post("/admin/training/<record_id>/delete")
+@admin_required
+def delete_training(record_id: str) -> Response:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT photos, attendance_photos FROM training_logs WHERE id = ?"), [record_id])
+        row = cursor.fetchone()
+        cursor.execute(sql("DELETE FROM training_logs WHERE id = ?"), [record_id])
+    if row:
+        delete_photos(safe_json_list(row["photos"]) + safe_json_list(row["attendance_photos"]))
+    return redirect(url_for("admin", view="training"))
+
+
 def inspections_csv(records: list[dict[str, Any]], detailed: bool) -> str:
     output = io.StringIO()
     writer = csv.writer(output)
@@ -1414,6 +1549,130 @@ def ptw_xlsx(records: list[dict[str, Any]]) -> bytes:
     return buffer.getvalue()
 
 
+def training_csv(records: list[dict[str, Any]]) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "S.N", "Session Type", "Topic", "Date", "Trainer", "Location",
+        "Duration", "Attendees", "Remarks", "Submitted At",
+    ])
+    for record in records:
+        writer.writerow([
+            record["seq"], record["session_type"], record["topic"], record["session_date"], record["trainer"],
+            record["location"], record["duration"], record["attendees_count"] if record["attendees_count"] is not None else "",
+            record["remarks"], record["created_at"],
+        ])
+    return output.getvalue()
+
+
+WEEKLY_TRAINING_HEADER = "In-house Training"
+WEEKLY_INDUCTION_LABEL = "Total no . of Employees Inducted This Week"
+
+
+def parse_weekly_training_xlsx(data: bytes) -> list[dict[str, Any]]:
+    """Parse the site's own "Safety Training Status" weekly template: a short sheet with a
+    Safety Induction summary line, then an In-house Training table (topic, date, attendee
+    count, duration) that runs until the first blank topic cell. Scans for those labels by
+    text instead of hardcoding row numbers, since the training table can be shorter or
+    longer some weeks."""
+    workbook = load_workbook(io.BytesIO(data), data_only=True)
+    sheet = workbook.worksheets[0]
+    records: list[dict[str, Any]] = []
+
+    for row in sheet.iter_rows():
+        for cell in row:
+            if isinstance(cell.value, str) and WEEKLY_INDUCTION_LABEL in cell.value:
+                # The count sits in a "Numbers" column further along the same row (its exact
+                # position varies with the label's merged cell span), so scan the row for it
+                # rather than assuming a fixed offset from the label cell.
+                match = None
+                for other in row:
+                    if other.value and re.search(r"\d+\s*\(\s*\d+\s*Session", str(other.value)):
+                        match = re.search(r"(\d+)\s*(?:\(\s*(\d+)\s*Session)?", str(other.value))
+                        break
+                if match:
+                    inducted = int(match.group(1))
+                    sessions = int(match.group(2)) if match.group(2) else 1
+                    records.append({
+                        "session_type": "Induction", "topic": "Weekly Safety Induction",
+                        "session_date": "", "trainer": "", "location": "", "duration": "",
+                        "attendees_count": inducted,
+                        "remarks": f"{sessions} induction session(s) this week (from uploaded weekly file)",
+                    })
+
+    header_row = None
+    for row in sheet.iter_rows():
+        for cell in row:
+            if isinstance(cell.value, str) and cell.value.strip() == WEEKLY_TRAINING_HEADER:
+                header_row = cell.row
+                break
+        if header_row:
+            break
+    if header_row:
+        for row_index in range(header_row + 1, sheet.max_row + 1):
+            topic = sheet.cell(row=row_index, column=2).value
+            if not topic or not str(topic).strip():
+                break
+            date_value = sheet.cell(row=row_index, column=4).value
+            session_date = date_value.strftime("%Y-%m-%d") if hasattr(date_value, "strftime") else ""
+            attendees = sheet.cell(row=row_index, column=5).value
+            duration = sheet.cell(row=row_index, column=6).value
+            records.append({
+                "session_type": "Specific Training", "topic": str(topic).strip(),
+                "session_date": session_date, "trainer": "", "location": "",
+                "duration": str(duration).strip() if duration else "",
+                "attendees_count": int(attendees) if isinstance(attendees, (int, float)) else None,
+                "remarks": "Imported from uploaded weekly training file",
+            })
+    return records
+
+
+@app.post("/admin/training/import")
+@admin_required
+def import_training() -> tuple[Response, int] | Response:
+    uploaded = request.files.get("file")
+    if not uploaded:
+        return jsonify({"error": "No file provided."}), 400
+    try:
+        parsed = parse_weekly_training_xlsx(uploaded.read())
+    except Exception:
+        app.logger.exception("Weekly training file import failed")
+        return jsonify({"error": "Could not read that file. Make sure it's the weekly training status template."}), 400
+    if not parsed:
+        return jsonify({"error": "No training sessions or induction summary were found in that file."}), 400
+
+    now = datetime.now(timezone.utc).isoformat()
+    imported = 0
+    with database() as connection:
+        cursor = connection.cursor()
+        for entry in parsed:
+            try:
+                record = validate_training({
+                    "sessionType": entry["session_type"], "topic": entry["topic"],
+                    "sessionDate": entry["session_date"] or datetime.now(timezone.utc).date().isoformat(),
+                    "trainer": entry["trainer"], "location": entry["location"], "duration": entry["duration"],
+                    "attendeesCount": entry["attendees_count"], "remarks": entry["remarks"],
+                })
+            except ValueError:
+                continue
+            cursor.execute(sql("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM training_logs"))
+            seq = cursor.fetchone()["next_seq"]
+            values = [
+                secrets.token_hex(16), seq, record["session_type"], record["topic"], record["session_date"],
+                record["trainer"], record["location"], record["duration"], record["attendees_count"],
+                record["remarks"], json.dumps(record["photos"]), json.dumps(record["attendance_photos"]), now,
+            ]
+            columns = (
+                "id, seq, session_type, topic, session_date, "
+                "trainer, location, duration, attendees_count, "
+                "remarks, photos, attendance_photos, created_at"
+            )
+            placeholders = ",".join("?" for _ in values)
+            cursor.execute(sql(f"INSERT INTO training_logs ({columns}) VALUES ({placeholders})"), values)
+            imported += 1
+    return jsonify({"imported": imported}), 201
+
+
 @app.get("/admin/export")
 @admin_required
 def export_records() -> Response:
@@ -1459,6 +1718,14 @@ def export_ptw_xlsx() -> Response:
     )
 
 
+@app.get("/admin/export/training")
+@admin_required
+def export_training() -> Response:
+    csv_text = training_csv(filtered_training(limit=5000))
+    filename = f'diriyah-training-log-{datetime.now(timezone.utc).date().isoformat()}.csv'
+    return Response("﻿" + csv_text, mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
 @app.get("/admin/backup")
 def backup_all() -> Response | tuple[Response, int]:
     expected = os.environ.get("EXPORT_TOKEN")
@@ -1474,6 +1741,7 @@ def backup_all() -> Response | tuple[Response, int]:
         archive.writestr(f"near-miss-{today}.csv", "\ufeff" + near_miss_csv(filtered_near_miss(limit=5000)))
         archive.writestr(f"violations-{today}.csv", "\ufeff" + violations_csv(filtered_violations(limit=5000)))
         archive.writestr(f"ptw-log-{today}.csv", "\ufeff" + ptw_csv(filtered_ptw(limit=5000)))
+        archive.writestr(f"training-log-{today}.csv", "\ufeff" + training_csv(filtered_training(limit=5000)))
     buffer.seek(0)
     filename = f"diriyah-ohs-backup-{today}.zip"
     return Response(buffer.getvalue(), mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})

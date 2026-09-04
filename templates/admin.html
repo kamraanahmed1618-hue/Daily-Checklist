@@ -22,6 +22,7 @@
     <a class="record-tab {{ 'active' if view == 'near-miss' }}" href="{{ url_for('admin', view='near-miss') }}">Near-Miss Reports <span>{{ near_miss_count }}</span></a>
     <a class="record-tab {{ 'active' if view == 'violations' }}" href="{{ url_for('admin', view='violations') }}">Violation Notices <span>{{ violations_count }}</span></a>
     <a class="record-tab {{ 'active' if view == 'ptw' }}" href="{{ url_for('admin', view='ptw') }}">PTW Log <span>{{ ptw_count }}</span></a>
+    <a class="record-tab {{ 'active' if view == 'training' }}" href="{{ url_for('admin', view='training') }}">Training Log <span>{{ training_count }}</span></a>
     <a class="record-tab {{ 'active' if view == 'trends' }}" href="{{ url_for('admin', view='trends') }}">Trends</a>
 </div>
 
@@ -124,12 +125,23 @@
                 <a class="button primary" href="{{ url_for('export_near_miss', q=request.args.get('q', ''), date_from=request.args.get('date_from', ''), date_to=request.args.get('date_to', '')) }}">Export CSV</a>
             {% elif view == 'violations' %}
                 <a class="button primary" href="{{ url_for('export_violations', q=request.args.get('q', ''), date_from=request.args.get('date_from', ''), date_to=request.args.get('date_to', '')) }}">Export CSV</a>
-            {% else %}
+            {% elif view == 'ptw' %}
                 <a class="button secondary" href="{{ url_for('export_ptw', q=request.args.get('q', ''), date_from=request.args.get('date_from', ''), date_to=request.args.get('date_to', '')) }}">Export CSV</a>
                 <a class="button primary" href="{{ url_for('export_ptw_xlsx', q=request.args.get('q', ''), date_from=request.args.get('date_from', ''), date_to=request.args.get('date_to', '')) }}">Export Excel</a>
+            {% else %}
+                <a class="button primary" href="{{ url_for('export_training', q=request.args.get('q', ''), date_from=request.args.get('date_from', ''), date_to=request.args.get('date_to', '')) }}">Export CSV</a>
             {% endif %}
         </div>
     </div>
+
+    {% if view == 'training' %}
+    <form class="training-import" method="post" action="{{ url_for('import_training') }}" enctype="multipart/form-data" id="training-import-form">
+        <label class="text-link" for="training-import-file">Import a weekly training status file (.xlsx)</label>
+        <input type="file" name="file" id="training-import-file" accept=".xlsx">
+        <button class="button secondary" type="submit">Import</button>
+        <span id="training-import-status" class="field-note"></span>
+    </form>
+    {% endif %}
 
     <div class="table-wrap">
         {% if view == 'inspections' %}
@@ -190,7 +202,7 @@
             {% endfor %}
             </tbody>
         </table>
-        {% else %}
+        {% elif view == 'ptw' %}
         <table>
             <thead><tr><th>PTW No.</th><th>Type</th><th>Location</th><th>Company</th><th>Start</th><th>End</th><th>Status</th><th></th></tr></thead>
             <tbody>
@@ -210,6 +222,24 @@
             {% endfor %}
             </tbody>
         </table>
+        {% else %}
+        <table>
+            <thead><tr><th>Topic</th><th>Type</th><th>Date</th><th>Trainer</th><th>Attendees</th><th></th></tr></thead>
+            <tbody>
+            {% for record in training_logs %}
+                <tr>
+                    <td><strong>{{ record.topic }}</strong><small>{{ record.location }}</small></td>
+                    <td>{{ record.session_type }}</td>
+                    <td>{{ record.session_date }}</td>
+                    <td>{{ record.trainer or '—' }}</td>
+                    <td>{{ record.attendees_count if record.attendees_count is not none else '—' }}</td>
+                    <td><a class="row-link" href="{{ url_for('training_detail', record_id=record.id) }}">View record</a></td>
+                </tr>
+            {% else %}
+                <tr><td colspan="6" class="empty-state">No training log entries found.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
         {% endif %}
     </div>
 
@@ -217,3 +247,4 @@
 {% endif %}
 
 {% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='training_import.js') }}" defer></script>{% endblock %}
