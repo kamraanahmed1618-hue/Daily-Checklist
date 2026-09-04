@@ -76,6 +76,9 @@
     </tbody>
   </table>
 
+  {% if photo_urls %}
+  <p class="no-print"><a class="text-link" href="{{ url_for('violation_photos_zip', record_id=record.id) }}">Download all photos</a></p>
+  {% endif %}
   <table class="doc-evidence-table">
     <thead><tr><th colspan="2">Evidence</th></tr></thead>
     <tbody>

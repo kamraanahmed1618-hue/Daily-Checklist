@@ -168,6 +168,39 @@ def photo_urls(keys: list[str]) -> list[str]:
         return []
 
 
+def fetch_photo_bytes(key: str) -> tuple[bytes, str] | None:
+    """Download one photo's bytes from B2, for bundling into a zip. Extension is taken
+    from the stored key (already validated against PHOTO_KEY_PATTERN at upload time)."""
+    try:
+        obj = b2_client().get_object(Bucket=B2_BUCKET, Key=key)
+        data = obj["Body"].read()
+    except Exception:
+        app.logger.exception("Failed to download photo for zip export: %s", key)
+        return None
+    extension = key.rsplit(".", 1)[-1] if "." in key else "jpg"
+    return data, extension
+
+
+def safe_archive_folder(text: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9._ -]", "", text).strip()
+    return cleaned[:60] or "record"
+
+
+def build_photos_zip(entries: list[tuple[str, str]]) -> bytes:
+    """entries: (archive_path_without_extension, b2_key) pairs. A key that fails to
+    download is skipped rather than failing the whole export."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for archive_path, key in entries:
+            fetched = fetch_photo_bytes(key)
+            if not fetched:
+                continue
+            data, extension = fetched
+            archive.writestr(f"{archive_path}.{extension}", data)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
 def delete_photos(keys: list[str]) -> None:
     if not keys or not b2_configured():
         return
@@ -1327,6 +1360,28 @@ def delete_near_miss(record_id: str) -> Response:
     return redirect(url_for("admin", view="near-miss"))
 
 
+def photos_zip_response(keys: list[str], filename: str) -> Response | tuple[Response, int]:
+    if not b2_configured():
+        return jsonify({"error": "Photo storage is not configured."}), 503
+    if not keys:
+        return jsonify({"error": "No photos to download."}), 404
+    entries = [(f"photo-{index}", key) for index, key in enumerate(keys, start=1)]
+    zip_bytes = build_photos_zip(entries)
+    return Response(zip_bytes, mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@app.get("/admin/near-miss/<record_id>/photos.zip")
+@admin_required
+def near_miss_photos_zip(record_id: str) -> Response | tuple[Response, int]:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT report_no, photos FROM near_miss_reports WHERE id = ?"), [record_id])
+        row = cursor.fetchone()
+    if not row:
+        return jsonify({"error": "Record not found."}), 404
+    return photos_zip_response(safe_json_list(row["photos"]), f'{row["report_no"]}-photos.zip')
+
+
 @app.get("/admin/violations/<record_id>")
 @admin_required
 def violation_detail(record_id: str) -> str | tuple[str, int]:
@@ -1353,6 +1408,18 @@ def delete_violation(record_id: str) -> Response:
     if row:
         delete_photos(safe_json_list(row["photos"]))
     return redirect(url_for("admin", view="violations"))
+
+
+@app.get("/admin/violations/<record_id>/photos.zip")
+@admin_required
+def violation_photos_zip(record_id: str) -> Response | tuple[Response, int]:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT violation_no, photos FROM violation_notices WHERE id = ?"), [record_id])
+        row = cursor.fetchone()
+    if not row:
+        return jsonify({"error": "Record not found."}), 404
+    return photos_zip_response(safe_json_list(row["photos"]), f'{row["violation_no"]}-photos.zip')
 
 
 PTW_FORM_FIELDS = {
@@ -1443,6 +1510,30 @@ def delete_training(record_id: str) -> Response:
     if row:
         delete_photos(safe_json_list(row["photos"]) + safe_json_list(row["attendance_photos"]))
     return redirect(url_for("admin", view="training"))
+
+
+@app.get("/admin/training/<record_id>/photos.zip")
+@admin_required
+def training_photos_zip(record_id: str) -> Response | tuple[Response, int]:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT seq, topic, photos FROM training_logs WHERE id = ?"), [record_id])
+        row = cursor.fetchone()
+    if not row:
+        return jsonify({"error": "Record not found."}), 404
+    return photos_zip_response(safe_json_list(row["photos"]), f'training-{row["seq"]}-photos.zip')
+
+
+@app.get("/admin/training/<record_id>/attendance.zip")
+@admin_required
+def training_attendance_zip(record_id: str) -> Response | tuple[Response, int]:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT seq, topic, attendance_photos FROM training_logs WHERE id = ?"), [record_id])
+        row = cursor.fetchone()
+    if not row:
+        return jsonify({"error": "Record not found."}), 404
+    return photos_zip_response(safe_json_list(row["attendance_photos"]), f'training-{row["seq"]}-attendance.zip')
 
 
 def inspections_csv(records: list[dict[str, Any]], detailed: bool) -> str:
@@ -1711,12 +1802,44 @@ def export_near_miss() -> Response:
     return Response("\ufeff" + csv_text, mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
+@app.get("/admin/export/near-miss/photos.zip")
+@admin_required
+def export_near_miss_photos() -> Response | tuple[Response, int]:
+    if not b2_configured():
+        return jsonify({"error": "Photo storage is not configured."}), 503
+    entries = []
+    for record in filtered_near_miss(limit=5000):
+        folder = safe_archive_folder(record["report_no"])
+        for index, key in enumerate(safe_json_list(record["photos"]), start=1):
+            entries.append((f"{folder}/photo-{index}", key))
+    if not entries:
+        return jsonify({"error": "No photos found for the matching records."}), 404
+    filename = f'diriyah-near-miss-photos-{datetime.now(timezone.utc).date().isoformat()}.zip'
+    return Response(build_photos_zip(entries), mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
 @app.get("/admin/export/violations")
 @admin_required
 def export_violations() -> Response:
     csv_text = violations_csv(filtered_violations(limit=5000))
     filename = f'diriyah-violations-{datetime.now(timezone.utc).date().isoformat()}.csv'
     return Response("\ufeff" + csv_text, mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@app.get("/admin/export/violations/photos.zip")
+@admin_required
+def export_violations_photos() -> Response | tuple[Response, int]:
+    if not b2_configured():
+        return jsonify({"error": "Photo storage is not configured."}), 503
+    entries = []
+    for record in filtered_violations(limit=5000):
+        folder = safe_archive_folder(record["violation_no"])
+        for index, key in enumerate(safe_json_list(record["photos"]), start=1):
+            entries.append((f"{folder}/photo-{index}", key))
+    if not entries:
+        return jsonify({"error": "No photos found for the matching records."}), 404
+    filename = f'diriyah-violations-photos-{datetime.now(timezone.utc).date().isoformat()}.zip'
+    return Response(build_photos_zip(entries), mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 @app.get("/admin/export/ptw")
@@ -1745,6 +1868,24 @@ def export_training() -> Response:
     csv_text = training_csv(filtered_training(limit=5000))
     filename = f'diriyah-training-log-{datetime.now(timezone.utc).date().isoformat()}.csv'
     return Response("﻿" + csv_text, mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@app.get("/admin/export/training/photos.zip")
+@admin_required
+def export_training_photos() -> Response | tuple[Response, int]:
+    if not b2_configured():
+        return jsonify({"error": "Photo storage is not configured."}), 503
+    entries = []
+    for record in filtered_training(limit=5000):
+        folder = safe_archive_folder(f'{record["seq"]}-{record["topic"]}')
+        for index, key in enumerate(safe_json_list(record["photos"]), start=1):
+            entries.append((f"{folder}/photos/photo-{index}", key))
+        for index, key in enumerate(safe_json_list(record["attendance_photos"]), start=1):
+            entries.append((f"{folder}/attendance/photo-{index}", key))
+    if not entries:
+        return jsonify({"error": "No photos found for the matching records."}), 404
+    filename = f'diriyah-training-photos-{datetime.now(timezone.utc).date().isoformat()}.zip'
+    return Response(build_photos_zip(entries), mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 @app.get("/admin/backup")

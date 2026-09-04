@@ -84,6 +84,7 @@
 
   <div class="doc-band">The Attached Images</div>
   {% if photo_urls %}
+  <p class="no-print"><a class="text-link" href="{{ url_for('near_miss_photos_zip', record_id=record.id) }}">Download all photos</a></p>
   <div class="doc-evidence">
     {% for url in photo_urls %}<a href="{{ url }}" target="_blank" rel="noopener"><img src="{{ url }}" alt="Near-miss evidence photo {{ loop.index }}"></a>{% endfor %}
   </div>

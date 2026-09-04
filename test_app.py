@@ -5,7 +5,7 @@ import tempfile
 import unittest
 import zipfile
 from datetime import datetime, timedelta
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
 import openpyxl
@@ -467,6 +467,72 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         detail = self.client.get(f"/admin/training/{record_id}")
         self.assertEqual(detail.status_code, 404)
+
+    def test_photos_zip_requires_storage_configured(self):
+        record_id = self.client.post("/api/training", json=self.training_payload()).json["id"]
+        self.login()
+        response = self.client.get(f"/admin/training/{record_id}/photos.zip")
+        self.assertEqual(response.status_code, 503)
+
+    def test_photos_zip_404s_for_missing_record(self):
+        self.login()
+        response = self.client.get("/admin/training/does-not-exist/photos.zip")
+        self.assertEqual(response.status_code, 404)
+
+    def test_photos_zip_requires_admin(self):
+        record_id = self.client.post("/api/training", json=self.training_payload()).json["id"]
+        response = self.client.get(f"/admin/training/{record_id}/photos.zip")
+        self.assertEqual(response.status_code, 302)
+
+    def test_training_photos_zip_bundles_actual_photo_bytes(self):
+        payload = self.training_payload()
+        payload["photoKeys"] = ["uploads/tok12345/aaaaaaaaaaaaaaaaaaaa.jpg", "uploads/tok12345/bbbbbbbbbbbbbbbbbbbb.png"]
+        payload["attendancePhotoKeys"] = ["uploads/tok12345/cccccccccccccccccccc.jpg"]
+        with patch("app.B2_BUCKET", "test-bucket"), \
+             patch.dict(os.environ, {"B2_KEY_ID": "k", "B2_APPLICATION_KEY": "s", "B2_ENDPOINT": "s3.test.backblazeb2.com"}):
+            record_id = self.client.post("/api/training", json=payload).json["id"]
+            self.login()
+
+            fake_client = MagicMock()
+            fake_client.get_object.return_value = {"Body": io.BytesIO(b"fake-photo-bytes")}
+            with patch("app.b2_client", return_value=fake_client):
+                photos_response = self.client.get(f"/admin/training/{record_id}/photos.zip")
+                attendance_response = self.client.get(f"/admin/training/{record_id}/attendance.zip")
+
+        self.assertEqual(photos_response.status_code, 200)
+        self.assertEqual(photos_response.mimetype, "application/zip")
+        photos_zip = zipfile.ZipFile(io.BytesIO(photos_response.data))
+        self.assertEqual(sorted(photos_zip.namelist()), ["photo-1.jpg", "photo-2.png"])
+        self.assertEqual(photos_zip.read("photo-1.jpg"), b"fake-photo-bytes")
+
+        self.assertEqual(attendance_response.status_code, 200)
+        attendance_zip = zipfile.ZipFile(io.BytesIO(attendance_response.data))
+        self.assertEqual(attendance_zip.namelist(), ["photo-1.jpg"])
+
+    def test_export_training_photos_bulk_zip_organizes_by_record(self):
+        first = self.training_payload()
+        first["photoKeys"] = ["uploads/tok11111/aaaaaaaaaaaaaaaaaaaa.jpg"]
+        second = self.training_payload()
+        second["topic"] = "PPE Refresher"
+        second["attendancePhotoKeys"] = ["uploads/tok22222/bbbbbbbbbbbbbbbbbbbb.jpg"]
+        with patch("app.B2_BUCKET", "test-bucket"), \
+             patch.dict(os.environ, {"B2_KEY_ID": "k", "B2_APPLICATION_KEY": "s", "B2_ENDPOINT": "s3.test.backblazeb2.com"}):
+            self.client.post("/api/training", json=first)
+            self.client.post("/api/training", json=second)
+            self.login()
+
+            fake_client = MagicMock()
+            fake_client.get_object.return_value = {"Body": io.BytesIO(b"fake-photo-bytes")}
+            with patch("app.b2_client", return_value=fake_client):
+                response = self.client.get("/admin/export/training/photos.zip")
+
+        self.assertEqual(response.status_code, 200)
+        archive = zipfile.ZipFile(io.BytesIO(response.data))
+        names = archive.namelist()
+        self.assertEqual(len(names), 2)
+        self.assertTrue(any("photos/photo-1.jpg" in name for name in names))
+        self.assertTrue(any("attendance/photo-1.jpg" in name for name in names))
+        self.assertTrue(any("PPE Refresher" in name for name in names))
 
     def test_training_weekly_import_parses_induction_and_sessions(self):
         workbook = openpyxl.Workbook()
