@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Training &amp; Induction Log · 1 Hotel Diriyah OHS{% endblock %}
+{% block title %}Training, TBT &amp; Induction Log · 1 Hotel Diriyah OHS{% endblock %}
 {% block body_class %}form-page{% endblock %}
 {% block content %}
 <section class="hero">
@@ -10,8 +10,8 @@
       <img src="{{ url_for('static', filename='bec-ashoka.png') }}" alt="BEC Ashoka">
     </div>
     <span class="eyebrow">Daily site assurance</span>
-    <h1>Training &amp; Induction Log</h1>
-    <p>Log a toolbox talk, induction, or specific training session as it's delivered, with the attendance sheet and any photos for the record.</p>
+    <h1>Training, TBT &amp; Induction Log</h1>
+    <p>Log a toolbox talk (TBT), induction, or specific training session as it's delivered, with the attendance sheet and any photos for the record.</p>
   </div>
 </section>
 
@@ -35,7 +35,7 @@
       <label><span>Session type <b>*</b></span>
         <select name="sessionType" required>
           <option value="">Select</option>
-          {% for type in training_types %}<option value="{{ type }}">{{ type }}</option>{% endfor %}
+          {% for type in training_types %}<option value="{{ type }}">{{ training_type_labels[type] }}</option>{% endfor %}
         </select>
       </label>
       <label class="wide"><span>Topic <b>*</b></span><input name="topic" required maxlength="200" placeholder="e.g. Work at Height, PPE, Emergency Response"></label>

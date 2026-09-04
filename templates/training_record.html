@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ record.topic }} · Training Record{% endblock %}
+{% block title %}{{ record.topic }} · Training / TBT / Induction Record{% endblock %}
 {% block body_class %}record-page{% endblock %}
 {% block content %}
 <section class="record-toolbar no-print">
@@ -14,10 +14,10 @@
 
 <article class="doc-sheet">
   <div class="doc-letterhead"><img src="{{ url_for('static', filename='bec-arabia-contracting.png') }}" alt="BEC Arabia Contracting"></div>
-  <div class="doc-band">Training &amp; Induction Log</div>
+  <div class="doc-band">Training, TBT &amp; Induction Log</div>
 
   <table class="doc-info">
-    <tr><td class="info-label tan">Session Type:</td><td>{{ record.session_type }}</td><td class="info-label tan">Date:</td><td>{{ record.session_date }}</td></tr>
+    <tr><td class="info-label tan">Session Type:</td><td>{{ training_type_labels.get(record.session_type, record.session_type) }}</td><td class="info-label tan">Date:</td><td>{{ record.session_date }}</td></tr>
     <tr><td class="info-label tan">Topic:</td><td colspan="3">{{ record.topic }}</td></tr>
     <tr><td class="info-label tan">Trainer:</td><td>{{ record.trainer or '—' }}</td><td class="info-label tan">Location:</td><td>{{ record.location or '—' }}</td></tr>
     <tr><td class="info-label tan">Duration:</td><td>{{ record.duration or '—' }}</td><td class="info-label tan">Attendees:</td><td>{{ record.attendees_count if record.attendees_count is not none else '—' }}</td></tr>

@@ -462,6 +462,7 @@ PTW_TYPES = [
 PTW_SHIFTS = ["Day", "Night"]
 PTW_STATUSES = ["open", "closed"]
 TRAINING_TYPES = ["Induction", "TBT", "Specific Training"]
+TRAINING_TYPE_LABELS = {"Induction": "Induction", "TBT": "TBT (Toolbox Talk)", "Specific Training": "Specific Training"}
 
 
 def clean_choices(value: Any, field: str, allowed: list[str]) -> list[str]:
@@ -907,7 +908,7 @@ def ptw_form() -> str:
 
 @app.get("/training")
 def training_form() -> str:
-    return render_template("training.html", training_types=TRAINING_TYPES)
+    return render_template("training.html", training_types=TRAINING_TYPES, training_type_labels=TRAINING_TYPE_LABELS)
 
 
 def detect_image_type(data: bytes) -> str | None:
@@ -1250,6 +1251,7 @@ def admin() -> str | Response:
         violations_count=counts["violations"],
         ptw_count=counts["ptw"],
         training_count=counts["training"],
+        training_type_labels=TRAINING_TYPE_LABELS,
     )
 
 
@@ -1411,6 +1413,7 @@ def training_detail(record_id: str) -> str | tuple[str, int]:
         record=record,
         photo_urls=photo_urls(record["photos"]),
         attendance_photo_urls=photo_urls(record["attendance_photos"]),
+        training_type_labels=TRAINING_TYPE_LABELS,
     )
 
 
