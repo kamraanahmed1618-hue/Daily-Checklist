@@ -12,34 +12,58 @@
   </div>
 </section>
 
-<article class="doc-sheet">
+{% set type_label = training_type_labels.get(record.session_type, record.session_type) %}
+<article class="doc-sheet training-record">
   <div class="doc-letterhead"><img src="{{ url_for('static', filename='bec-arabia-contracting.png') }}" alt="BEC Arabia Contracting"></div>
-  <div class="doc-band">Training, TBT &amp; Induction Log</div>
 
-  <table class="doc-info">
-    <tr><td class="info-label tan">Session Type:</td><td>{{ training_type_labels.get(record.session_type, record.session_type) }}</td><td class="info-label tan">Date:</td><td>{{ record.session_date }}</td></tr>
-    <tr><td class="info-label tan">Topic:</td><td colspan="3">{{ record.topic }}</td></tr>
-    <tr><td class="info-label tan">Trainer:</td><td>{{ record.trainer or '—' }}</td><td class="info-label tan">Location:</td><td>{{ record.location or '—' }}</td></tr>
-    <tr><td class="info-label tan">Duration:</td><td>{{ record.duration or '—' }}</td><td class="info-label tan">Attendees:</td><td>{{ record.attendees_count if record.attendees_count is not none else '—' }}</td></tr>
+  <p class="doc-eyebrow-label">{{ type_label|upper }} TOPIC</p>
+  <p class="doc-topic-title">{{ record.topic }}</p>
+  {% if record.objective %}<p class="doc-topic-subtitle">{{ record.objective }}</p>{% endif %}
+
+  {% if record.summary %}
+  <div class="doc-summary-box">{{ record.summary }}</div>
+  {% endif %}
+
+  {% if record.key_lessons %}
+  <div class="doc-band">Key Lessons and Safe Working Practices</div>
+  <ul class="doc-lessons-list">
+    {% for lesson in record.key_lessons %}<li>{{ lesson }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+
+  <div class="doc-band">{{ type_label }} Record</div>
+  <table class="doc-record-table">
+    <thead><tr><th>No.</th><th>Topic</th><th>Date</th><th>Location</th><th>Conducted By</th><th>Duration</th><th>Attendees</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>{{ record.seq }}</td>
+        <td>{{ record.topic }}</td>
+        <td>{{ record.session_date }}</td>
+        <td>{{ record.location or '—' }}</td>
+        <td>{{ record.trainer or '—' }}</td>
+        <td>{{ record.duration or '—' }}</td>
+        <td>{{ record.attendees_count if record.attendees_count is not none else '—' }}</td>
+      </tr>
+    </tbody>
   </table>
   {% if record.remarks %}<p class="doc-note">{{ record.remarks }}</p>{% endif %}
 
-  <div class="doc-band">Attendance Sheet</div>
-  {% if attendance_photo_urls %}
-  <div class="doc-evidence">
-    {% for url in attendance_photo_urls %}<a href="{{ url }}" target="_blank" rel="noopener"><img src="{{ url }}" alt="Attendance sheet {{ loop.index }}"></a>{% endfor %}
-  </div>
-  {% else %}
-  <p class="doc-note">No attendance sheet attached.</p>
-  {% endif %}
-
-  <div class="doc-band">Session Photos</div>
+  <div class="doc-band">Photographic Record</div>
   {% if photo_urls %}
   <div class="doc-evidence">
     {% for url in photo_urls %}<a href="{{ url }}" target="_blank" rel="noopener"><img src="{{ url }}" alt="Training photo {{ loop.index }}"></a>{% endfor %}
   </div>
   {% else %}
   <p class="doc-note">No photos attached.</p>
+  {% endif %}
+
+  <div class="doc-band">Attendance Record</div>
+  {% if attendance_photo_urls %}
+  <div class="doc-evidence">
+    {% for url in attendance_photo_urls %}<a href="{{ url }}" target="_blank" rel="noopener"><img src="{{ url }}" alt="Attendance sheet {{ loop.index }}"></a>{% endfor %}
+  </div>
+  {% else %}
+  <p class="doc-note">No attendance sheet attached.</p>
   {% endif %}
 
   <div class="doc-classification">

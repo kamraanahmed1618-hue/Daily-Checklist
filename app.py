@@ -344,6 +344,9 @@ def init_db() -> None:
             location TEXT NOT NULL DEFAULT '',
             duration TEXT NOT NULL DEFAULT '',
             attendees_count INTEGER,
+            objective TEXT NOT NULL DEFAULT '',
+            summary TEXT NOT NULL DEFAULT '',
+            key_lessons TEXT NOT NULL DEFAULT '[]',
             remarks TEXT NOT NULL DEFAULT '',
             photos TEXT NOT NULL DEFAULT '[]',
             attendance_photos TEXT NOT NULL DEFAULT '[]',
@@ -369,6 +372,9 @@ def init_db() -> None:
         ensure_column("inspections", "seq", "INTEGER")
         ensure_column("near_miss_reports", "photos", "TEXT NOT NULL DEFAULT '[]'")
         ensure_column("violation_notices", "photos", "TEXT NOT NULL DEFAULT '[]'")
+        ensure_column("training_logs", "objective", "TEXT NOT NULL DEFAULT ''")
+        ensure_column("training_logs", "summary", "TEXT NOT NULL DEFAULT ''")
+        ensure_column("training_logs", "key_lessons", "TEXT NOT NULL DEFAULT '[]'")
         # Backfill sequential numbers for any pre-existing records in submission order.
         for table in ("inspections", "near_miss_reports", "violation_notices", "ptw_logs", "training_logs"):
             cursor.execute(sql(f"SELECT COALESCE(MAX(seq), 0) AS next_seq FROM {table}"))
@@ -625,6 +631,8 @@ def validate_training(payload: dict[str, Any]) -> dict[str, Any]:
         "trainer": clean_text(payload.get("trainer"), "Trainer / conducted by", 200, False),
         "location": clean_text(payload.get("location"), "Location", 200, False),
         "duration": clean_text(payload.get("duration"), "Duration", 60, False),
+        "objective": clean_text(payload.get("objective"), "Objective / focus", 300, False),
+        "summary": clean_text(payload.get("summary"), "Summary", 3000, False),
         "remarks": clean_text(payload.get("remarks"), "Remarks", 2000, False),
     }
     if record["session_type"] not in TRAINING_TYPES:
@@ -643,6 +651,7 @@ def validate_training(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         **record,
         "attendees_count": attendees_count,
+        "key_lessons": clean_list_text(payload.get("keyLessons"), "Key lesson", 10, 300),
         "photos": clean_photo_keys(payload.get("photoKeys")),
         "attendance_photos": clean_photo_keys(payload.get("attendancePhotoKeys")),
     }
@@ -1157,11 +1166,13 @@ def submit_training() -> tuple[Response, int] | Response:
             values = [
                 record_id, seq, record["session_type"], record["topic"], record["session_date"],
                 record["trainer"], record["location"], record["duration"], record["attendees_count"],
+                record["objective"], record["summary"], json.dumps(record["key_lessons"]),
                 record["remarks"], json.dumps(record["photos"]), json.dumps(record["attendance_photos"]), now,
             ]
             columns = (
                 "id, seq, session_type, topic, session_date, "
                 "trainer, location, duration, attendees_count, "
+                "objective, summary, key_lessons, "
                 "remarks, photos, attendance_photos, created_at"
             )
             placeholders = ",".join("?" for _ in values)
@@ -1411,6 +1422,7 @@ def training_detail(record_id: str) -> str | tuple[str, int]:
     record = dict(row)
     record["photos"] = safe_json_list(record["photos"])
     record["attendance_photos"] = safe_json_list(record["attendance_photos"])
+    record["key_lessons"] = safe_json_list(record["key_lessons"])
     return render_template(
         "training_record.html",
         record=record,
@@ -1559,13 +1571,14 @@ def training_csv(records: list[dict[str, Any]]) -> str:
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow([
-        "S.N", "Session Type", "Topic", "Date", "Trainer", "Location",
-        "Duration", "Attendees", "Remarks", "Submitted At",
+        "S.N", "Session Type", "Topic", "Date", "Trainer", "Location", "Duration", "Attendees",
+        "Objective", "Summary", "Key Lessons", "Remarks", "Submitted At",
     ])
     for record in records:
         writer.writerow([
             record["seq"], record["session_type"], record["topic"], record["session_date"], record["trainer"],
             record["location"], record["duration"], record["attendees_count"] if record["attendees_count"] is not None else "",
+            record["objective"], record["summary"], "; ".join(safe_json_list(record["key_lessons"])),
             record["remarks"], record["created_at"],
         ])
     return output.getvalue()
@@ -1666,11 +1679,13 @@ def import_training() -> tuple[Response, int] | Response:
             values = [
                 secrets.token_hex(16), seq, record["session_type"], record["topic"], record["session_date"],
                 record["trainer"], record["location"], record["duration"], record["attendees_count"],
+                record["objective"], record["summary"], json.dumps(record["key_lessons"]),
                 record["remarks"], json.dumps(record["photos"]), json.dumps(record["attendance_photos"]), now,
             ]
             columns = (
                 "id, seq, session_type, topic, session_date, "
                 "trainer, location, duration, attendees_count, "
+                "objective, summary, key_lessons, "
                 "remarks, photos, attendance_photos, created_at"
             )
             placeholders = ",".join("?" for _ in values)

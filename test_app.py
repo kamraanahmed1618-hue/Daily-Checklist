@@ -102,6 +102,9 @@ class ChecklistApplicationTests(unittest.TestCase):
             "location": "Zone 3",
             "duration": "One Hour",
             "attendeesCount": "12",
+            "objective": "Preventing falls from height during scaffold and edge work",
+            "summary": "A Toolbox Talk was conducted on Work at Height, covering anchor points and harness inspection.",
+            "keyLessons": ["Always inspect harness before use.", "Use 100% tie-off at height."],
             "remarks": "Covered anchor points and harness inspection.",
         }
 
@@ -446,10 +449,16 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertEqual(detail.status_code, 200)
         self.assertIn(b"Work at Height", detail.data)
         self.assertIn(b"Faisal Raza", detail.data)
+        self.assertIn(b"Preventing falls from height", detail.data)
+        self.assertIn(b"A Toolbox Talk was conducted", detail.data)
+        self.assertIn(b"Always inspect harness before use.", detail.data)
+        self.assertIn(b"Use 100% tie-off at height.", detail.data)
 
         export = self.client.get("/admin/export/training")
         self.assertEqual(export.status_code, 200)
-        self.assertIn("Work at Height", export.get_data(as_text=True))
+        export_text = export.get_data(as_text=True)
+        self.assertIn("Work at Height", export_text)
+        self.assertIn("Always inspect harness before use.", export_text)
 
     def test_delete_training(self):
         record_id = self.client.post("/api/training", json=self.training_payload()).json["id"]
