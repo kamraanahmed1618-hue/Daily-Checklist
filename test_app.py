@@ -509,7 +509,7 @@ class ChecklistApplicationTests(unittest.TestCase):
         attendance_zip = zipfile.ZipFile(io.BytesIO(attendance_response.data))
         self.assertEqual(attendance_zip.namelist(), ["photo-1.jpg"])
 
-    def test_export_training_photos_bulk_zip_organizes_by_record(self):
+    def test_export_training_bundle_includes_csv_pdfs_and_photos(self):
         first = self.training_payload()
         first["photoKeys"] = ["uploads/tok11111/aaaaaaaaaaaaaaaaaaaa.jpg"]
         second = self.training_payload()
@@ -524,15 +524,28 @@ class ChecklistApplicationTests(unittest.TestCase):
             fake_client = MagicMock()
             fake_client.get_object.return_value = {"Body": io.BytesIO(b"fake-photo-bytes")}
             with patch("app.b2_client", return_value=fake_client):
-                response = self.client.get("/admin/export/training/photos.zip")
+                response = self.client.get("/admin/export/training/bundle.zip")
 
         self.assertEqual(response.status_code, 200)
         archive = zipfile.ZipFile(io.BytesIO(response.data))
         names = archive.namelist()
-        self.assertEqual(len(names), 2)
+        self.assertIn("training-log.csv", names)
+        self.assertTrue(any(name.endswith(".pdf") for name in names))
+        self.assertEqual(sum(name.endswith(".pdf") for name in names), 2)
         self.assertTrue(any("photos/photo-1.jpg" in name for name in names))
         self.assertTrue(any("attendance/photo-1.jpg" in name for name in names))
         self.assertTrue(any("PPE Refresher" in name for name in names))
+
+    def test_export_training_bundle_works_without_photo_storage(self):
+        self.client.post("/api/training", json=self.training_payload())
+        self.login()
+        response = self.client.get("/admin/export/training/bundle.zip")
+        self.assertEqual(response.status_code, 200)
+        archive = zipfile.ZipFile(io.BytesIO(response.data))
+        names = archive.namelist()
+        self.assertIn("training-log.csv", names)
+        self.assertEqual(sum(name.endswith(".pdf") for name in names), 1)
+        self.assertFalse(any(name.endswith((".jpg", ".png")) for name in names))
 
     def test_training_weekly_import_parses_induction_and_sessions(self):
         workbook = openpyxl.Workbook()

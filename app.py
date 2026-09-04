@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import base64
 import csv
 import hmac
+import html
 import io
 import json
 import os
@@ -24,6 +26,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
+from xhtml2pdf import pisa
 
 from charts import bar_chart_svg, grouped_bar_chart_svg, line_chart_svg
 
@@ -184,6 +187,161 @@ def fetch_photo_bytes(key: str) -> tuple[bytes, str] | None:
 def safe_archive_folder(text: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9._ -]", "", text).strip()
     return cleaned[:60] or "record"
+
+
+def render_pdf(html_content: str) -> bytes:
+    buffer = io.BytesIO()
+    pisa.CreatePDF(html_content, dest=buffer)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+def photo_data_uri(data: bytes, extension: str) -> str:
+    mime = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp"}.get(extension, "image/jpeg")
+    return f"data:{mime};base64,{base64.b64encode(data).decode()}"
+
+
+def record_pdf_html(
+    title: str,
+    band_title: str,
+    info_rows: list[tuple[str, str]],
+    summary: str,
+    bullets: list[str],
+    photo_sections: list[tuple[str, list[tuple[bytes, str]]]],
+    doc_number: str,
+) -> str:
+    """Builds a self-contained, table-based HTML document for xhtml2pdf. xhtml2pdf
+    doesn't implement CSS variables, grid, or flexbox (confirmed by prototyping against
+    the real print stylesheet — photos in a CSS grid just stack in one column), so this
+    uses a separate, deliberately plain layout rather than reusing the browser templates."""
+    esc = html.escape
+    info_html = "".join(f'<tr><td class="label">{esc(label)}</td><td>{esc(value)}</td></tr>' for label, value in info_rows)
+    summary_html = f'<div class="summary">{esc(summary)}</div>' if summary else ""
+    bullets_html = ""
+    if bullets:
+        items = "".join(f"<li>{esc(item)}</li>" for item in bullets)
+        bullets_html = f'<div class="band">Key Lessons and Safe Working Practices</div><ul class="lessons">{items}</ul>'
+
+    photo_sections_html = ""
+    for section_title, photos in photo_sections:
+        photo_sections_html += f'<div class="band">{esc(section_title)}</div>'
+        if not photos:
+            photo_sections_html += '<p class="note">No photos attached.</p>'
+            continue
+        rows = ""
+        for index in range(0, len(photos), 2):
+            pair = photos[index:index + 2]
+            cells = "".join(f'<td><img src="{photo_data_uri(data, extension)}"></td>' for data, extension in pair)
+            if len(pair) == 1:
+                cells += "<td></td>"
+            rows += f"<tr>{cells}</tr>"
+        photo_sections_html += f'<table class="photos">{rows}</table>'
+
+    footer = "Classification: BEC Arabia - External - Unrestricted Use"
+    if doc_number:
+        footer += f" &middot; {esc(doc_number)}"
+
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+body {{ font-family: Helvetica, Arial, sans-serif; font-size: 9pt; color: #111; }}
+.title {{ font-size: 15pt; font-weight: bold; color: #0a1f8f; margin: 0 0 10px; text-align: center; }}
+table.info {{ width: 100%; border-collapse: collapse; margin-bottom: 10px; }}
+table.info td {{ border: 1px solid #000; padding: 4px 8px; font-size: 9pt; }}
+table.info td.label {{ background: #dae9f8; font-weight: bold; width: 28%; }}
+.band {{ background: #002060; color: #fff; font-weight: bold; text-align: center; padding: 6px; margin: 12px 0 6px; font-size: 10.5pt; }}
+.summary {{ background: #eaf2f8; border: 1px solid #c3d8e8; padding: 8px 10px; margin-bottom: 10px; font-size: 9pt; }}
+ul.lessons {{ margin: 0 0 10px 18px; padding: 0; font-size: 9pt; }}
+ul.lessons li {{ margin-bottom: 3px; }}
+table.photos {{ width: 100%; border-collapse: collapse; margin-bottom: 10px; }}
+table.photos td {{ border: 1px solid #000; width: 50%; text-align: center; padding: 4px; }}
+table.photos img {{ width: 100%; height: 170px; }}
+.note {{ font-size: 9pt; margin-bottom: 10px; }}
+.footer {{ border-top: 1px solid #000; padding-top: 4px; font-size: 7pt; color: #555; margin-top: 10px; }}
+</style></head>
+<body>
+<div class="title">{esc(title)}</div>
+<div class="band">{esc(band_title)}</div>
+<table class="info">{info_html}</table>
+{summary_html}
+{bullets_html}
+{photo_sections_html}
+<div class="footer">{footer}</div>
+</body></html>"""
+
+
+def record_photos(keys: list[str]) -> list[tuple[bytes, str]]:
+    fetched = [fetch_photo_bytes(key) for key in keys]
+    return [item for item in fetched if item]
+
+
+def near_miss_pdf_bytes(record: dict[str, Any]) -> bytes:
+    return render_pdf(record_pdf_html(
+        title="Near Miss Reporting Form",
+        band_title="Report Details",
+        info_rows=[
+            ("Report No.", record["report_no"]), ("Department / Project", record["department_project"]),
+            ("Date", record["incident_date"]), ("Time", record["incident_time"]),
+            ("Location", record["location"]), ("Reported By", record["reported_by"]),
+            ("What Happened", record["what_happened"]), ("Status", record.get("status") or "—"),
+        ],
+        summary="", bullets=[],
+        photo_sections=[("Attached Images", record_photos(safe_json_list(record["photos"])))],
+        doc_number="BECCO-COR-OHS-ADD-MMR-000001-R01",
+    ))
+
+
+def violation_pdf_bytes(record: dict[str, Any]) -> bytes:
+    return render_pdf(record_pdf_html(
+        title="Occupational Health & Safety Violation Notice",
+        band_title="Violation Details",
+        info_rows=[
+            ("Violation No.", record["violation_no"]), ("Date", record["violation_date"]),
+            ("Employee Name", record["employee_name"]), ("Company / Contractor", record["company_contractor"]),
+            ("Location", record["violation_location"]), ("Type", record["violation_type"]),
+            ("Description", record["violation_description"]),
+            ("Action Taken", "; ".join(safe_json_list(record["actions"])) or "—"),
+            ("Issued By", record["issued_by_name"]),
+        ],
+        summary="", bullets=[],
+        photo_sections=[("Evidence", record_photos(safe_json_list(record["photos"])))],
+        doc_number="BECCO-COR-OHS-ADD-VNC-000002-R01",
+    ))
+
+
+def training_pdf_bytes(record: dict[str, Any]) -> bytes:
+    type_label = TRAINING_TYPE_LABELS.get(record["session_type"], record["session_type"])
+    return render_pdf(record_pdf_html(
+        title=record["topic"],
+        band_title=f"{type_label} Record",
+        info_rows=[
+            ("No.", str(record["seq"])), ("Topic", record["topic"]), ("Date", record["session_date"]),
+            ("Location", record["location"] or "—"), ("Conducted By", record["trainer"] or "—"),
+            ("Duration", record["duration"] or "—"),
+            ("Attendees", str(record["attendees_count"]) if record["attendees_count"] is not None else "—"),
+        ],
+        summary=record["summary"], bullets=safe_json_list(record["key_lessons"]),
+        photo_sections=[
+            ("Photographic Record", record_photos(safe_json_list(record["photos"]))),
+            ("Attendance Record", record_photos(safe_json_list(record["attendance_photos"]))),
+        ],
+        doc_number="",
+    ))
+
+
+def build_bundle_zip(csv_filename: str, csv_text: str, pdf_entries: list[tuple[str, bytes]], photo_entries: list[tuple[str, str]]) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(csv_filename, "﻿" + csv_text)
+        for archive_path, pdf_bytes in pdf_entries:
+            archive.writestr(f"{archive_path}.pdf", pdf_bytes)
+        for archive_path, key in photo_entries:
+            fetched = fetch_photo_bytes(key)
+            if not fetched:
+                continue
+            data, extension = fetched
+            archive.writestr(f"{archive_path}.{extension}", data)
+    buffer.seek(0)
+    return buffer.getvalue()
 
 
 def build_photos_zip(entries: list[tuple[str, str]]) -> bytes:
@@ -1802,20 +1960,26 @@ def export_near_miss() -> Response:
     return Response("\ufeff" + csv_text, mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
-@app.get("/admin/export/near-miss/photos.zip")
+@app.get("/admin/export/near-miss/bundle.zip")
 @admin_required
-def export_near_miss_photos() -> Response | tuple[Response, int]:
-    if not b2_configured():
-        return jsonify({"error": "Photo storage is not configured."}), 503
-    entries = []
-    for record in filtered_near_miss(limit=5000):
+def export_near_miss_bundle() -> Response:
+    records = filtered_near_miss(limit=5000)
+    pdf_entries = []
+    photo_entries = []
+    for record in records:
         folder = safe_archive_folder(record["report_no"])
+        try:
+            pdf_entries.append((f"{folder}/{record['report_no']}", near_miss_pdf_bytes(record)))
+        except Exception:
+            app.logger.exception("Failed to render near-miss PDF for %s", record["report_no"])
         for index, key in enumerate(safe_json_list(record["photos"]), start=1):
-            entries.append((f"{folder}/photo-{index}", key))
-    if not entries:
-        return jsonify({"error": "No photos found for the matching records."}), 404
-    filename = f'diriyah-near-miss-photos-{datetime.now(timezone.utc).date().isoformat()}.zip'
-    return Response(build_photos_zip(entries), mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+            photo_entries.append((f"{folder}/photo-{index}", key))
+    zip_bytes = build_bundle_zip(
+        "near-miss.csv", near_miss_csv(records), pdf_entries,
+        photo_entries if b2_configured() else [],
+    )
+    filename = f'diriyah-near-miss-bundle-{datetime.now(timezone.utc).date().isoformat()}.zip'
+    return Response(zip_bytes, mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 @app.get("/admin/export/violations")
@@ -1826,20 +1990,26 @@ def export_violations() -> Response:
     return Response("\ufeff" + csv_text, mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
-@app.get("/admin/export/violations/photos.zip")
+@app.get("/admin/export/violations/bundle.zip")
 @admin_required
-def export_violations_photos() -> Response | tuple[Response, int]:
-    if not b2_configured():
-        return jsonify({"error": "Photo storage is not configured."}), 503
-    entries = []
-    for record in filtered_violations(limit=5000):
+def export_violations_bundle() -> Response:
+    records = filtered_violations(limit=5000)
+    pdf_entries = []
+    photo_entries = []
+    for record in records:
         folder = safe_archive_folder(record["violation_no"])
+        try:
+            pdf_entries.append((f"{folder}/{record['violation_no']}", violation_pdf_bytes(record)))
+        except Exception:
+            app.logger.exception("Failed to render violation PDF for %s", record["violation_no"])
         for index, key in enumerate(safe_json_list(record["photos"]), start=1):
-            entries.append((f"{folder}/photo-{index}", key))
-    if not entries:
-        return jsonify({"error": "No photos found for the matching records."}), 404
-    filename = f'diriyah-violations-photos-{datetime.now(timezone.utc).date().isoformat()}.zip'
-    return Response(build_photos_zip(entries), mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+            photo_entries.append((f"{folder}/photo-{index}", key))
+    zip_bytes = build_bundle_zip(
+        "violations.csv", violations_csv(records), pdf_entries,
+        photo_entries if b2_configured() else [],
+    )
+    filename = f'diriyah-violations-bundle-{datetime.now(timezone.utc).date().isoformat()}.zip'
+    return Response(zip_bytes, mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 @app.get("/admin/export/ptw")
@@ -1870,22 +2040,28 @@ def export_training() -> Response:
     return Response("﻿" + csv_text, mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
-@app.get("/admin/export/training/photos.zip")
+@app.get("/admin/export/training/bundle.zip")
 @admin_required
-def export_training_photos() -> Response | tuple[Response, int]:
-    if not b2_configured():
-        return jsonify({"error": "Photo storage is not configured."}), 503
-    entries = []
-    for record in filtered_training(limit=5000):
+def export_training_bundle() -> Response:
+    records = filtered_training(limit=5000)
+    pdf_entries = []
+    photo_entries = []
+    for record in records:
         folder = safe_archive_folder(f'{record["seq"]}-{record["topic"]}')
+        try:
+            pdf_entries.append((f"{folder}/{folder}", training_pdf_bytes(record)))
+        except Exception:
+            app.logger.exception("Failed to render training PDF for %s", record["topic"])
         for index, key in enumerate(safe_json_list(record["photos"]), start=1):
-            entries.append((f"{folder}/photos/photo-{index}", key))
+            photo_entries.append((f"{folder}/photos/photo-{index}", key))
         for index, key in enumerate(safe_json_list(record["attendance_photos"]), start=1):
-            entries.append((f"{folder}/attendance/photo-{index}", key))
-    if not entries:
-        return jsonify({"error": "No photos found for the matching records."}), 404
-    filename = f'diriyah-training-photos-{datetime.now(timezone.utc).date().isoformat()}.zip'
-    return Response(build_photos_zip(entries), mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+            photo_entries.append((f"{folder}/attendance/photo-{index}", key))
+    zip_bytes = build_bundle_zip(
+        "training-log.csv", training_csv(records), pdf_entries,
+        photo_entries if b2_configured() else [],
+    )
+    filename = f'diriyah-training-bundle-{datetime.now(timezone.utc).date().isoformat()}.zip'
+    return Response(zip_bytes, mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 @app.get("/admin/backup")

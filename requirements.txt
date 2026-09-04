@@ -4,3 +4,4 @@ psycopg[binary]==3.2.10
 boto3==1.40.45
 openpyxl==3.1.5
 tzdata==2026.3
+xhtml2pdf==0.2.18
