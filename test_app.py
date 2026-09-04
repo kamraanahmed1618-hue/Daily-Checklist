@@ -29,6 +29,7 @@ class ChecklistApplicationTests(unittest.TestCase):
             connection.execute("DELETE FROM near_miss_reports")
             connection.execute("DELETE FROM violation_notices")
             connection.execute("DELETE FROM ptw_logs")
+            connection.execute("DELETE FROM training_logs")
 
     def payload(self):
         return {
@@ -92,10 +93,22 @@ class ChecklistApplicationTests(unittest.TestCase):
             "endTime": "17:00",
         }
 
+    def training_payload(self):
+        return {
+            "sessionType": "TBT",
+            "topic": "Work at Height",
+            "sessionDate": "2026-08-22",
+            "trainer": "Faisal Raza",
+            "location": "Zone 3",
+            "duration": "One Hour",
+            "attendeesCount": "12",
+            "remarks": "Covered anchor points and harness inspection.",
+        }
+
     def test_homepage_links_to_all_systems(self):
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
-        for path in ("/inspection", "/near-miss", "/violation", "/ptw", "/admin"):
+        for path in ("/inspection", "/near-miss", "/violation", "/ptw", "/training", "/admin"):
             self.assertIn(path.encode(), response.data)
 
     def test_inspection_form_moved_from_root(self):
@@ -176,6 +189,7 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertEqual(self.client.get("/near-miss").status_code, 200)
         self.assertEqual(self.client.get("/violation").status_code, 200)
         self.assertEqual(self.client.get("/ptw").status_code, 200)
+        self.assertEqual(self.client.get("/training").status_code, 200)
 
     def test_near_miss_requires_at_least_one_type(self):
         payload = self.near_miss_payload()
@@ -413,6 +427,83 @@ class ChecklistApplicationTests(unittest.TestCase):
         detail = self.client.get(f"/admin/ptw/{record_id}")
         self.assertEqual(detail.status_code, 404)
 
+    def test_training_requires_valid_session_type(self):
+        payload = self.training_payload()
+        payload["sessionType"] = "Not a real type"
+        response = self.client.post("/api/training", json=payload)
+        self.assertEqual(response.status_code, 400)
+
+    def test_submit_review_and_export_training(self):
+        response = self.client.post("/api/training", json=self.training_payload())
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json["topic"], "Work at Height")
+        record_id = response.json["id"]
+
+        self.login()
+        dashboard = self.client.get("/admin?view=training")
+        self.assertIn(b"Work at Height", dashboard.data)
+        detail = self.client.get(f"/admin/training/{record_id}")
+        self.assertEqual(detail.status_code, 200)
+        self.assertIn(b"Work at Height", detail.data)
+        self.assertIn(b"Faisal Raza", detail.data)
+
+        export = self.client.get("/admin/export/training")
+        self.assertEqual(export.status_code, 200)
+        self.assertIn("Work at Height", export.get_data(as_text=True))
+
+    def test_delete_training(self):
+        record_id = self.client.post("/api/training", json=self.training_payload()).json["id"]
+        self.login()
+        response = self.client.post(f"/admin/training/{record_id}/delete")
+        self.assertEqual(response.status_code, 302)
+        detail = self.client.get(f"/admin/training/{record_id}")
+        self.assertEqual(detail.status_code, 404)
+
+    def test_training_weekly_import_parses_induction_and_sessions(self):
+        workbook = openpyxl.Workbook()
+        sheet = workbook.active
+        sheet["A2"] = "Week No.# Date: From 22-08-2026 To 27-08-2026"
+        sheet["A3"] = "SAFETY INDUCTION"
+        sheet["A4"] = "Sl. No."
+        sheet["B4"] = "Employee's Inducted"
+        sheet["E4"] = "Numbers"
+        sheet["A5"] = 1
+        sheet["B5"] = "Total no . of Employees Inducted This Week"
+        sheet["E5"] = "70  ( 13 Session ) "
+        sheet["A6"] = "In-house Trainings"
+        sheet["A7"] = "Sl. No."
+        sheet["B7"] = "In-house Training"
+        sheet["D7"] = "Date"
+        sheet["E7"] = "Number of Attendees"
+        sheet["F7"] = "Time Duration"
+        sheet["A8"] = 1
+        sheet["B8"] = "Work Permit System"
+        sheet["D8"] = datetime(2026, 8, 22)
+        sheet["E8"] = 12
+        sheet["F8"] = "One Hour"
+        sheet["A9"] = 2
+        sheet["B9"] = "Emergency Response"
+        sheet["D9"] = datetime(2026, 8, 23)
+        sheet["E9"] = 14
+        sheet["F9"] = "One Hour"
+        buffer = io.BytesIO()
+        workbook.save(buffer)
+        buffer.seek(0)
+
+        self.login()
+        response = self.client.post(
+            "/admin/training/import",
+            data={"file": (buffer, "weekly.xlsx")},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json["imported"], 3)
+
+        dashboard = self.client.get("/admin?view=training")
+        self.assertIn(b"Weekly Safety Induction", dashboard.data)
+        self.assertIn(b"Work Permit System", dashboard.data)
+        self.assertIn(b"Emergency Response", dashboard.data)
+
     def test_sequential_report_numbers(self):
         first = self.client.post("/api/inspections", json=self.payload())
         ignored_payload = self.payload()
@@ -535,6 +626,7 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.client.post("/api/near-miss", json=self.near_miss_payload())
         self.client.post("/api/violations", json=self.violation_payload())
         self.client.post("/api/ptw", json=self.ptw_payload())
+        self.client.post("/api/training", json=self.training_payload())
 
         response = self.client.get("/admin/backup?token=test-export-token")
         self.assertEqual(response.status_code, 200)
@@ -542,12 +634,13 @@ class ChecklistApplicationTests(unittest.TestCase):
 
         archive = zipfile.ZipFile(io.BytesIO(response.data))
         names = archive.namelist()
-        self.assertEqual(len(names), 5)
+        self.assertEqual(len(names), 6)
         self.assertTrue(any(name.startswith("inspections-summary-") for name in names))
         self.assertTrue(any(name.startswith("inspections-detailed-") for name in names))
         self.assertTrue(any(name.startswith("near-miss-") for name in names))
         self.assertTrue(any(name.startswith("violations-") for name in names))
         self.assertTrue(any(name.startswith("ptw-log-") for name in names))
+        self.assertTrue(any(name.startswith("training-log-") for name in names))
 
 
 if __name__ == "__main__":

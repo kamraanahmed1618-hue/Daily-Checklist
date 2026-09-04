@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}{{ record.topic }} · Training Record{% endblock %}
+{% block body_class %}record-page{% endblock %}
+{% block content %}
+<section class="record-toolbar no-print">
+  <a class="text-link" href="{{ url_for('admin', view='training') }}">← Back to records</a>
+  <div class="record-toolbar-actions">
+    <form class="delete-form" method="post" action="{{ url_for('delete_training', record_id=record.id) }}">
+      <button class="button ghost danger" type="submit">Delete record</button>
+    </form>
+    <button class="button primary" id="print-record" type="button">Print / Save PDF</button>
+  </div>
+</section>
+
+<article class="doc-sheet">
+  <div class="doc-letterhead"><img src="{{ url_for('static', filename='bec-arabia-contracting.png') }}" alt="BEC Arabia Contracting"></div>
+  <div class="doc-band">Training &amp; Induction Log</div>
+
+  <table class="doc-info">
+    <tr><td class="info-label tan">Session Type:</td><td>{{ record.session_type }}</td><td class="info-label tan">Date:</td><td>{{ record.session_date }}</td></tr>
+    <tr><td class="info-label tan">Topic:</td><td colspan="3">{{ record.topic }}</td></tr>
+    <tr><td class="info-label tan">Trainer:</td><td>{{ record.trainer or '—' }}</td><td class="info-label tan">Location:</td><td>{{ record.location or '—' }}</td></tr>
+    <tr><td class="info-label tan">Duration:</td><td>{{ record.duration or '—' }}</td><td class="info-label tan">Attendees:</td><td>{{ record.attendees_count if record.attendees_count is not none else '—' }}</td></tr>
+  </table>
+  {% if record.remarks %}<p class="doc-note">{{ record.remarks }}</p>{% endif %}
+
+  <div class="doc-band">Attendance Sheet</div>
+  {% if attendance_photo_urls %}
+  <div class="doc-evidence">
+    {% for url in attendance_photo_urls %}<a href="{{ url }}" target="_blank" rel="noopener"><img src="{{ url }}" alt="Attendance sheet {{ loop.index }}"></a>{% endfor %}
+  </div>
+  {% else %}
+  <p class="doc-note">No attendance sheet attached.</p>
+  {% endif %}
+
+  <div class="doc-band">Session Photos</div>
+  {% if photo_urls %}
+  <div class="doc-evidence">
+    {% for url in photo_urls %}<a href="{{ url }}" target="_blank" rel="noopener"><img src="{{ url }}" alt="Training photo {{ loop.index }}"></a>{% endfor %}
+  </div>
+  {% else %}
+  <p class="doc-note">No photos attached.</p>
+  {% endif %}
+
+  <div class="doc-classification">
+    <span>Classification: BEC Arabia - External - Unrestricted Use</span>
+  </div>
+</article>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='record.js') }}" defer></script>{% endblock %}

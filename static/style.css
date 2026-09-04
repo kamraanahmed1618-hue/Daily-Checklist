@@ -173,6 +173,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--navy-2); box-sha
 .chart-legend i.violations { background: #1baf7a; }
 .stats-grid { margin-bottom: 22px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
 .stats-grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
+.stats-grid.cols-5 { grid-template-columns: repeat(5, 1fr); }
 .stats-grid article { padding: 21px 23px; background: white; border: 1px solid var(--line); border-radius: 14px; }
 .stats-grid span, .stats-grid strong { display: block; }
 .stats-grid span { margin-bottom: 7px; color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
@@ -192,6 +193,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--navy-2); box-sha
 .home-card.near-miss { --accent: #eb6834; }
 .home-card.violation { --accent: #ad3328; }
 .home-card.ptw { --accent: #1baf7a; }
+.home-card.training { --accent: #7c3aed; }
 .home-card.records { --accent: var(--navy); }
 .records-card { padding: 0; overflow: hidden; }
 .filter-bar { padding: 22px; background: #f4f6fb; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: minmax(240px, 1fr) 160px 160px auto auto; align-items: end; gap: 12px; }
@@ -201,6 +203,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--navy-2); box-sha
 .records-actions { padding: 16px 22px; display: flex; align-items: center; justify-content: space-between; gap: 18px; border-bottom: 1px solid var(--line); }
 .records-actions p { margin: 0; color: var(--muted); font-size: 12px; }
 .records-actions > div { display: flex; gap: 8px; }
+.training-import { padding: 14px 22px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
+.training-import label { font-size: 13px; font-weight: 650; }
 .table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
 th { padding: 12px 14px; color: #5c6578; background: #fbfcff; border-bottom: 1px solid var(--line); font-size: 10px; font-weight: 850; letter-spacing: .07em; text-align: left; text-transform: uppercase; }
@@ -297,7 +301,7 @@ td small { margin-top: 3px; color: var(--muted); }
   .filter-bar { grid-template-columns: 1fr 1fr; }
   .filter-bar .search-field { grid-column: span 2; }
   .records-actions { align-items: flex-start; flex-direction: column; }
-  .stats-grid.cols-4 { grid-template-columns: repeat(2, 1fr); }
+  .stats-grid.cols-4, .stats-grid.cols-5 { grid-template-columns: repeat(2, 1fr); }
   .overview-grid { grid-template-columns: 1fr; }
 }
 

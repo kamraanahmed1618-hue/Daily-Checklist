@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Training &amp; Induction Log · 1 Hotel Diriyah OHS{% endblock %}
+{% block body_class %}form-page{% endblock %}
+{% block content %}
+<section class="hero">
+  <div>
+    <div class="partner-logos">
+      <img src="{{ url_for('static', filename='egis.png') }}" alt="Egis">
+      <img src="{{ url_for('static', filename='dewan.png') }}" alt="Dewan">
+      <img src="{{ url_for('static', filename='bec-ashoka.png') }}" alt="BEC Ashoka">
+    </div>
+    <span class="eyebrow">Daily site assurance</span>
+    <h1>Training &amp; Induction Log</h1>
+    <p>Log a toolbox talk, induction, or specific training session as it's delivered, with the attendance sheet and any photos for the record.</p>
+  </div>
+</section>
+
+<div id="success-panel" class="success-panel hidden" role="status" aria-live="polite">
+  <span class="success-icon">✓</span>
+  <div>
+    <span class="eyebrow">Logged</span>
+    <h2>Training session saved</h2>
+    <p id="success-copy"></p>
+    <button class="button primary" id="new-report" type="button">Log another session</button>
+  </div>
+</div>
+
+<form id="training-form" novalidate>
+  <section class="card">
+    <div class="section-heading">
+      <div><span class="step-number">01</span><h2>Session details</h2></div>
+      <p>Fields marked <span class="required">*</span> are required</p>
+    </div>
+    <div class="field-grid">
+      <label><span>Session type <b>*</b></span>
+        <select name="sessionType" required>
+          <option value="">Select</option>
+          {% for type in training_types %}<option value="{{ type }}">{{ type }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="wide"><span>Topic <b>*</b></span><input name="topic" required maxlength="200" placeholder="e.g. Work at Height, PPE, Emergency Response"></label>
+      <label><span>Date <b>*</b></span><input name="sessionDate" type="date" required></label>
+      <label><span>Trainer / conducted by</span><input name="trainer" maxlength="200"></label>
+      <label><span>Location</span><input name="location" maxlength="200" placeholder="Area / zone"></label>
+      <label><span>Duration</span><input name="duration" maxlength="60" placeholder="e.g. One Hour"></label>
+      <label><span>Number of attendees</span><input name="attendeesCount" type="number" min="0" max="9999"></label>
+    </div>
+    <div class="field-grid one-col">
+      <label><span>Remarks</span><textarea name="remarks" rows="3" maxlength="2000" placeholder="Anything worth noting about this session…"></textarea></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-heading"><div><span class="step-number">02</span><h2>Attendance sheet</h2></div><p>Photograph or scan the signed attendance sheet for audit records</p></div>
+    <div class="photo-upload" id="attendance-photo-upload">
+      <input type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
+      <button class="button secondary photo-add-button" type="button">+ Add attendance sheet</button>
+      <span class="field-note">JPEG, PNG, or WEBP · up to 8 photos · 8 MB each</span>
+      <div class="photo-grid"></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-heading"><div><span class="step-number">03</span><h2>Session photos</h2></div></div>
+    <div class="photo-upload" id="training-photo-upload">
+      <input type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
+      <button class="button secondary photo-add-button" type="button">+ Add photos</button>
+      <span class="field-note">JPEG, PNG, or WEBP · up to 8 photos · 8 MB each</span>
+      <div class="photo-grid"></div>
+    </div>
+  </section>
+
+  <div id="form-error" class="form-error hidden" role="alert"></div>
+  <div class="submit-bar">
+    <div><strong>Training log entry</strong><span>Saved sessions can be reviewed, exported, and printed for audits</span></div>
+    <button class="button primary submit-button" type="submit">Save entry</button>
+  </div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='photo_upload.js') }}" defer></script>
+<script src="{{ url_for('static', filename='training.js') }}" defer></script>
+{% endblock %}
