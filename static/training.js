@@ -11,6 +11,15 @@ function field(name) {
   return form.elements.namedItem(name);
 }
 
+function listValues(prefix, count) {
+  const values = [];
+  for (let i = 1; i <= count; i += 1) {
+    const value = field(`${prefix}${i}`)?.value.trim();
+    if (value) values.push(value);
+  }
+  return values;
+}
+
 function showError(message) {
   errorBox.textContent = message;
   errorBox.classList.remove("hidden");
@@ -30,6 +39,9 @@ async function submitEntry(event) {
     location: field("location").value,
     duration: field("duration").value,
     attendeesCount: field("attendeesCount").value,
+    objective: field("objective").value,
+    summary: field("summary").value,
+    keyLessons: listValues("keyLesson", 8),
     remarks: field("remarks").value,
     photoKeys: photoUpload.getKeys(),
     attendancePhotoKeys: attendanceUpload.getKeys(),

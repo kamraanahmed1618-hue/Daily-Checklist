@@ -51,7 +51,19 @@
   </section>
 
   <section class="card">
-    <div class="section-heading"><div><span class="step-number">02</span><h2>Attendance sheet</h2></div><p>Photograph or scan the signed attendance sheet for audit records</p></div>
+    <div class="section-heading"><div><span class="step-number">02</span><h2>Talk content</h2></div><p>Optional — fill in for a TBT or induction that follows a published topic</p></div>
+    <div class="field-grid one-col">
+      <label><span>Objective / focus</span><input name="objective" maxlength="300" placeholder="e.g. Preventing struck-by and interface incidents between personnel and mobile equipment"></label>
+      <label><span>Summary</span><textarea name="summary" rows="3" maxlength="3000" placeholder="What was covered in this session…"></textarea></label>
+    </div>
+    <div class="list-fields">
+      <span>Key lessons &amp; safe working practices</span>
+      {% for i in range(1, 9) %}<input name="keyLesson{{ i }}" maxlength="300" placeholder="{{ i }}.">{% endfor %}
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-heading"><div><span class="step-number">03</span><h2>Attendance sheet</h2></div><p>Photograph or scan the signed attendance sheet for audit records</p></div>
     <div class="photo-upload" id="attendance-photo-upload">
       <input type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
       <button class="button secondary photo-add-button" type="button">+ Add attendance sheet</button>
@@ -61,7 +73,7 @@
   </section>
 
   <section class="card">
-    <div class="section-heading"><div><span class="step-number">03</span><h2>Session photos</h2></div></div>
+    <div class="section-heading"><div><span class="step-number">04</span><h2>Session photos</h2></div></div>
     <div class="photo-upload" id="training-photo-upload">
       <input type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
       <button class="button secondary photo-add-button" type="button">+ Add photos</button>
