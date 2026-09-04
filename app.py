@@ -456,13 +456,16 @@ VIOLATION_ACTIONS = [
     "Deduction from Subcontractor Payment", "Removal from Site",
 ]
 PTW_TYPES = [
-    "Cold work", "Hot work", "Lifting", "Excavation", "Scaffolding",
+    "Cold work", "Hot work", "Electrical", "Lifting", "Excavation", "Scaffolding",
     "Work at Height", "Concrete", "Ground network", "Other",
 ]
 PTW_SHIFTS = ["Day", "Night"]
 PTW_STATUSES = ["open", "closed"]
-TRAINING_TYPES = ["Induction", "TBT", "Specific Training"]
-TRAINING_TYPE_LABELS = {"Induction": "Induction", "TBT": "TBT (Toolbox Talk)", "Specific Training": "Specific Training"}
+TRAINING_TYPES = ["Induction", "TBT", "Mass TBT", "Specific Training"]
+TRAINING_TYPE_LABELS = {
+    "Induction": "Induction", "TBT": "TBT (Toolbox Talk)", "Mass TBT": "Mass TBT (large combined session)",
+    "Specific Training": "Specific Training",
+}
 
 
 def clean_choices(value: Any, field: str, allowed: list[str]) -> list[str]:
