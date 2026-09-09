@@ -26,6 +26,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
+from PIL import Image
 from xhtml2pdf import pisa
 
 from charts import bar_chart_svg, grouped_bar_chart_svg, line_chart_svg
@@ -201,6 +202,26 @@ def photo_data_uri(data: bytes, extension: str) -> str:
     return f"data:{mime};base64,{base64.b64encode(data).decode()}"
 
 
+PDF_PHOTO_MAX_DIMENSION = 900
+PDF_PHOTO_JPEG_QUALITY = 70
+
+
+def resized_photo_for_pdf(data: bytes, extension: str) -> tuple[bytes, str]:
+    """Downscale and re-encode a photo before embedding it in a PDF. Uploaded photos can
+    be up to 8MB each and PDFs only ever display them at ~170px tall, so embedding the
+    originals bloated bundle PDFs to hundreds of MB and made them slow to generate."""
+    try:
+        with Image.open(io.BytesIO(data)) as image:
+            image = image.convert("RGB")
+            image.thumbnail((PDF_PHOTO_MAX_DIMENSION, PDF_PHOTO_MAX_DIMENSION))
+            buffer = io.BytesIO()
+            image.save(buffer, format="JPEG", quality=PDF_PHOTO_JPEG_QUALITY, optimize=True)
+            return buffer.getvalue(), "jpg"
+    except Exception:
+        app.logger.exception("Failed to resize photo for PDF; embedding original")
+        return data, extension
+
+
 def record_pdf_html(
     title: str,
     band_title: str,
@@ -231,7 +252,7 @@ def record_pdf_html(
         rows = ""
         for index in range(0, len(photos), 2):
             pair = photos[index:index + 2]
-            cells = "".join(f'<td><img src="{photo_data_uri(data, extension)}"></td>' for data, extension in pair)
+            cells = "".join(f'<td><img src="{photo_data_uri(*resized_photo_for_pdf(data, extension))}"></td>' for data, extension in pair)
             if len(pair) == 1:
                 cells += "<td></td>"
             rows += f"<tr>{cells}</tr>"
