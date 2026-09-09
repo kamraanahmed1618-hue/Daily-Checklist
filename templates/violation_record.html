@@ -8,6 +8,7 @@
     <form class="delete-form" method="post" action="{{ url_for('delete_violation', record_id=record.id) }}">
       <button class="button ghost danger" type="submit">Delete record</button>
     </form>
+    <a class="button primary" href="{{ url_for('violation_pdf', record_id=record.id) }}">Download PDF</a>
     <button class="button primary" id="print-record" type="button">Print / Save PDF</button>
   </div>
 </section>

@@ -1561,6 +1561,20 @@ def near_miss_photos_zip(record_id: str) -> Response | tuple[Response, int]:
     return photos_zip_response(safe_json_list(row["photos"]), f'{row["report_no"]}-photos.zip')
 
 
+@app.get("/admin/near-miss/<record_id>/report.pdf")
+@admin_required
+def near_miss_pdf(record_id: str) -> Response | tuple[Response, int]:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT * FROM near_miss_reports WHERE id = ?"), [record_id])
+        row = cursor.fetchone()
+    if not row:
+        return jsonify({"error": "Record not found."}), 404
+    record = dict(row)
+    pdf_bytes = near_miss_pdf_bytes(record)
+    return Response(pdf_bytes, mimetype="application/pdf", headers={"Content-Disposition": f'attachment; filename="{record["report_no"]}.pdf"'})
+
+
 @app.get("/admin/violations/<record_id>")
 @admin_required
 def violation_detail(record_id: str) -> str | tuple[str, int]:
@@ -1599,6 +1613,20 @@ def violation_photos_zip(record_id: str) -> Response | tuple[Response, int]:
     if not row:
         return jsonify({"error": "Record not found."}), 404
     return photos_zip_response(safe_json_list(row["photos"]), f'{row["violation_no"]}-photos.zip')
+
+
+@app.get("/admin/violations/<record_id>/notice.pdf")
+@admin_required
+def violation_pdf(record_id: str) -> Response | tuple[Response, int]:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT * FROM violation_notices WHERE id = ?"), [record_id])
+        row = cursor.fetchone()
+    if not row:
+        return jsonify({"error": "Record not found."}), 404
+    record = dict(row)
+    pdf_bytes = violation_pdf_bytes(record)
+    return Response(pdf_bytes, mimetype="application/pdf", headers={"Content-Disposition": f'attachment; filename="{record["violation_no"]}.pdf"'})
 
 
 PTW_FORM_FIELDS = {
@@ -1713,6 +1741,20 @@ def training_attendance_zip(record_id: str) -> Response | tuple[Response, int]:
     if not row:
         return jsonify({"error": "Record not found."}), 404
     return photos_zip_response(safe_json_list(row["attendance_photos"]), f'training-{row["seq"]}-attendance.zip')
+
+
+@app.get("/admin/training/<record_id>/record.pdf")
+@admin_required
+def training_pdf(record_id: str) -> Response | tuple[Response, int]:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT * FROM training_logs WHERE id = ?"), [record_id])
+        row = cursor.fetchone()
+    if not row:
+        return jsonify({"error": "Record not found."}), 404
+    record = dict(row)
+    pdf_bytes = training_pdf_bytes(record)
+    return Response(pdf_bytes, mimetype="application/pdf", headers={"Content-Disposition": f'attachment; filename="training-{record["seq"]}.pdf"'})
 
 
 def inspections_csv(records: list[dict[str, Any]], detailed: bool) -> str:
