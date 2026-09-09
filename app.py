@@ -275,7 +275,7 @@ ul.lessons {{ margin: 0 0 10px 18px; padding: 0; font-size: 9pt; }}
 ul.lessons li {{ margin-bottom: 3px; }}
 table.photos {{ width: 100%; border-collapse: collapse; margin-bottom: 10px; }}
 table.photos td {{ border: 1px solid #000; width: 50%; text-align: center; padding: 4px; }}
-table.photos img {{ width: 100%; height: 170px; }}
+table.photos img {{ width: 100%; height: auto; }}
 .note {{ font-size: 9pt; margin-bottom: 10px; }}
 .footer {{ border-top: 1px solid #000; padding-top: 4px; font-size: 7pt; color: #555; margin-top: 10px; }}
 </style></head>
