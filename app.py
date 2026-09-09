@@ -1095,6 +1095,8 @@ def security_headers(response: Response) -> Response:
     response.headers.setdefault("Referrer-Policy", "same-origin")
     response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
     response.headers.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
+    if request.path.startswith("/admin"):
+        response.headers["Cache-Control"] = "no-store"
     return response
 
 
