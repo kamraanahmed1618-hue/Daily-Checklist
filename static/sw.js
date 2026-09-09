@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "ohs-diriyah-v4";
+const CACHE_NAME = "ohs-diriyah-v5";
 const APP_SHELL = [
   "/",
   "/inspection",
@@ -33,6 +33,15 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   // Never cache admin pages (session-specific, contains records/PII) or non-GET requests.
   if (event.request.method !== "GET" || url.pathname.startsWith("/admin")) return;
+
+  // Never cache cross-origin requests: this is how admin pages load their photos
+  // (pre-signed, one-time B2 storage URLs), and the app shell never needs offline
+  // photo access. Caching them stale-first could serve an old cached copy instead
+  // of fetching the current photo — always go straight to the network for these.
+  if (url.origin !== self.location.origin) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
 
   // Code assets: always prefer a fresh copy so a deploy takes effect on the next load
   // instead of silently running stale JS against the new server until the cache
