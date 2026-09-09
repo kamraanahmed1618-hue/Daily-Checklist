@@ -26,7 +26,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
-from PIL import Image
+from PIL import Image, ImageOps
 from xhtml2pdf import pisa
 
 from charts import bar_chart_svg, grouped_bar_chart_svg, line_chart_svg
@@ -208,10 +208,15 @@ PDF_PHOTO_JPEG_QUALITY = 70
 
 def resized_photo_for_pdf(data: bytes, extension: str) -> tuple[bytes, str]:
     """Downscale and re-encode a photo before embedding it in a PDF. Uploaded photos can
-    be up to 8MB each and PDFs only ever display them at ~170px tall, so embedding the
-    originals bloated bundle PDFs to hundreds of MB and made them slow to generate."""
+    be up to 8MB each, so embedding the originals bloated bundle PDFs to hundreds of MB
+    and made them slow to generate."""
     try:
         with Image.open(io.BytesIO(data)) as image:
+            # A phone photo taken in portrait is often stored with the sensor's native
+            # (landscape) pixels plus an EXIF tag saying "rotate this for display" —
+            # browsers apply that automatically, but PIL doesn't, so without this the
+            # PDF would embed it sideways even though it looks upright everywhere else.
+            image = ImageOps.exif_transpose(image)
             image = image.convert("RGB")
             image.thumbnail((PDF_PHOTO_MAX_DIMENSION, PDF_PHOTO_MAX_DIMENSION))
             buffer = io.BytesIO()

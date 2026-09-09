@@ -557,6 +557,22 @@ class ChecklistApplicationTests(unittest.TestCase):
         with Image.open(io.BytesIO(resized)) as image:
             self.assertLessEqual(max(image.size), 900)
 
+    def test_resized_photo_for_pdf_applies_exif_rotation(self):
+        from PIL import Image
+        from app import resized_photo_for_pdf
+
+        # A portrait phone photo is often stored with landscape sensor pixels plus an
+        # EXIF tag telling viewers to rotate it 90deg for display.
+        exif = Image.Exif()
+        exif[274] = 6
+        buffer = io.BytesIO()
+        Image.new("RGB", (400, 300), color=(120, 140, 160)).save(buffer, format="JPEG", exif=exif)
+        original = buffer.getvalue()
+
+        resized, _ = resized_photo_for_pdf(original, "jpg")
+        with Image.open(io.BytesIO(resized)) as image:
+            self.assertEqual(image.size, (300, 400))
+
     def test_resized_photo_for_pdf_falls_back_on_invalid_image(self):
         from app import resized_photo_for_pdf
 
