@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "ohs-diriyah-v5";
+const CACHE_NAME = "ohs-diriyah-v6";
 const APP_SHELL = [
   "/",
   "/inspection",
@@ -34,14 +34,15 @@ self.addEventListener("fetch", (event) => {
   // Never cache admin pages (session-specific, contains records/PII) or non-GET requests.
   if (event.request.method !== "GET" || url.pathname.startsWith("/admin")) return;
 
-  // Never cache cross-origin requests: this is how admin pages load their photos
-  // (pre-signed, one-time B2 storage URLs), and the app shell never needs offline
-  // photo access. Caching them stale-first could serve an old cached copy instead
-  // of fetching the current photo — always go straight to the network for these.
-  if (url.origin !== self.location.origin) {
-    event.respondWith(fetch(event.request));
-    return;
-  }
+  // Don't touch cross-origin requests at all (this is how admin pages load their
+  // photos — pre-signed B2 storage URLs). Re-issuing them via fetch() from inside
+  // the service worker subjects them to the page's connect-src CSP directive
+  // (which only allows same-origin), even though the CSP's img-src directive
+  // already explicitly allows the storage host for a normal, un-intercepted
+  // <img> load — so calling fetch() here made every one of these images fail
+  // with a CSP violation. Simply not calling respondWith() lets the browser
+  // handle the request itself, the same way it always could.
+  if (url.origin !== self.location.origin) return;
 
   // Code assets: always prefer a fresh copy so a deploy takes effect on the next load
   // instead of silently running stale JS against the new server until the cache
