@@ -218,6 +218,17 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertEqual(export.status_code, 200)
         self.assertIn("NEAR-MISS-001", export.get_data(as_text=True))
 
+    def test_near_miss_pdf_download(self):
+        response = self.client.post("/api/near-miss", json=self.near_miss_payload())
+        record_id = response.json["id"]
+        self.login()
+
+        pdf_response = self.client.get(f"/admin/near-miss/{record_id}/report.pdf")
+        self.assertEqual(pdf_response.status_code, 200)
+        self.assertEqual(pdf_response.mimetype, "application/pdf")
+        self.assertIn("NEAR-MISS-001.pdf", pdf_response.headers["Content-Disposition"])
+        self.assertTrue(pdf_response.data.startswith(b"%PDF"))
+
     def test_violation_requires_employee_name(self):
         payload = self.violation_payload()
         payload["employeeName"] = ""
@@ -241,6 +252,17 @@ class ChecklistApplicationTests(unittest.TestCase):
         export = self.client.get("/admin/export/violations")
         self.assertEqual(export.status_code, 200)
         self.assertIn("VIOLATION-001", export.get_data(as_text=True))
+
+    def test_violation_pdf_download(self):
+        response = self.client.post("/api/violations", json=self.violation_payload())
+        record_id = response.json["id"]
+        self.login()
+
+        pdf_response = self.client.get(f"/admin/violations/{record_id}/notice.pdf")
+        self.assertEqual(pdf_response.status_code, 200)
+        self.assertEqual(pdf_response.mimetype, "application/pdf")
+        self.assertIn("VIOLATION-001.pdf", pdf_response.headers["Content-Disposition"])
+        self.assertTrue(pdf_response.data.startswith(b"%PDF"))
 
     def test_ptw_requires_valid_type(self):
         payload = self.ptw_payload()
@@ -508,6 +530,39 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertEqual(attendance_response.status_code, 200)
         attendance_zip = zipfile.ZipFile(io.BytesIO(attendance_response.data))
         self.assertEqual(attendance_zip.namelist(), ["photo-1.jpg"])
+
+    def test_training_pdf_download(self):
+        payload = self.training_payload()
+        response = self.client.post("/api/training", json=payload)
+        record_id = response.json["id"]
+        self.login()
+
+        pdf_response = self.client.get(f"/admin/training/{record_id}/record.pdf")
+        self.assertEqual(pdf_response.status_code, 200)
+        self.assertEqual(pdf_response.mimetype, "application/pdf")
+        self.assertIn("training-1.pdf", pdf_response.headers["Content-Disposition"])
+        self.assertTrue(pdf_response.data.startswith(b"%PDF"))
+
+    def test_resized_photo_for_pdf_shrinks_large_photos(self):
+        from PIL import Image
+        from app import resized_photo_for_pdf
+
+        buffer = io.BytesIO()
+        Image.new("RGB", (4032, 3024), color=(120, 140, 160)).save(buffer, format="JPEG", quality=95)
+        original = buffer.getvalue()
+
+        resized, extension = resized_photo_for_pdf(original, "jpg")
+        self.assertEqual(extension, "jpg")
+        self.assertLess(len(resized), len(original))
+        with Image.open(io.BytesIO(resized)) as image:
+            self.assertLessEqual(max(image.size), 900)
+
+    def test_resized_photo_for_pdf_falls_back_on_invalid_image(self):
+        from app import resized_photo_for_pdf
+
+        resized, extension = resized_photo_for_pdf(b"not-an-image", "png")
+        self.assertEqual(resized, b"not-an-image")
+        self.assertEqual(extension, "png")
 
     def test_export_training_bundle_includes_csv_pdfs_and_photos(self):
         first = self.training_payload()
