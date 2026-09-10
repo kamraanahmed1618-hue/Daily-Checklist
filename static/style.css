@@ -171,6 +171,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--navy-2); box-sha
 .chart-legend i.inspections { background: #2a78d6; }
 .chart-legend i.near-miss { background: #eb6834; }
 .chart-legend i.violations { background: #1baf7a; }
+.stats-period { margin: 0 0 10px; color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
 .stats-grid { margin-bottom: 22px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
 .stats-grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
 .stats-grid.cols-5 { grid-template-columns: repeat(5, 1fr); }
