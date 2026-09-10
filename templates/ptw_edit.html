@@ -5,6 +5,7 @@
 <section class="record-toolbar no-print">
   <a class="text-link" href="{{ url_for('admin', view='ptw') }}">← Back to records</a>
   <form class="delete-form" method="post" action="{{ url_for('delete_ptw', record_id=record.id) }}">
+    <input type="text" name="deletedBy" placeholder="Your name" required maxlength="120">
     <button class="button ghost danger" type="submit">Delete entry</button>
   </form>
 </section>
@@ -67,6 +68,9 @@
     </div>
   </section>
 
+  <div class="field-grid" style="margin-bottom: 16px;">
+    <label><span>Your name <b>*</b></span><input name="editedBy" required maxlength="120" placeholder="For the record of who made this change"></label>
+  </div>
   <div class="submit-bar">
     <div><strong>{{ record.ptw_number }}</strong><span>Last updated {{ record.updated_at }}</span></div>
     <button class="button primary submit-button" type="submit">Save changes</button>

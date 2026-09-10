@@ -30,6 +30,7 @@ class ChecklistApplicationTests(unittest.TestCase):
             connection.execute("DELETE FROM violation_notices")
             connection.execute("DELETE FROM ptw_logs")
             connection.execute("DELETE FROM training_logs")
+            connection.execute("DELETE FROM audit_log")
 
     def payload(self):
         return {
@@ -349,6 +350,7 @@ class ChecklistApplicationTests(unittest.TestCase):
             "workDescription": "Drilling", "areaHsePersonnel": "", "location": "Basement", "shift": "",
             "startDate": "2026-08-18", "startTime": "08:00", "endDate": "2026-08-18", "endTime": "17:00",
             "company": "BAJV", "status": "closed", "workersCount": "", "reviewedBy": "",
+            "editedBy": "QA Inspector",
         })
 
         response = self.client.get("/admin/export/ptw.xlsx")
@@ -434,6 +436,7 @@ class ChecklistApplicationTests(unittest.TestCase):
             "workDescription": "Drilling", "areaHsePersonnel": "", "location": "Basement", "shift": "",
             "startDate": "2026-08-18", "startTime": "08:00", "endDate": "2026-08-18", "endTime": "17:00",
             "company": "BAJV", "status": "closed", "workersCount": "", "reviewedBy": "",
+            "editedBy": "QA Inspector",
         })
 
         overview = self.client.get("/admin?view=ptw")
@@ -456,12 +459,21 @@ class ChecklistApplicationTests(unittest.TestCase):
             "location": payload["location"], "shift": "", "startDate": payload["startDate"],
             "startTime": payload["startTime"], "endDate": payload["endDate"], "endTime": payload["endTime"],
             "company": payload["company"], "status": "closed", "workersCount": "", "reviewedBy": "Faisal",
+            "editedBy": "QA Inspector",
         })
         self.assertEqual(response.status_code, 302)
         detail = self.client.get(f"/admin/ptw/{record_id}")
         self.assertIn(b'value="Faisal"', detail.data)
         export = self.client.get("/admin/export/ptw")
         self.assertIn("closed", export.get_data(as_text=True))
+
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT * FROM audit_log WHERE record_ref = ?", [payload["ptwNumber"]])
+            row = cursor.fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row["action"], "updated")
+        self.assertEqual(row["actor_name"], "QA Inspector")
 
     def test_ptw_edit_rejects_invalid_update_and_keeps_entered_values(self):
         record_id = self.client.post("/api/ptw", json=self.ptw_payload()).json["id"]
@@ -471,17 +483,75 @@ class ChecklistApplicationTests(unittest.TestCase):
             "workDescription": "Drilling", "areaHsePersonnel": "", "location": "Basement", "shift": "",
             "startDate": "2026-08-18", "startTime": "08:00", "endDate": "2026-08-18", "endTime": "17:00",
             "company": "BAJV", "status": "open", "workersCount": "", "reviewedBy": "",
+            "editedBy": "QA Inspector",
         })
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"PTW number is required", response.data)
 
+    def test_ptw_edit_requires_actor_name(self):
+        record_id = self.client.post("/api/ptw", json=self.ptw_payload()).json["id"]
+        self.login()
+        payload = self.ptw_payload()
+        response = self.client.post(f"/admin/ptw/{record_id}", data={
+            "ptwNumber": payload["ptwNumber"], "issuer": payload["issuer"], "receiver": payload["receiver"],
+            "ptwType": payload["ptwType"], "workDescription": payload["workDescription"], "areaHsePersonnel": "",
+            "location": payload["location"], "shift": "", "startDate": payload["startDate"],
+            "startTime": payload["startTime"], "endDate": payload["endDate"], "endTime": payload["endTime"],
+            "company": payload["company"], "status": "open", "workersCount": "", "reviewedBy": "",
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Your name is required", response.data)
+
+    def test_ptw_number_must_be_unique_on_create(self):
+        self.client.post("/api/ptw", json=self.ptw_payload())
+        response = self.client.post("/api/ptw", json=self.ptw_payload())
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("already in use", response.json["error"])
+
+    def test_ptw_number_must_be_unique_on_edit(self):
+        first_id = self.client.post("/api/ptw", json=self.ptw_payload()).json["id"]
+        second_payload = self.ptw_payload()
+        second_payload["ptwNumber"] = "BAJV-830"
+        second_id = self.client.post("/api/ptw", json=second_payload).json["id"]
+
+        self.login()
+        payload = self.ptw_payload()
+        response = self.client.post(f"/admin/ptw/{second_id}", data={
+            "ptwNumber": payload["ptwNumber"], "issuer": payload["issuer"], "receiver": payload["receiver"],
+            "ptwType": payload["ptwType"], "workDescription": payload["workDescription"], "areaHsePersonnel": "",
+            "location": payload["location"], "shift": "", "startDate": payload["startDate"],
+            "startTime": payload["startTime"], "endDate": payload["endDate"], "endTime": payload["endTime"],
+            "company": payload["company"], "status": "open", "workersCount": "", "reviewedBy": "",
+            "editedBy": "QA Inspector",
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"already in use", response.data)
+        # Editing a permit and keeping its own (unchanged) number must still work.
+        unchanged = self.client.post(f"/admin/ptw/{second_id}", data={
+            "ptwNumber": "BAJV-830", "issuer": payload["issuer"], "receiver": payload["receiver"],
+            "ptwType": payload["ptwType"], "workDescription": payload["workDescription"], "areaHsePersonnel": "",
+            "location": payload["location"], "shift": "", "startDate": payload["startDate"],
+            "startTime": payload["startTime"], "endDate": payload["endDate"], "endTime": payload["endTime"],
+            "company": payload["company"], "status": "open", "workersCount": "", "reviewedBy": "",
+            "editedBy": "QA Inspector",
+        })
+        self.assertEqual(unchanged.status_code, 302)
+
     def test_delete_ptw(self):
         record_id = self.client.post("/api/ptw", json=self.ptw_payload()).json["id"]
         self.login()
-        response = self.client.post(f"/admin/ptw/{record_id}/delete")
+        response = self.client.post(f"/admin/ptw/{record_id}/delete", data={"deletedBy": "QA Inspector"})
         self.assertEqual(response.status_code, 302)
         detail = self.client.get(f"/admin/ptw/{record_id}")
         self.assertEqual(detail.status_code, 404)
+
+    def test_delete_ptw_requires_actor_name(self):
+        record_id = self.client.post("/api/ptw", json=self.ptw_payload()).json["id"]
+        self.login()
+        response = self.client.post(f"/admin/ptw/{record_id}/delete")
+        self.assertEqual(response.status_code, 400)
+        detail = self.client.get(f"/admin/ptw/{record_id}")
+        self.assertEqual(detail.status_code, 200)  # not deleted
 
     def test_training_requires_valid_session_type(self):
         payload = self.training_payload()
@@ -516,7 +586,7 @@ class ChecklistApplicationTests(unittest.TestCase):
     def test_delete_training(self):
         record_id = self.client.post("/api/training", json=self.training_payload()).json["id"]
         self.login()
-        response = self.client.post(f"/admin/training/{record_id}/delete")
+        response = self.client.post(f"/admin/training/{record_id}/delete", data={"deletedBy": "QA Inspector"})
         self.assertEqual(response.status_code, 302)
         detail = self.client.get(f"/admin/training/{record_id}")
         self.assertEqual(detail.status_code, 404)
@@ -759,7 +829,7 @@ class ChecklistApplicationTests(unittest.TestCase):
     def test_delete_record(self):
         record_id = self.client.post("/api/inspections", json=self.payload()).json["id"]
         self.login()
-        response = self.client.post(f"/admin/records/{record_id}/delete")
+        response = self.client.post(f"/admin/records/{record_id}/delete", data={"deletedBy": "QA Inspector"})
         self.assertEqual(response.status_code, 302)
         detail = self.client.get(f"/admin/records/{record_id}")
         self.assertEqual(detail.status_code, 404)
@@ -767,7 +837,7 @@ class ChecklistApplicationTests(unittest.TestCase):
     def test_delete_near_miss(self):
         record_id = self.client.post("/api/near-miss", json=self.near_miss_payload()).json["id"]
         self.login()
-        response = self.client.post(f"/admin/near-miss/{record_id}/delete")
+        response = self.client.post(f"/admin/near-miss/{record_id}/delete", data={"deletedBy": "QA Inspector"})
         self.assertEqual(response.status_code, 302)
         detail = self.client.get(f"/admin/near-miss/{record_id}")
         self.assertEqual(detail.status_code, 404)
@@ -775,10 +845,36 @@ class ChecklistApplicationTests(unittest.TestCase):
     def test_delete_violation(self):
         record_id = self.client.post("/api/violations", json=self.violation_payload()).json["id"]
         self.login()
-        response = self.client.post(f"/admin/violations/{record_id}/delete")
+        response = self.client.post(f"/admin/violations/{record_id}/delete", data={"deletedBy": "QA Inspector"})
         self.assertEqual(response.status_code, 302)
         detail = self.client.get(f"/admin/violations/{record_id}")
         self.assertEqual(detail.status_code, 404)
+
+    def test_delete_requires_actor_name(self):
+        record_id = self.client.post("/api/near-miss", json=self.near_miss_payload()).json["id"]
+        self.login()
+        response = self.client.post(f"/admin/near-miss/{record_id}/delete")
+        self.assertEqual(response.status_code, 400)
+        detail = self.client.get(f"/admin/near-miss/{record_id}")
+        self.assertEqual(detail.status_code, 200)  # not deleted
+
+    def test_delete_logs_audit_entry(self):
+        from app import database
+
+        response = self.client.post("/api/near-miss", json=self.near_miss_payload())
+        record_id = response.json["id"]
+        report_no = response.json["reportNo"]
+        self.login()
+        self.client.post(f"/admin/near-miss/{record_id}/delete", data={"deletedBy": "QA Inspector"})
+
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT * FROM audit_log WHERE record_ref = ?", [report_no])
+            row = cursor.fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row["action"], "deleted")
+        self.assertEqual(row["record_type"], "near_miss")
+        self.assertEqual(row["actor_name"], "QA Inspector")
 
     def test_near_miss_and_violation_detail_pages_render(self):
         near_miss_id = self.client.post("/api/near-miss", json=self.near_miss_payload()).json["id"]

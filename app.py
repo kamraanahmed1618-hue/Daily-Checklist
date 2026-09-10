@@ -572,6 +572,17 @@ def init_db() -> None:
         "CREATE INDEX IF NOT EXISTS training_date_idx ON training_logs (session_date)",
         "CREATE INDEX IF NOT EXISTS training_created_idx ON training_logs (created_at)",
         "CREATE INDEX IF NOT EXISTS training_type_idx ON training_logs (session_type)",
+        """CREATE TABLE IF NOT EXISTS audit_log (
+            id TEXT PRIMARY KEY,
+            occurred_at TEXT NOT NULL,
+            action TEXT NOT NULL,
+            record_type TEXT NOT NULL,
+            record_ref TEXT NOT NULL,
+            actor_name TEXT NOT NULL DEFAULT '',
+            ip_address TEXT NOT NULL DEFAULT ''
+        )""",
+        "CREATE INDEX IF NOT EXISTS audit_log_occurred_idx ON audit_log (occurred_at)",
+        "CREATE INDEX IF NOT EXISTS audit_log_record_type_idx ON audit_log (record_type)",
     ]
     with database() as connection:
         cursor = connection.cursor()
@@ -600,6 +611,31 @@ def init_db() -> None:
             for row in cursor.fetchall():
                 next_seq += 1
                 cursor.execute(sql(f"UPDATE {table} SET seq = ? WHERE id = ?"), [next_seq, row["id"]])
+
+    # In its own transaction: if pre-existing duplicate ptw_number values make this fail,
+    # a Postgres transaction aborts entirely on any statement error, which would otherwise
+    # silently roll back every migration above too. The app-level check in submit/edit
+    # still catches new duplicates going forward even if this index can't be created yet.
+    try:
+        with database() as connection:
+            connection.cursor().execute("CREATE UNIQUE INDEX IF NOT EXISTS ptw_number_unique_idx ON ptw_logs (ptw_number)")
+    except Exception:
+        app.logger.exception("Could not create unique index on ptw_logs.ptw_number (likely pre-existing duplicates)")
+
+
+def log_audit(action: str, record_type: str, record_ref: str, actor_name: str) -> None:
+    """Records who edited or deleted a record, and when — there are no individual admin
+    accounts (one shared password), so actor_name is whatever the admin typed into the
+    "Your name" field at the point of action, not an authenticated identity."""
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql(
+            "INSERT INTO audit_log (id, occurred_at, action, record_type, record_ref, actor_name, ip_address) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)"
+        ), [
+            secrets.token_hex(12), datetime.now(timezone.utc).isoformat(), action, record_type, record_ref,
+            (actor_name or "").strip()[:120], (request.remote_addr or "")[:64],
+        ])
 
 
 def clean_text(value: Any, field: str, maximum: int = 200, required: bool = True) -> str:
@@ -1379,6 +1415,9 @@ def submit_ptw() -> tuple[Response, int] | Response:
         now = datetime.now(timezone.utc).isoformat()
         with database() as connection:
             cursor = connection.cursor()
+            cursor.execute(sql("SELECT 1 FROM ptw_logs WHERE ptw_number = ?"), [record["ptw_number"]])
+            if cursor.fetchone():
+                raise ValueError(f'PTW number "{record["ptw_number"]}" is already in use — choose a different number.')
             cursor.execute(sql("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM ptw_logs"))
             seq = cursor.fetchone()["next_seq"]
             values = [
@@ -1547,10 +1586,17 @@ def record_detail(record_id: str) -> str | tuple[str, int]:
 
 @app.post("/admin/records/<record_id>/delete")
 @admin_required
-def delete_record(record_id: str) -> Response:
+def delete_record(record_id: str) -> Response | tuple[str, int]:
+    deleted_by = request.form.get("deletedBy", "").strip()
+    if not deleted_by:
+        return "Your name is required to delete a record.", 400
     with database() as connection:
         cursor = connection.cursor()
+        cursor.execute(sql("SELECT report_no FROM inspections WHERE id = ?"), [record_id])
+        row = cursor.fetchone()
         cursor.execute(sql("DELETE FROM inspections WHERE id = ?"), [record_id])
+    if row:
+        log_audit("deleted", "inspection", row["report_no"], deleted_by)
     return redirect(url_for("admin", view="inspections"))
 
 
@@ -1571,14 +1617,18 @@ def near_miss_detail(record_id: str) -> str | tuple[str, int]:
 
 @app.post("/admin/near-miss/<record_id>/delete")
 @admin_required
-def delete_near_miss(record_id: str) -> Response:
+def delete_near_miss(record_id: str) -> Response | tuple[str, int]:
+    deleted_by = request.form.get("deletedBy", "").strip()
+    if not deleted_by:
+        return "Your name is required to delete a record.", 400
     with database() as connection:
         cursor = connection.cursor()
-        cursor.execute(sql("SELECT photos FROM near_miss_reports WHERE id = ?"), [record_id])
+        cursor.execute(sql("SELECT report_no, photos FROM near_miss_reports WHERE id = ?"), [record_id])
         row = cursor.fetchone()
         cursor.execute(sql("DELETE FROM near_miss_reports WHERE id = ?"), [record_id])
     if row:
         delete_photos(safe_json_list(row["photos"]))
+        log_audit("deleted", "near_miss", row["report_no"], deleted_by)
     return redirect(url_for("admin", view="near-miss"))
 
 
@@ -1635,14 +1685,18 @@ def violation_detail(record_id: str) -> str | tuple[str, int]:
 
 @app.post("/admin/violations/<record_id>/delete")
 @admin_required
-def delete_violation(record_id: str) -> Response:
+def delete_violation(record_id: str) -> Response | tuple[str, int]:
+    deleted_by = request.form.get("deletedBy", "").strip()
+    if not deleted_by:
+        return "Your name is required to delete a record.", 400
     with database() as connection:
         cursor = connection.cursor()
-        cursor.execute(sql("SELECT photos FROM violation_notices WHERE id = ?"), [record_id])
+        cursor.execute(sql("SELECT violation_no, photos FROM violation_notices WHERE id = ?"), [record_id])
         row = cursor.fetchone()
         cursor.execute(sql("DELETE FROM violation_notices WHERE id = ?"), [record_id])
     if row:
         delete_photos(safe_json_list(row["photos"]))
+        log_audit("deleted", "violation", row["violation_no"], deleted_by)
     return redirect(url_for("admin", view="violations"))
 
 
@@ -1696,10 +1750,16 @@ def ptw_detail(record_id: str) -> str | tuple[str, int] | Response:
     error = ""
     if request.method == "POST":
         form_payload = {key: request.form.get(key) for key in PTW_FORM_FIELDS}
+        edited_by = request.form.get("editedBy", "").strip()
         try:
+            if not edited_by:
+                raise ValueError("Your name is required to save changes.")
             updated = validate_ptw(form_payload)
             with database() as connection:
                 cursor = connection.cursor()
+                cursor.execute(sql("SELECT 1 FROM ptw_logs WHERE ptw_number = ? AND id != ?"), [updated["ptw_number"], record_id])
+                if cursor.fetchone():
+                    raise ValueError(f'PTW number "{updated["ptw_number"]}" is already in use — choose a different number.')
                 cursor.execute(sql(
                     "UPDATE ptw_logs SET ptw_number=?, issuer=?, receiver=?, ptw_type=?, work_description=?, "
                     "area_hse_personnel=?, location=?, shift=?, start_date=?, start_time=?, end_date=?, end_time=?, "
@@ -1711,6 +1771,7 @@ def ptw_detail(record_id: str) -> str | tuple[str, int] | Response:
                     updated["company"], updated["status"], updated["workers_count"], updated["reviewed_by"],
                     datetime.now(timezone.utc).isoformat(), record_id,
                 ])
+            log_audit("updated", "ptw", updated["ptw_number"], edited_by)
             return redirect(url_for("admin", view="ptw"))
         except ValueError as err:
             error = str(err)
@@ -1720,10 +1781,17 @@ def ptw_detail(record_id: str) -> str | tuple[str, int] | Response:
 
 @app.post("/admin/ptw/<record_id>/delete")
 @admin_required
-def delete_ptw(record_id: str) -> Response:
+def delete_ptw(record_id: str) -> Response | tuple[str, int]:
+    deleted_by = request.form.get("deletedBy", "").strip()
+    if not deleted_by:
+        return "Your name is required to delete a record.", 400
     with database() as connection:
         cursor = connection.cursor()
+        cursor.execute(sql("SELECT ptw_number FROM ptw_logs WHERE id = ?"), [record_id])
+        row = cursor.fetchone()
         cursor.execute(sql("DELETE FROM ptw_logs WHERE id = ?"), [record_id])
+    if row:
+        log_audit("deleted", "ptw", row["ptw_number"], deleted_by)
     return redirect(url_for("admin", view="ptw"))
 
 
@@ -1751,14 +1819,18 @@ def training_detail(record_id: str) -> str | tuple[str, int]:
 
 @app.post("/admin/training/<record_id>/delete")
 @admin_required
-def delete_training(record_id: str) -> Response:
+def delete_training(record_id: str) -> Response | tuple[str, int]:
+    deleted_by = request.form.get("deletedBy", "").strip()
+    if not deleted_by:
+        return "Your name is required to delete a record.", 400
     with database() as connection:
         cursor = connection.cursor()
-        cursor.execute(sql("SELECT photos, attendance_photos FROM training_logs WHERE id = ?"), [record_id])
+        cursor.execute(sql("SELECT topic, seq, photos, attendance_photos FROM training_logs WHERE id = ?"), [record_id])
         row = cursor.fetchone()
         cursor.execute(sql("DELETE FROM training_logs WHERE id = ?"), [record_id])
     if row:
         delete_photos(safe_json_list(row["photos"]) + safe_json_list(row["attendance_photos"]))
+        log_audit("deleted", "training", f'{row["seq"]} - {row["topic"]}', deleted_by)
     return redirect(url_for("admin", view="training"))
 
 
