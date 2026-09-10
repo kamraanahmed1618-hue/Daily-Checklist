@@ -114,6 +114,37 @@ class ChecklistApplicationTests(unittest.TestCase):
         for path in ("/inspection", "/near-miss", "/violation", "/ptw", "/training", "/admin"):
             self.assertIn(path.encode(), response.data)
 
+    def test_homepage_stats_only_count_current_work_week(self):
+        from datetime import date, timedelta
+
+        from app import current_work_week_range
+
+        week_start, week_end = current_work_week_range()
+        week_end_display = (date.fromisoformat(week_end) - timedelta(days=1)).isoformat()
+        payload = self.near_miss_payload()
+        payload["incidentDate"] = week_start  # inside this Sat-Thu week
+        self.client.post("/api/near-miss", json=payload)
+
+        old_payload = self.near_miss_payload()
+        old_payload["incidentDate"] = "2020-01-01"  # long before this week
+        self.client.post("/api/near-miss", json=old_payload)
+
+        html = self.client.get("/").get_data(as_text=True)
+        self.assertIn(">1<", html)  # only the in-week record is counted
+        self.assertIn(week_start, html)
+        self.assertIn(week_end_display, html)
+
+    def test_current_work_week_range_excludes_friday(self):
+        from datetime import date
+        from app import current_work_week_range
+
+        with patch("app.datetime") as mock_datetime:
+            mock_datetime.now.return_value.date.return_value = date(2026, 9, 11)  # a Friday
+            week_start, week_end = current_work_week_range()
+        # Week runs Sat 9/5 through Thu 9/10; Friday itself falls just outside it.
+        self.assertEqual(week_start, "2026-09-05")
+        self.assertEqual(week_end, "2026-09-11")
+
     def test_inspection_form_moved_from_root(self):
         response = self.client.get("/inspection")
         self.assertEqual(response.status_code, 200)

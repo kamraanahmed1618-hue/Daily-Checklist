@@ -13,7 +13,7 @@ import sqlite3
 import traceback
 import zipfile
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 from typing import Any, Iterator
@@ -1000,6 +1000,42 @@ def record_counts() -> dict[str, int]:
     }
 
 
+def current_work_week_range() -> tuple[str, str]:
+    """The on-site work week runs Saturday-Thursday (Friday off) — returns
+    [week_start, week_end) as ISO date strings in the site's timezone."""
+    today = datetime.now(SITE_TZ).date()
+    days_since_saturday = (today.weekday() - 5) % 7
+    week_start = today - timedelta(days=days_since_saturday)
+    week_end = week_start + timedelta(days=6)  # exclusive upper bound = Friday's date
+    return week_start.isoformat(), week_end.isoformat()
+
+
+def weekly_record_counts() -> dict[str, int]:
+    """Homepage tile counts, scoped to the current Sat-Thu work week. Open PTW permits
+    stays a live snapshot (currently active on site) rather than week-scoped, since a
+    permit opened last week and still running is exactly what that tile should surface."""
+    auto_close_expired_ptw()
+    week_start, week_end = current_work_week_range()
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT COUNT(*) AS c FROM inspections WHERE inspection_date >= ? AND inspection_date < ?"), [week_start, week_end])
+        inspections = cursor.fetchone()["c"]
+        cursor.execute(sql("SELECT COUNT(*) AS c FROM near_miss_reports WHERE incident_date >= ? AND incident_date < ?"), [week_start, week_end])
+        near_miss = cursor.fetchone()["c"]
+        cursor.execute(sql("SELECT COUNT(*) AS c FROM violation_notices WHERE violation_date >= ? AND violation_date < ?"), [week_start, week_end])
+        violations = cursor.fetchone()["c"]
+        cursor.execute(sql("SELECT COUNT(*) AS c FROM ptw_logs WHERE status = ?"), ["open"])
+        ptw_open = cursor.fetchone()["c"]
+        cursor.execute(sql("SELECT COUNT(*) AS c FROM training_logs WHERE session_date >= ? AND session_date < ?"), [week_start, week_end])
+        training = cursor.fetchone()["c"]
+    week_end_display = (date.fromisoformat(week_end) - timedelta(days=1)).isoformat()
+    return {
+        "inspections": inspections, "near_miss": near_miss, "violations": violations,
+        "ptw_open": ptw_open, "training": training,
+        "week_start": week_start, "week_end": week_end_display,
+    }
+
+
 def ptw_overview() -> dict[str, Any]:
     """Snapshot of what's currently open on site: which areas have active permits,
     what activity is running in each, and how many of each permit type are open."""
@@ -1107,7 +1143,7 @@ def security_headers(response: Response) -> Response:
 
 @app.get("/")
 def home() -> str:
-    return render_template("home.html", counts=record_counts())
+    return render_template("home.html", counts=weekly_record_counts())
 
 
 @app.get("/inspection")
