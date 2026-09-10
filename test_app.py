@@ -1,5 +1,6 @@
 import csv
 import io
+import json
 import os
 import tempfile
 import unittest
@@ -884,6 +885,261 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertEqual(near_miss_detail.status_code, 200)
         violation_detail = self.client.get(f"/admin/violations/{violation_id}")
         self.assertEqual(violation_detail.status_code, 200)
+
+    def test_near_miss_edit_page_prefills_existing_values(self):
+        record_id = self.client.post("/api/near-miss", json=self.near_miss_payload()).json["id"]
+        self.login()
+        response = self.client.get(f"/admin/near-miss/{record_id}/edit")
+        self.assertEqual(response.status_code, 200)
+        body = response.data.decode()
+        self.assertIn('value="Zone 3"', body)
+        self.assertIn('value="Podium Level 2"', body)
+        self.assertIn('name="nearMissTypes" value="Unsafe Condition" checked', body)
+
+    def test_near_miss_edit_saves_changes_and_logs_audit(self):
+        response = self.client.post("/api/near-miss", json=self.near_miss_payload())
+        record_id = response.json["id"]
+        report_no = response.json["reportNo"]
+        self.login()
+        edit_response = self.client.post(f"/admin/near-miss/{record_id}/edit", data={
+            "departmentProject": "Zone 3B", "location": "Podium Level 3", "incidentDate": "2026-08-16",
+            "incidentTime": "10:00", "reportedBy": "Foreman A", "whatHappened": "Ladder slipped on wet floor.",
+            "nearMissTypes": "Unsafe Condition", "reportedBySignoff": "Foreman A", "editedBy": "QA Tester",
+        })
+        self.assertEqual(edit_response.status_code, 302)
+        detail = self.client.get(f"/admin/near-miss/{record_id}")
+        self.assertIn(b"Zone 3B", detail.data)
+        self.assertIn(b"Podium Level 3", detail.data)
+        self.assertIn(b"wet floor", detail.data)
+
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT * FROM audit_log WHERE record_ref = ?", [report_no])
+            row = cursor.fetchone()
+        self.assertEqual(row["action"], "updated")
+        self.assertEqual(row["actor_name"], "QA Tester")
+
+    def test_near_miss_edit_requires_actor_name(self):
+        record_id = self.client.post("/api/near-miss", json=self.near_miss_payload()).json["id"]
+        self.login()
+        response = self.client.post(f"/admin/near-miss/{record_id}/edit", data={
+            "departmentProject": "Zone 3", "location": "Podium Level 2", "incidentDate": "2026-08-16",
+            "incidentTime": "10:00", "reportedBy": "Foreman A", "whatHappened": "Ladder slipped.",
+            "nearMissTypes": "Unsafe Condition", "reportedBySignoff": "Foreman A",
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Your name is required", response.data)
+
+    def test_near_miss_edit_does_not_touch_photos(self):
+        payload = self.near_miss_payload()
+        payload["photoKeys"] = ["uploads/tok11111/aaaaaaaaaaaaaaaaaaaa.jpg"]
+        record_id = self.client.post("/api/near-miss", json=payload).json["id"]
+        self.login()
+        self.client.post(f"/admin/near-miss/{record_id}/edit", data={
+            "departmentProject": "Zone 3", "location": "Podium Level 2", "incidentDate": "2026-08-16",
+            "incidentTime": "10:00", "reportedBy": "Foreman A", "whatHappened": "Ladder slipped.",
+            "nearMissTypes": "Unsafe Condition", "reportedBySignoff": "Foreman A", "editedBy": "QA Tester",
+        })
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT photos FROM near_miss_reports WHERE id = ?", [record_id])
+            row = cursor.fetchone()
+        self.assertIn("aaaaaaaaaaaaaaaaaaaa.jpg", row["photos"])
+
+    def test_violation_edit_page_prefills_existing_values(self):
+        record_id = self.client.post("/api/violations", json=self.violation_payload()).json["id"]
+        self.login()
+        response = self.client.get(f"/admin/violations/{record_id}/edit")
+        self.assertEqual(response.status_code, 200)
+        body = response.data.decode()
+        self.assertIn('value="John Doe"', body)
+        self.assertIn('name="actions" value="First Warning" checked', body)
+
+    def test_violation_edit_saves_changes_and_logs_audit(self):
+        response = self.client.post("/api/violations", json=self.violation_payload())
+        record_id = response.json["id"]
+        violation_no = response.json["violationNo"]
+        self.login()
+        payload = self.violation_payload()
+        edit_response = self.client.post(f"/admin/violations/{record_id}/edit", data={
+            "projectName": payload["projectName"], "violationDate": payload["violationDate"],
+            "employeeName": "Jane Doe", "companyContractor": payload["companyContractor"],
+            "violationLocation": payload["violationLocation"], "violationType": payload["violationType"],
+            "violationDescription": "Worker observed without safety glasses.",
+            "actions": "Final Warning", "issuedByName": payload["issuedByName"], "editedBy": "QA Tester",
+        })
+        self.assertEqual(edit_response.status_code, 302)
+        detail = self.client.get(f"/admin/violations/{record_id}")
+        self.assertIn(b"Jane Doe", detail.data)
+        self.assertIn(b"safety glasses", detail.data)
+
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT * FROM audit_log WHERE record_ref = ?", [violation_no])
+            row = cursor.fetchone()
+        self.assertEqual(row["action"], "updated")
+        self.assertEqual(row["actor_name"], "QA Tester")
+
+    def test_violation_edit_requires_actor_name(self):
+        record_id = self.client.post("/api/violations", json=self.violation_payload()).json["id"]
+        self.login()
+        payload = self.violation_payload()
+        response = self.client.post(f"/admin/violations/{record_id}/edit", data={
+            "projectName": payload["projectName"], "violationDate": payload["violationDate"],
+            "employeeName": payload["employeeName"], "companyContractor": payload["companyContractor"],
+            "violationLocation": payload["violationLocation"], "violationType": payload["violationType"],
+            "violationDescription": payload["violationDescription"],
+            "issuedByName": payload["issuedByName"],
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Your name is required", response.data)
+
+    def test_violation_edit_does_not_touch_photos(self):
+        payload = self.violation_payload()
+        payload["photoKeys"] = ["uploads/tok11111/aaaaaaaaaaaaaaaaaaaa.jpg"]
+        record_id = self.client.post("/api/violations", json=payload).json["id"]
+        self.login()
+        edit_payload = self.violation_payload()
+        self.client.post(f"/admin/violations/{record_id}/edit", data={
+            "projectName": edit_payload["projectName"], "violationDate": edit_payload["violationDate"],
+            "employeeName": edit_payload["employeeName"], "companyContractor": edit_payload["companyContractor"],
+            "violationLocation": edit_payload["violationLocation"], "violationType": edit_payload["violationType"],
+            "violationDescription": edit_payload["violationDescription"],
+            "issuedByName": edit_payload["issuedByName"], "editedBy": "QA Tester",
+        })
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT photos FROM violation_notices WHERE id = ?", [record_id])
+            row = cursor.fetchone()
+        self.assertIn("aaaaaaaaaaaaaaaaaaaa.jpg", row["photos"])
+
+    def test_training_edit_page_prefills_existing_values(self):
+        record_id = self.client.post("/api/training", json=self.training_payload()).json["id"]
+        self.login()
+        response = self.client.get(f"/admin/training/{record_id}/edit")
+        self.assertEqual(response.status_code, 200)
+        body = response.data.decode()
+        self.assertIn('value="Work at Height"', body)
+        self.assertIn('value="Faisal Raza"', body)
+        self.assertIn("Always inspect harness before use.", body)
+
+    def test_training_edit_saves_changes_and_logs_audit(self):
+        response = self.client.post("/api/training", json=self.training_payload())
+        record_id = response.json["id"]
+        self.login()
+        payload = self.training_payload()
+        edit_response = self.client.post(f"/admin/training/{record_id}/edit", data={
+            "sessionType": payload["sessionType"], "topic": "Work at Height (Revised)",
+            "sessionDate": payload["sessionDate"], "trainer": payload["trainer"], "location": payload["location"],
+            "duration": payload["duration"], "attendeesCount": payload["attendeesCount"],
+            "objective": payload["objective"], "summary": "Updated summary text.",
+            "keyLessons": "Inspect harness daily.\nUse tie-off above shoulder height.",
+            "remarks": payload["remarks"], "editedBy": "QA Tester",
+        })
+        self.assertEqual(edit_response.status_code, 302)
+        detail = self.client.get(f"/admin/training/{record_id}")
+        self.assertIn(b"Work at Height (Revised)", detail.data)
+        self.assertIn(b"Updated summary text.", detail.data)
+        self.assertIn(b"Inspect harness daily.", detail.data)
+
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT * FROM audit_log WHERE record_ref LIKE '%Work at Height%'")
+            row = cursor.fetchone()
+        self.assertEqual(row["action"], "updated")
+        self.assertEqual(row["actor_name"], "QA Tester")
+
+    def test_training_edit_requires_actor_name(self):
+        record_id = self.client.post("/api/training", json=self.training_payload()).json["id"]
+        self.login()
+        payload = self.training_payload()
+        response = self.client.post(f"/admin/training/{record_id}/edit", data={
+            "sessionType": payload["sessionType"], "topic": payload["topic"], "sessionDate": payload["sessionDate"],
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Your name is required", response.data)
+
+    def test_training_edit_does_not_touch_photos(self):
+        payload = self.training_payload()
+        payload["photoKeys"] = ["uploads/tok11111/aaaaaaaaaaaaaaaaaaaa.jpg"]
+        payload["attendancePhotoKeys"] = ["uploads/tok22222/bbbbbbbbbbbbbbbbbbbb.jpg"]
+        record_id = self.client.post("/api/training", json=payload).json["id"]
+        self.login()
+        edit_payload = self.training_payload()
+        self.client.post(f"/admin/training/{record_id}/edit", data={
+            "sessionType": edit_payload["sessionType"], "topic": edit_payload["topic"],
+            "sessionDate": edit_payload["sessionDate"], "editedBy": "QA Tester",
+        })
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT photos, attendance_photos FROM training_logs WHERE id = ?", [record_id])
+            row = cursor.fetchone()
+        self.assertIn("aaaaaaaaaaaaaaaaaaaa.jpg", row["photos"])
+        self.assertIn("bbbbbbbbbbbbbbbbbbbb.jpg", row["attendance_photos"])
+
+    def test_inspection_edit_page_prefills_existing_values(self):
+        record_id = self.client.post("/api/inspections", json=self.payload()).json["id"]
+        self.login()
+        response = self.client.get(f"/admin/records/{record_id}/edit")
+        self.assertEqual(response.status_code, 200)
+        body = response.data.decode()
+        self.assertIn('value="Zone 3"', body)
+        self.assertIn('value="Test Contractor"', body)
+
+    def test_inspection_edit_saves_header_changes_and_logs_audit(self):
+        response = self.client.post("/api/inspections", json=self.payload())
+        record_id = response.json["id"]
+        self.login()
+        payload = self.payload()
+        edit_response = self.client.post(f"/admin/records/{record_id}/edit", data={
+            "projectName": payload["projectName"], "workLocation": "Zone 5",
+            "contractor": payload["contractor"], "inspectedBy": payload["inspectedBy"],
+            "inspectionDate": payload["inspectionDate"], "inspectionTime": payload["inspectionTime"],
+            "shift": payload["shift"], "remarks": "Corrected zone after review.",
+            "signoffName": payload["signoffName"], "editedBy": "QA Tester",
+        })
+        self.assertEqual(edit_response.status_code, 302)
+        detail = self.client.get(f"/admin/records/{record_id}")
+        self.assertIn(b"Zone 5", detail.data)
+        self.assertIn(b"Corrected zone after review.", detail.data)
+
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT * FROM audit_log WHERE record_type = 'inspection'")
+            row = cursor.fetchone()
+        self.assertEqual(row["action"], "updated")
+        self.assertEqual(row["actor_name"], "QA Tester")
+
+    def test_inspection_edit_requires_actor_name(self):
+        record_id = self.client.post("/api/inspections", json=self.payload()).json["id"]
+        self.login()
+        payload = self.payload()
+        response = self.client.post(f"/admin/records/{record_id}/edit", data={
+            "projectName": payload["projectName"], "workLocation": payload["workLocation"],
+            "contractor": payload["contractor"], "inspectedBy": payload["inspectedBy"],
+            "inspectionDate": payload["inspectionDate"], "inspectionTime": payload["inspectionTime"],
+            "shift": payload["shift"], "signoffName": payload["signoffName"],
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Your name is required", response.data)
+
+    def test_inspection_edit_does_not_touch_checklist_responses(self):
+        record_id = self.client.post("/api/inspections", json=self.payload()).json["id"]
+        self.login()
+        payload = self.payload()
+        self.client.post(f"/admin/records/{record_id}/edit", data={
+            "projectName": payload["projectName"], "workLocation": payload["workLocation"],
+            "contractor": payload["contractor"], "inspectedBy": payload["inspectedBy"],
+            "inspectionDate": payload["inspectionDate"], "inspectionTime": payload["inspectionTime"],
+            "shift": payload["shift"], "signoffName": payload["signoffName"], "editedBy": "QA Tester",
+        })
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT responses, compliant, score FROM inspections WHERE id = ?", [record_id])
+            row = cursor.fetchone()
+        responses = json.loads(row["responses"])
+        self.assertTrue(all(value == "Y" for value in responses.values()))
+        self.assertEqual(row["score"], 100.0)
 
     def test_detail_pages_survive_malformed_legacy_json(self):
         near_miss_id = self.client.post("/api/near-miss", json=self.near_miss_payload()).json["id"]

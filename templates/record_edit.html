@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}{{ record.report_no }} · Edit Inspection{% endblock %}
+{% block body_class %}form-page{% endblock %}
+{% block content %}
+<section class="record-toolbar no-print">
+  <a class="text-link" href="{{ url_for('record_detail', record_id=record.id) }}">← Back to record</a>
+</section>
+
+<section class="hero">
+  <div>
+    <span class="eyebrow">Daily OHS inspection</span>
+    <h1>{{ record.report_no }}</h1>
+    <p>Correct the header details on this record. The 102 checklist responses themselves aren't editable here — delete and resubmit if a checklist answer needs correcting.</p>
+  </div>
+</section>
+
+{% if error %}<div class="form-error" role="alert">{{ error }}</div>{% endif %}
+
+<form method="post">
+  <section class="card">
+    <div class="section-heading">
+      <div><span class="step-number">01</span><h2>Inspection details</h2></div>
+      <p>Fields marked <span class="required">*</span> are required</p>
+    </div>
+    <div class="field-grid">
+      <label><span>Project name <b>*</b></span><input name="projectName" required maxlength="200" value="{{ record.project_name }}"></label>
+      <label><span>Work location / zone <b>*</b></span><input name="workLocation" required maxlength="200" value="{{ record.work_location }}"></label>
+      <label><span>Contractor / subcontractor <b>*</b></span><input name="contractor" required maxlength="200" value="{{ record.contractor }}"></label>
+      <label><span>Inspected by <b>*</b></span><input name="inspectedBy" required maxlength="200" value="{{ record.inspected_by }}"></label>
+      <label><span>Date <b>*</b></span><input name="inspectionDate" type="date" required value="{{ record.inspection_date }}"></label>
+      <label><span>Time <b>*</b></span><input name="inspectionTime" type="time" required value="{{ record.inspection_time }}"></label>
+      <label><span>Shift <b>*</b></span><input name="shift" required maxlength="80" value="{{ record.shift }}"></label>
+      <label><span>Sign-off name <b>*</b></span><input name="signoffName" required maxlength="200" value="{{ record.signoff_name }}"></label>
+    </div>
+    <div class="field-grid one-col">
+      <label><span>Remarks</span><textarea name="remarks" rows="3" maxlength="3000">{{ record.remarks }}</textarea></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-heading"><div><h2>Your name <span class="required">*</span></h2></div></div>
+    <div class="field-grid">
+      <label><span>Who is making this change?</span><input name="editedBy" required maxlength="120" placeholder="For the record of who made this change"></label>
+    </div>
+  </section>
+
+  <div class="submit-bar">
+    <div><strong>{{ record.report_no }}</strong></div>
+    <button class="button primary submit-button" type="submit">Save changes</button>
+  </div>
+</form>
+{% endblock %}

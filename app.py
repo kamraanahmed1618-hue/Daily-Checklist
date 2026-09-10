@@ -1584,6 +1584,71 @@ def record_detail(record_id: str) -> str | tuple[str, int]:
     return render_template("record.html", record=record, sections=CHECKLIST)
 
 
+INSPECTION_HEADER_FIELDS = {
+    "projectName": "project_name", "workLocation": "work_location", "contractor": "contractor",
+    "inspectedBy": "inspected_by", "shift": "shift", "remarks": "remarks", "signoffName": "signoff_name",
+}
+
+
+def validate_inspection_header(payload: dict[str, Any]) -> dict[str, Any]:
+    """A deliberately narrower edit path than validate_inspection: this only covers the
+    header/metadata fields (project, location, contractor, date, signoff) — not the 102
+    checklist responses themselves, which are far less likely to need a correction and
+    would need a much larger dedicated edit form to do properly."""
+    record = {
+        "project_name": clean_text(payload.get("projectName"), "Project name"),
+        "work_location": clean_text(payload.get("workLocation"), "Work location / zone"),
+        "contractor": clean_text(payload.get("contractor"), "Contractor / subcontractor"),
+        "inspected_by": clean_text(payload.get("inspectedBy"), "Inspected by"),
+        "inspection_date": clean_date(payload.get("inspectionDate"), "Date"),
+        "inspection_time": clean_time(payload.get("inspectionTime"), "Time"),
+        "shift": clean_text(payload.get("shift"), "Shift", 80),
+        "remarks": clean_text(payload.get("remarks"), "Remarks", 3000, False),
+        "signoff_name": clean_text(payload.get("signoffName"), "Sign-off name"),
+    }
+    return record
+
+
+@app.route("/admin/records/<record_id>/edit", methods=["GET", "POST"])
+@admin_required
+def record_edit(record_id: str) -> str | tuple[str, int] | Response:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT * FROM inspections WHERE id = ?"), [record_id])
+        row = cursor.fetchone()
+    if not row:
+        return "Record not found", 404
+    record = dict(row)
+    error = ""
+    if request.method == "POST":
+        edited_by = request.form.get("editedBy", "").strip()
+        form_payload = {form_key: request.form.get(form_key) for form_key in INSPECTION_HEADER_FIELDS}
+        form_payload["inspectionDate"] = request.form.get("inspectionDate")
+        form_payload["inspectionTime"] = request.form.get("inspectionTime")
+        try:
+            if not edited_by:
+                raise ValueError("Your name is required to save changes.")
+            updated = validate_inspection_header(form_payload)
+            with database() as connection:
+                cursor = connection.cursor()
+                cursor.execute(sql(
+                    "UPDATE inspections SET project_name=?, work_location=?, contractor=?, inspected_by=?, "
+                    "inspection_date=?, inspection_time=?, shift=?, remarks=?, signoff_name=? WHERE id=?"
+                ), [
+                    updated["project_name"], updated["work_location"], updated["contractor"], updated["inspected_by"],
+                    updated["inspection_date"], updated["inspection_time"], updated["shift"], updated["remarks"],
+                    updated["signoff_name"], record_id,
+                ])
+            log_audit("updated", "inspection", record["report_no"], edited_by)
+            return redirect(url_for("record_detail", record_id=record_id))
+        except ValueError as err:
+            error = str(err)
+            record = {**record, **{db_key: form_payload[form_key] for form_key, db_key in INSPECTION_HEADER_FIELDS.items()}}
+            record["inspection_date"] = form_payload["inspectionDate"]
+            record["inspection_time"] = form_payload["inspectionTime"]
+    return render_template("record_edit.html", record=record, error=error)
+
+
 @app.post("/admin/records/<record_id>/delete")
 @admin_required
 def delete_record(record_id: str) -> Response | tuple[str, int]:
@@ -1613,6 +1678,80 @@ def near_miss_detail(record_id: str) -> str | tuple[str, int]:
     for field in ("near_miss_types", "root_causes", "corrective_actions", "preventive_measures", "photos"):
         record[field] = safe_json_list(record[field])
     return render_template("near_miss_record.html", record=record, photo_urls=photo_urls(record["photos"]))
+
+
+NEAR_MISS_FORM_FIELDS = {
+    "departmentProject": "department_project", "incidentDate": "incident_date", "incidentTime": "incident_time",
+    "location": "location", "reportedBy": "reported_by", "whatHappened": "what_happened",
+    "couldHaveHappened": "could_have_happened", "nearMissTypeOther": "near_miss_type_other",
+    "immediateActions": "immediate_actions", "hazardEliminated": "hazard_eliminated",
+    "hazardActionsRequired": "hazard_actions_required", "investigationLead": "investigation_lead",
+    "investigationDate": "investigation_date", "rootCauseOther": "root_cause_other",
+    "rootCauseDetail": "root_cause_detail", "personResponsible": "person_responsible",
+    "targetCompletionDate": "target_completion_date", "reportedBySignoff": "reported_by_signoff",
+    "hseManagerSignoff": "hse_manager_signoff", "followupBy": "followup_by", "followupDate": "followup_date",
+    "status": "status", "statusReason": "status_reason",
+}
+
+
+@app.route("/admin/near-miss/<record_id>/edit", methods=["GET", "POST"])
+@admin_required
+def near_miss_edit(record_id: str) -> str | tuple[str, int] | Response:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT * FROM near_miss_reports WHERE id = ?"), [record_id])
+        row = cursor.fetchone()
+    if not row:
+        return "Record not found", 404
+    record = dict(row)
+    for field in ("near_miss_types", "root_causes", "corrective_actions", "preventive_measures", "photos"):
+        record[field] = safe_json_list(record[field])
+    error = ""
+    if request.method == "POST":
+        edited_by = request.form.get("editedBy", "").strip()
+        form_payload = {form_key: request.form.get(form_key) for form_key in NEAR_MISS_FORM_FIELDS}
+        form_payload["nearMissTypes"] = request.form.getlist("nearMissTypes")
+        form_payload["rootCauses"] = request.form.getlist("rootCauses")
+        form_payload["correctiveActions"] = [line.strip() for line in request.form.get("correctiveActions", "").splitlines()]
+        form_payload["preventiveMeasures"] = [line.strip() for line in request.form.get("preventiveMeasures", "").splitlines()]
+        try:
+            if not edited_by:
+                raise ValueError("Your name is required to save changes.")
+            updated = validate_near_miss(form_payload)
+            with database() as connection:
+                cursor = connection.cursor()
+                cursor.execute(sql(
+                    "UPDATE near_miss_reports SET department_project=?, incident_date=?, incident_time=?, location=?, "
+                    "reported_by=?, what_happened=?, could_have_happened=?, near_miss_types=?, near_miss_type_other=?, "
+                    "immediate_actions=?, hazard_eliminated=?, hazard_actions_required=?, investigation_lead=?, "
+                    "investigation_date=?, root_causes=?, root_cause_other=?, root_cause_detail=?, corrective_actions=?, "
+                    "preventive_measures=?, person_responsible=?, target_completion_date=?, reported_by_signoff=?, "
+                    "hse_manager_signoff=?, followup_by=?, followup_date=?, status=?, status_reason=? WHERE id=?"
+                ), [
+                    updated["department_project"], updated["incident_date"], updated["incident_time"], updated["location"],
+                    updated["reported_by"], updated["what_happened"], updated["could_have_happened"],
+                    json.dumps(updated["near_miss_types"]), updated["near_miss_type_other"],
+                    updated["immediate_actions"], updated["hazard_eliminated"], updated["hazard_actions_required"],
+                    updated["investigation_lead"], updated["investigation_date"], json.dumps(updated["root_causes"]),
+                    updated["root_cause_other"], updated["root_cause_detail"], json.dumps(updated["corrective_actions"]),
+                    json.dumps(updated["preventive_measures"]), updated["person_responsible"], updated["target_completion_date"],
+                    updated["reported_by_signoff"], updated["hse_manager_signoff"], updated["followup_by"],
+                    updated["followup_date"], updated["status"], updated["status_reason"], record_id,
+                ])
+            log_audit("updated", "near_miss", record["report_no"], edited_by)
+            return redirect(url_for("near_miss_detail", record_id=record_id))
+        except ValueError as err:
+            error = str(err)
+            record = {
+                **record,
+                **{db_key: form_payload[form_key] for form_key, db_key in NEAR_MISS_FORM_FIELDS.items()},
+                "near_miss_types": form_payload["nearMissTypes"], "root_causes": form_payload["rootCauses"],
+                "corrective_actions": form_payload["correctiveActions"], "preventive_measures": form_payload["preventiveMeasures"],
+            }
+    return render_template(
+        "near_miss_edit.html", record=record, near_miss_types=NEAR_MISS_TYPES, root_causes=ROOT_CAUSES,
+        statuses=NEAR_MISS_STATUSES, error=error,
+    )
 
 
 @app.post("/admin/near-miss/<record_id>/delete")
@@ -1681,6 +1820,62 @@ def violation_detail(record_id: str) -> str | tuple[str, int]:
     record["actions"] = safe_json_list(record["actions"])
     record["photos"] = safe_json_list(record["photos"])
     return render_template("violation_record.html", record=record, photo_urls=photo_urls(record["photos"]))
+
+
+VIOLATION_FORM_FIELDS = {
+    "projectName": "project_name", "violationDate": "violation_date", "employeeName": "employee_name",
+    "employeeId": "employee_id", "companyContractor": "company_contractor", "jobTitle": "job_title",
+    "violationLocation": "violation_location", "violationType": "violation_type",
+    "violationDescription": "violation_description", "deductionAmount": "deduction_amount",
+    "issuedByName": "issued_by_name", "issuedByPosition": "issued_by_position",
+}
+
+
+@app.route("/admin/violations/<record_id>/edit", methods=["GET", "POST"])
+@admin_required
+def violation_edit(record_id: str) -> str | tuple[str, int] | Response:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT * FROM violation_notices WHERE id = ?"), [record_id])
+        row = cursor.fetchone()
+    if not row:
+        return "Record not found", 404
+    record = dict(row)
+    record["actions"] = safe_json_list(record["actions"])
+    record["photos"] = safe_json_list(record["photos"])
+    error = ""
+    if request.method == "POST":
+        edited_by = request.form.get("editedBy", "").strip()
+        form_payload = {form_key: request.form.get(form_key) for form_key in VIOLATION_FORM_FIELDS}
+        form_payload["actions"] = request.form.getlist("actions")
+        try:
+            if not edited_by:
+                raise ValueError("Your name is required to save changes.")
+            updated = validate_violation(form_payload)
+            with database() as connection:
+                cursor = connection.cursor()
+                cursor.execute(sql(
+                    "UPDATE violation_notices SET project_name=?, violation_date=?, employee_name=?, employee_id=?, "
+                    "company_contractor=?, job_title=?, violation_location=?, violation_type=?, "
+                    "violation_description=?, deduction_amount=?, actions=?, issued_by_name=?, issued_by_position=? "
+                    "WHERE id=?"
+                ), [
+                    updated["project_name"], updated["violation_date"], updated["employee_name"], updated["employee_id"],
+                    updated["company_contractor"], updated["job_title"], updated["violation_location"],
+                    updated["violation_type"], updated["violation_description"], updated["deduction_amount"],
+                    json.dumps(updated["actions"]), updated["issued_by_name"], updated["issued_by_position"],
+                    record_id,
+                ])
+            log_audit("updated", "violation", record["violation_no"], edited_by)
+            return redirect(url_for("violation_detail", record_id=record_id))
+        except ValueError as err:
+            error = str(err)
+            record = {
+                **record,
+                **{db_key: form_payload[form_key] for form_key, db_key in VIOLATION_FORM_FIELDS.items()},
+                "actions": form_payload["actions"],
+            }
+    return render_template("violation_edit.html", record=record, violation_actions=VIOLATION_ACTIONS, error=error)
 
 
 @app.post("/admin/violations/<record_id>/delete")
@@ -1814,6 +2009,61 @@ def training_detail(record_id: str) -> str | tuple[str, int]:
         photo_urls=photo_urls(record["photos"]),
         attendance_photo_urls=photo_urls(record["attendance_photos"]),
         training_type_labels=TRAINING_TYPE_LABELS,
+    )
+
+
+TRAINING_FORM_FIELDS = {
+    "sessionType": "session_type", "topic": "topic", "sessionDate": "session_date", "trainer": "trainer",
+    "location": "location", "duration": "duration", "objective": "objective", "summary": "summary",
+    "remarks": "remarks",
+}
+
+
+@app.route("/admin/training/<record_id>/edit", methods=["GET", "POST"])
+@admin_required
+def training_edit(record_id: str) -> str | tuple[str, int] | Response:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT * FROM training_logs WHERE id = ?"), [record_id])
+        row = cursor.fetchone()
+    if not row:
+        return "Record not found", 404
+    record = dict(row)
+    record["photos"] = safe_json_list(record["photos"])
+    record["attendance_photos"] = safe_json_list(record["attendance_photos"])
+    record["key_lessons"] = safe_json_list(record["key_lessons"])
+    error = ""
+    if request.method == "POST":
+        edited_by = request.form.get("editedBy", "").strip()
+        form_payload = {form_key: request.form.get(form_key) for form_key in TRAINING_FORM_FIELDS}
+        form_payload["attendeesCount"] = request.form.get("attendeesCount")
+        form_payload["keyLessons"] = [line.strip() for line in request.form.get("keyLessons", "").splitlines()]
+        try:
+            if not edited_by:
+                raise ValueError("Your name is required to save changes.")
+            updated = validate_training(form_payload)
+            with database() as connection:
+                cursor = connection.cursor()
+                cursor.execute(sql(
+                    "UPDATE training_logs SET session_type=?, topic=?, session_date=?, trainer=?, location=?, "
+                    "duration=?, attendees_count=?, objective=?, summary=?, key_lessons=?, remarks=? WHERE id=?"
+                ), [
+                    updated["session_type"], updated["topic"], updated["session_date"], updated["trainer"],
+                    updated["location"], updated["duration"], updated["attendees_count"], updated["objective"],
+                    updated["summary"], json.dumps(updated["key_lessons"]), updated["remarks"], record_id,
+                ])
+            log_audit("updated", "training", f'{record["seq"]} - {record["topic"]}', edited_by)
+            return redirect(url_for("training_detail", record_id=record_id))
+        except ValueError as err:
+            error = str(err)
+            record = {
+                **record,
+                **{db_key: form_payload[form_key] for form_key, db_key in TRAINING_FORM_FIELDS.items()},
+                "attendees_count": form_payload["attendeesCount"], "key_lessons": form_payload["keyLessons"],
+            }
+    return render_template(
+        "training_edit.html", record=record, training_types=TRAINING_TYPES,
+        training_type_labels=TRAINING_TYPE_LABELS, error=error,
     )
 
 

@@ -9,6 +9,7 @@
       <input type="text" name="deletedBy" placeholder="Your name" required maxlength="120">
       <button class="button ghost danger" type="submit">Delete record</button>
     </form>
+    <a class="button ghost" href="{{ url_for('near_miss_edit', record_id=record.id) }}">Edit record</a>
     <a class="button primary" href="{{ url_for('near_miss_pdf', record_id=record.id) }}">Download PDF</a>
     <button class="button primary" id="print-record" type="button">Print / Save PDF</button>
   </div>
