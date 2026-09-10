@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}{{ record.violation_no }} · Edit Violation Notice{% endblock %}
+{% block body_class %}form-page{% endblock %}
+{% block content %}
+<section class="record-toolbar no-print">
+  <a class="text-link" href="{{ url_for('violation_detail', record_id=record.id) }}">← Back to record</a>
+</section>
+
+<section class="hero">
+  <div>
+    <span class="eyebrow">Violation notice</span>
+    <h1>{{ record.violation_no }}</h1>
+    <p>Correct any details on this record. Photos aren't editable here — delete and resubmit if a photo needs replacing.</p>
+  </div>
+</section>
+
+{% if error %}<div class="form-error" role="alert">{{ error }}</div>{% endif %}
+
+<form method="post">
+  <section class="card">
+    <div class="section-heading">
+      <div><span class="step-number">01</span><h2>Project information</h2></div>
+      <p>Fields marked <span class="required">*</span> are required</p>
+    </div>
+    <div class="field-grid">
+      <label><span>Project name <b>*</b></span><input name="projectName" required maxlength="200" value="{{ record.project_name }}"></label>
+      <label><span>Date <b>*</b></span><input name="violationDate" type="date" required value="{{ record.violation_date }}"></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-heading"><div><span class="step-number">02</span><h2>Violating employee details</h2></div></div>
+    <div class="field-grid">
+      <label><span>Name <b>*</b></span><input name="employeeName" required maxlength="200" value="{{ record.employee_name }}"></label>
+      <label><span>Employee ID / Iqama No.</span><input name="employeeId" maxlength="80" value="{{ record.employee_id }}"></label>
+      <label><span>Company / Contractor <b>*</b></span><input name="companyContractor" required maxlength="200" value="{{ record.company_contractor }}"></label>
+      <label><span>Job title</span><input name="jobTitle" maxlength="200" value="{{ record.job_title }}"></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-heading"><div><span class="step-number">03</span><h2>Violation details</h2></div></div>
+    <div class="field-grid">
+      <label><span>Violation location <b>*</b></span><input name="violationLocation" required maxlength="200" value="{{ record.violation_location }}"></label>
+      <label><span>Type of violation <b>*</b></span><input name="violationType" required maxlength="200" value="{{ record.violation_type }}"></label>
+    </div>
+    <div class="field-grid one-col">
+      <label><span>Description of violation <b>*</b></span><textarea name="violationDescription" rows="3" maxlength="3000" required>{{ record.violation_description }}</textarea></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-heading"><div><span class="step-number">04</span><h2>Action taken</h2></div></div>
+    <div class="checkbox-grid">
+      {% for action in violation_actions %}
+      <label class="checkbox-tile"><input type="checkbox" name="actions" value="{{ action }}" {{ 'checked' if action in record.actions else '' }}><span>{{ action }}</span></label>
+      {% endfor %}
+    </div>
+    <div class="field-grid">
+      <label><span>Deduction amount (if any)</span><input name="deductionAmount" maxlength="80" value="{{ record.deduction_amount }}"></label>
+    </div>
+  </section>
+
+  <section class="card signoff-card">
+    <div class="section-heading"><div><span class="step-number">05</span><h2>Issued by</h2></div></div>
+    <div class="field-grid">
+      <label><span>Name <b>*</b></span><input name="issuedByName" required maxlength="200" value="{{ record.issued_by_name }}"></label>
+      <label><span>Position</span><input name="issuedByPosition" maxlength="200" value="{{ record.issued_by_position }}"></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-heading"><div><h2>Your name <span class="required">*</span></h2></div></div>
+    <div class="field-grid">
+      <label><span>Who is making this change?</span><input name="editedBy" required maxlength="120" placeholder="For the record of who made this change"></label>
+    </div>
+  </section>
+
+  <div class="submit-bar">
+    <div><strong>{{ record.violation_no }}</strong></div>
+    <button class="button primary submit-button" type="submit">Save changes</button>
+  </div>
+</form>
+{% endblock %}
