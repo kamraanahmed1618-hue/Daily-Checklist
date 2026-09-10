@@ -286,6 +286,48 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertEqual(export.status_code, 200)
         self.assertIn("VIOLATION-001", export.get_data(as_text=True))
 
+    def test_violation_submission_sends_notification_email_when_configured(self):
+        fake_smtp = MagicMock()
+        fake_smtp.__enter__.return_value = fake_smtp
+        with patch.dict(os.environ, {
+            "NOTIFY_EMAIL_TO": "safety@example.com", "NOTIFY_SMTP_USER": "alerts@example.com",
+            "NOTIFY_SMTP_PASSWORD": "app-password",
+        }), patch("app.smtplib.SMTP_SSL", return_value=fake_smtp) as mock_smtp_ssl:
+            response = self.client.post("/api/violations", json=self.violation_payload())
+        self.assertEqual(response.status_code, 201)
+        mock_smtp_ssl.assert_called_once()
+        fake_smtp.login.assert_called_once_with("alerts@example.com", "app-password")
+        sent_message = fake_smtp.send_message.call_args[0][0]
+        self.assertEqual(sent_message["To"], "safety@example.com")
+        self.assertIn("VIOLATION-001", sent_message["Subject"])
+
+    def test_near_miss_submission_sends_notification_email_when_configured(self):
+        fake_smtp = MagicMock()
+        fake_smtp.__enter__.return_value = fake_smtp
+        with patch.dict(os.environ, {
+            "NOTIFY_EMAIL_TO": "safety@example.com", "NOTIFY_SMTP_USER": "alerts@example.com",
+            "NOTIFY_SMTP_PASSWORD": "app-password",
+        }), patch("app.smtplib.SMTP_SSL", return_value=fake_smtp) as mock_smtp_ssl:
+            response = self.client.post("/api/near-miss", json=self.near_miss_payload())
+        self.assertEqual(response.status_code, 201)
+        mock_smtp_ssl.assert_called_once()
+        sent_message = fake_smtp.send_message.call_args[0][0]
+        self.assertIn("NEAR-MISS-001", sent_message["Subject"])
+
+    def test_submission_succeeds_even_if_notification_email_fails(self):
+        with patch.dict(os.environ, {
+            "NOTIFY_EMAIL_TO": "safety@example.com", "NOTIFY_SMTP_USER": "alerts@example.com",
+            "NOTIFY_SMTP_PASSWORD": "app-password",
+        }), patch("app.smtplib.SMTP_SSL", side_effect=OSError("connection refused")):
+            response = self.client.post("/api/violations", json=self.violation_payload())
+        self.assertEqual(response.status_code, 201)
+
+    def test_notification_email_not_sent_when_unconfigured(self):
+        with patch("app.smtplib.SMTP_SSL") as mock_smtp_ssl:
+            response = self.client.post("/api/violations", json=self.violation_payload())
+        self.assertEqual(response.status_code, 201)
+        mock_smtp_ssl.assert_not_called()
+
     def test_violation_pdf_download(self):
         response = self.client.post("/api/violations", json=self.violation_payload())
         record_id = response.json["id"]

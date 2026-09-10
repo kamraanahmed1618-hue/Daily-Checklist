@@ -9,10 +9,12 @@ import json
 import os
 import re
 import secrets
+import smtplib
 import sqlite3
 import traceback
 import zipfile
 from contextlib import contextmanager
+from email.message import EmailMessage
 from datetime import date, datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
@@ -636,6 +638,28 @@ def log_audit(action: str, record_type: str, record_ref: str, actor_name: str) -
             secrets.token_hex(12), datetime.now(timezone.utc).isoformat(), action, record_type, record_ref,
             (actor_name or "").strip()[:120], (request.remote_addr or "")[:64],
         ])
+
+
+def send_notification_email(subject: str, body: str) -> None:
+    """Best-effort alert for a newly-submitted violation or near-miss. Silently does
+    nothing if the NOTIFY_* env vars aren't configured, and never raises — a failed or
+    slow email must not break the actual submission, which has already been saved."""
+    recipient = os.environ.get("NOTIFY_EMAIL_TO")
+    sender = os.environ.get("NOTIFY_SMTP_USER")
+    password = os.environ.get("NOTIFY_SMTP_PASSWORD")
+    if not (recipient and sender and password):
+        return
+    try:
+        message = EmailMessage()
+        message["Subject"] = subject
+        message["From"] = sender
+        message["To"] = recipient
+        message.set_content(body)
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=10) as smtp:
+            smtp.login(sender, password)
+            smtp.send_message(message)
+    except Exception:
+        app.logger.exception("Failed to send notification email")
 
 
 def clean_text(value: Any, field: str, maximum: int = 200, required: bool = True) -> str:
@@ -1348,6 +1372,16 @@ def submit_near_miss() -> tuple[Response, int] | Response:
             )
             placeholders = ",".join("?" for _ in values)
             cursor.execute(sql(f"INSERT INTO near_miss_reports ({columns}) VALUES ({placeholders})"), values)
+        send_notification_email(
+            f"Near-miss reported: {report_no}",
+            "A new near-miss report was submitted.\n\n"
+            f"Report No.: {report_no}\n"
+            f"Location: {record['location']}\n"
+            f"Date/time: {record['incident_date']} {record['incident_time']}\n"
+            f"Reported by: {record['reported_by']}\n"
+            f"What happened: {record['what_happened']}\n\n"
+            f"View: {request.host_url.rstrip('/')}{url_for('near_miss_detail', record_id=record_id)}",
+        )
         return jsonify({"id": record_id, "reportNo": report_no}), 201
     except ValueError as error:
         return jsonify({"error": str(error)}), 400
@@ -1391,6 +1425,16 @@ def submit_violation() -> tuple[Response, int] | Response:
             )
             placeholders = ",".join("?" for _ in values)
             cursor.execute(sql(f"INSERT INTO violation_notices ({columns}) VALUES ({placeholders})"), values)
+        send_notification_email(
+            f"Violation notice issued: {violation_no}",
+            "A new violation notice was submitted.\n\n"
+            f"Violation No.: {violation_no}\n"
+            f"Employee: {record['employee_name']} ({record['company_contractor']})\n"
+            f"Location: {record['violation_location']}\n"
+            f"Type: {record['violation_type']}\n"
+            f"Description: {record['violation_description']}\n\n"
+            f"View: {request.host_url.rstrip('/')}{url_for('violation_detail', record_id=record_id)}",
+        )
         return jsonify({"id": record_id, "violationNo": violation_no}), 201
     except ValueError as error:
         return jsonify({"error": str(error)}), 400
