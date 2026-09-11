@@ -1233,13 +1233,16 @@ class ChecklistApplicationTests(unittest.TestCase):
 
         archive = zipfile.ZipFile(io.BytesIO(response.data))
         names = archive.namelist()
-        self.assertEqual(len(names), 6)
+        self.assertEqual(len(names), 9)  # 6 CSVs + 1 PDF each for near-miss, violation, training
         self.assertTrue(any(name.startswith("inspections-summary-") for name in names))
         self.assertTrue(any(name.startswith("inspections-detailed-") for name in names))
-        self.assertTrue(any(name.startswith("near-miss-") for name in names))
-        self.assertTrue(any(name.startswith("violations-") for name in names))
+        self.assertTrue(any(name.startswith("near-miss-") and name.endswith(".csv") for name in names))
+        self.assertTrue(any(name.startswith("violations-") and name.endswith(".csv") for name in names))
         self.assertTrue(any(name.startswith("ptw-log-") for name in names))
-        self.assertTrue(any(name.startswith("training-log-") for name in names))
+        self.assertTrue(any(name.startswith("training-log-") and name.endswith(".csv") for name in names))
+        self.assertTrue(any(name.startswith("near-miss-pdfs/") and name.endswith(".pdf") for name in names))
+        self.assertTrue(any(name.startswith("violation-pdfs/") and name.endswith(".pdf") for name in names))
+        self.assertTrue(any(name.startswith("training-pdfs/") and name.endswith(".pdf") for name in names))
 
     def test_backup_includes_photos_when_storage_configured(self):
         near_miss_payload = self.near_miss_payload()

@@ -2563,23 +2563,37 @@ def backup_all() -> Response | tuple[Response, int]:
         archive.writestr(f"ptw-log-{today}.csv", "\ufeff" + ptw_csv(filtered_ptw(limit=5000)))
         archive.writestr(f"training-log-{today}.csv", "\ufeff" + training_csv(training_records))
 
-        if b2_configured():
-            for record in near_miss_records:
-                folder = safe_archive_folder(record["report_no"])
+        for record in near_miss_records:
+            folder = safe_archive_folder(record["report_no"])
+            try:
+                archive.writestr(f"near-miss-pdfs/{folder}.pdf", near_miss_pdf_bytes(record))
+            except Exception:
+                app.logger.exception("Failed to render near-miss PDF for backup: %s", record["report_no"])
+            if b2_configured():
                 for index, key in enumerate(safe_json_list(record["photos"]), start=1):
                     fetched = fetch_photo_bytes(key)
                     if fetched:
                         data, extension = fetched
                         archive.writestr(f"near-miss-photos/{folder}/photo-{index}.{extension}", data)
-            for record in violation_records:
-                folder = safe_archive_folder(record["violation_no"])
+        for record in violation_records:
+            folder = safe_archive_folder(record["violation_no"])
+            try:
+                archive.writestr(f"violation-pdfs/{folder}.pdf", violation_pdf_bytes(record))
+            except Exception:
+                app.logger.exception("Failed to render violation PDF for backup: %s", record["violation_no"])
+            if b2_configured():
                 for index, key in enumerate(safe_json_list(record["photos"]), start=1):
                     fetched = fetch_photo_bytes(key)
                     if fetched:
                         data, extension = fetched
                         archive.writestr(f"violation-photos/{folder}/photo-{index}.{extension}", data)
-            for record in training_records:
-                folder = safe_archive_folder(f'{record["seq"]}-{record["topic"]}')
+        for record in training_records:
+            folder = safe_archive_folder(f'{record["seq"]}-{record["topic"]}')
+            try:
+                archive.writestr(f"training-pdfs/{folder}.pdf", training_pdf_bytes(record))
+            except Exception:
+                app.logger.exception("Failed to render training PDF for backup: %s", record["topic"])
+            if b2_configured():
                 for index, key in enumerate(safe_json_list(record["photos"]), start=1):
                     fetched = fetch_photo_bytes(key)
                     if fetched:
