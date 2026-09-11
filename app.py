@@ -297,12 +297,28 @@ table.photos img {{ width: 100%; height: auto; }}
 </body></html>"""
 
 
-def record_photos(keys: list[str]) -> list[tuple[bytes, str]]:
-    fetched = [fetch_photo_bytes(key) for key in keys]
+PhotoCache = dict  # dict[str, tuple[bytes, str]] — a request-scoped cache, never shared/persisted
+
+
+def cached_fetch_photo_bytes(key: str, cache: "PhotoCache | None") -> tuple[bytes, str] | None:
+    """Like fetch_photo_bytes, but reuses an already-downloaded copy of the same key
+    within a single request instead of hitting B2 again — routes that both embed a
+    photo in a PDF and include it as a raw file otherwise download every photo twice,
+    which is slow enough to blow past a platform request timeout on a full backup."""
+    if cache is not None and key in cache:
+        return cache[key]
+    fetched = fetch_photo_bytes(key)
+    if cache is not None and fetched is not None:
+        cache[key] = fetched
+    return fetched
+
+
+def record_photos(keys: list[str], cache: "PhotoCache | None" = None) -> list[tuple[bytes, str]]:
+    fetched = [cached_fetch_photo_bytes(key, cache) for key in keys]
     return [item for item in fetched if item]
 
 
-def near_miss_pdf_bytes(record: dict[str, Any]) -> bytes:
+def near_miss_pdf_bytes(record: dict[str, Any], photo_cache: "PhotoCache | None" = None) -> bytes:
     return render_pdf(record_pdf_html(
         title="Near Miss Reporting Form",
         band_title="Report Details",
@@ -313,12 +329,12 @@ def near_miss_pdf_bytes(record: dict[str, Any]) -> bytes:
             ("What Happened", record["what_happened"]), ("Status", record.get("status") or "—"),
         ],
         summary="", bullets=[],
-        photo_sections=[("Attached Images", record_photos(safe_json_list(record["photos"])))],
+        photo_sections=[("Attached Images", record_photos(safe_json_list(record["photos"]), photo_cache))],
         doc_number="BECCO-COR-OHS-ADD-MMR-000001-R01",
     ))
 
 
-def violation_pdf_bytes(record: dict[str, Any]) -> bytes:
+def violation_pdf_bytes(record: dict[str, Any], photo_cache: "PhotoCache | None" = None) -> bytes:
     return render_pdf(record_pdf_html(
         title="Occupational Health & Safety Violation Notice",
         band_title="Violation Details",
@@ -331,12 +347,12 @@ def violation_pdf_bytes(record: dict[str, Any]) -> bytes:
             ("Issued By", record["issued_by_name"]),
         ],
         summary="", bullets=[],
-        photo_sections=[("Evidence", record_photos(safe_json_list(record["photos"])))],
+        photo_sections=[("Evidence", record_photos(safe_json_list(record["photos"]), photo_cache))],
         doc_number="BECCO-COR-OHS-ADD-VNC-000002-R01",
     ))
 
 
-def training_pdf_bytes(record: dict[str, Any]) -> bytes:
+def training_pdf_bytes(record: dict[str, Any], photo_cache: "PhotoCache | None" = None) -> bytes:
     type_label = TRAINING_TYPE_LABELS.get(record["session_type"], record["session_type"])
     return render_pdf(record_pdf_html(
         title=record["topic"],
@@ -349,21 +365,24 @@ def training_pdf_bytes(record: dict[str, Any]) -> bytes:
         ],
         summary=record["summary"], bullets=safe_json_list(record["key_lessons"]),
         photo_sections=[
-            ("Photographic Record", record_photos(safe_json_list(record["photos"]))),
-            ("Attendance Record", record_photos(safe_json_list(record["attendance_photos"]))),
+            ("Photographic Record", record_photos(safe_json_list(record["photos"]), photo_cache)),
+            ("Attendance Record", record_photos(safe_json_list(record["attendance_photos"]), photo_cache)),
         ],
         doc_number="",
     ))
 
 
-def build_bundle_zip(csv_filename: str, csv_text: str, pdf_entries: list[tuple[str, bytes]], photo_entries: list[tuple[str, str]]) -> bytes:
+def build_bundle_zip(
+    csv_filename: str, csv_text: str, pdf_entries: list[tuple[str, bytes]], photo_entries: list[tuple[str, str]],
+    photo_cache: "PhotoCache | None" = None,
+) -> bytes:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr(csv_filename, "﻿" + csv_text)
         for archive_path, pdf_bytes in pdf_entries:
             archive.writestr(f"{archive_path}.pdf", pdf_bytes)
         for archive_path, key in photo_entries:
-            fetched = fetch_photo_bytes(key)
+            fetched = cached_fetch_photo_bytes(key, photo_cache)
             if not fetched:
                 continue
             data, extension = fetched
@@ -2443,19 +2462,20 @@ def export_near_miss() -> Response:
 @admin_required
 def export_near_miss_bundle() -> Response:
     records = filtered_near_miss(limit=5000)
+    photo_cache: PhotoCache = {}
     pdf_entries = []
     photo_entries = []
     for record in records:
         folder = safe_archive_folder(record["report_no"])
         try:
-            pdf_entries.append((f"{folder}/{record['report_no']}", near_miss_pdf_bytes(record)))
+            pdf_entries.append((f"{folder}/{record['report_no']}", near_miss_pdf_bytes(record, photo_cache)))
         except Exception:
             app.logger.exception("Failed to render near-miss PDF for %s", record["report_no"])
         for index, key in enumerate(safe_json_list(record["photos"]), start=1):
             photo_entries.append((f"{folder}/photo-{index}", key))
     zip_bytes = build_bundle_zip(
         "near-miss.csv", near_miss_csv(records), pdf_entries,
-        photo_entries if b2_configured() else [],
+        photo_entries if b2_configured() else [], photo_cache,
     )
     filename = f'diriyah-near-miss-bundle-{datetime.now(timezone.utc).date().isoformat()}.zip'
     return Response(zip_bytes, mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
@@ -2473,19 +2493,20 @@ def export_violations() -> Response:
 @admin_required
 def export_violations_bundle() -> Response:
     records = filtered_violations(limit=5000)
+    photo_cache: PhotoCache = {}
     pdf_entries = []
     photo_entries = []
     for record in records:
         folder = safe_archive_folder(record["violation_no"])
         try:
-            pdf_entries.append((f"{folder}/{record['violation_no']}", violation_pdf_bytes(record)))
+            pdf_entries.append((f"{folder}/{record['violation_no']}", violation_pdf_bytes(record, photo_cache)))
         except Exception:
             app.logger.exception("Failed to render violation PDF for %s", record["violation_no"])
         for index, key in enumerate(safe_json_list(record["photos"]), start=1):
             photo_entries.append((f"{folder}/photo-{index}", key))
     zip_bytes = build_bundle_zip(
         "violations.csv", violations_csv(records), pdf_entries,
-        photo_entries if b2_configured() else [],
+        photo_entries if b2_configured() else [], photo_cache,
     )
     filename = f'diriyah-violations-bundle-{datetime.now(timezone.utc).date().isoformat()}.zip'
     return Response(zip_bytes, mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
@@ -2523,12 +2544,13 @@ def export_training() -> Response:
 @admin_required
 def export_training_bundle() -> Response:
     records = filtered_training(limit=5000)
+    photo_cache: PhotoCache = {}
     pdf_entries = []
     photo_entries = []
     for record in records:
         folder = safe_archive_folder(f'{record["seq"]}-{record["topic"]}')
         try:
-            pdf_entries.append((f"{folder}/{folder}", training_pdf_bytes(record)))
+            pdf_entries.append((f"{folder}/{folder}", training_pdf_bytes(record, photo_cache)))
         except Exception:
             app.logger.exception("Failed to render training PDF for %s", record["topic"])
         for index, key in enumerate(safe_json_list(record["photos"]), start=1):
@@ -2537,7 +2559,7 @@ def export_training_bundle() -> Response:
             photo_entries.append((f"{folder}/attendance/photo-{index}", key))
     zip_bytes = build_bundle_zip(
         "training-log.csv", training_csv(records), pdf_entries,
-        photo_entries if b2_configured() else [],
+        photo_entries if b2_configured() else [], photo_cache,
     )
     filename = f'diriyah-training-bundle-{datetime.now(timezone.utc).date().isoformat()}.zip'
     return Response(zip_bytes, mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
@@ -2554,6 +2576,7 @@ def backup_all() -> Response | tuple[Response, int]:
     near_miss_records = filtered_near_miss(limit=5000)
     violation_records = filtered_violations(limit=5000)
     training_records = filtered_training(limit=5000)
+    photo_cache: PhotoCache = {}
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr(f"inspections-summary-{today}.csv", "\ufeff" + inspections_csv(filtered_records(limit=5000), detailed=False))
@@ -2566,41 +2589,41 @@ def backup_all() -> Response | tuple[Response, int]:
         for record in near_miss_records:
             folder = safe_archive_folder(record["report_no"])
             try:
-                archive.writestr(f"near-miss-pdfs/{folder}.pdf", near_miss_pdf_bytes(record))
+                archive.writestr(f"near-miss-pdfs/{folder}.pdf", near_miss_pdf_bytes(record, photo_cache))
             except Exception:
                 app.logger.exception("Failed to render near-miss PDF for backup: %s", record["report_no"])
             if b2_configured():
                 for index, key in enumerate(safe_json_list(record["photos"]), start=1):
-                    fetched = fetch_photo_bytes(key)
+                    fetched = cached_fetch_photo_bytes(key, photo_cache)
                     if fetched:
                         data, extension = fetched
                         archive.writestr(f"near-miss-photos/{folder}/photo-{index}.{extension}", data)
         for record in violation_records:
             folder = safe_archive_folder(record["violation_no"])
             try:
-                archive.writestr(f"violation-pdfs/{folder}.pdf", violation_pdf_bytes(record))
+                archive.writestr(f"violation-pdfs/{folder}.pdf", violation_pdf_bytes(record, photo_cache))
             except Exception:
                 app.logger.exception("Failed to render violation PDF for backup: %s", record["violation_no"])
             if b2_configured():
                 for index, key in enumerate(safe_json_list(record["photos"]), start=1):
-                    fetched = fetch_photo_bytes(key)
+                    fetched = cached_fetch_photo_bytes(key, photo_cache)
                     if fetched:
                         data, extension = fetched
                         archive.writestr(f"violation-photos/{folder}/photo-{index}.{extension}", data)
         for record in training_records:
             folder = safe_archive_folder(f'{record["seq"]}-{record["topic"]}')
             try:
-                archive.writestr(f"training-pdfs/{folder}.pdf", training_pdf_bytes(record))
+                archive.writestr(f"training-pdfs/{folder}.pdf", training_pdf_bytes(record, photo_cache))
             except Exception:
                 app.logger.exception("Failed to render training PDF for backup: %s", record["topic"])
             if b2_configured():
                 for index, key in enumerate(safe_json_list(record["photos"]), start=1):
-                    fetched = fetch_photo_bytes(key)
+                    fetched = cached_fetch_photo_bytes(key, photo_cache)
                     if fetched:
                         data, extension = fetched
                         archive.writestr(f"training-photos/{folder}/photos/photo-{index}.{extension}", data)
                 for index, key in enumerate(safe_json_list(record["attendance_photos"]), start=1):
-                    fetched = fetch_photo_bytes(key)
+                    fetched = cached_fetch_photo_bytes(key, photo_cache)
                     if fetched:
                         data, extension = fetched
                         archive.writestr(f"training-photos/{folder}/attendance/photo-{index}.{extension}", data)

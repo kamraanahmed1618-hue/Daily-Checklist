@@ -1272,6 +1272,29 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertTrue(any("training-photos/" in name and "/photos/" in name for name in names))
         self.assertTrue(any("training-photos/" in name and "/attendance/" in name for name in names))
 
+    def test_backup_fetches_each_photo_from_storage_only_once(self):
+        # Every photo appears twice in the backup (embedded in its record's PDF, and as
+        # a raw file) — without a per-request cache this fetches the same key from B2
+        # twice, which was slow enough to blow a platform request timeout on Render.
+        payload = self.near_miss_payload()
+        payload["photoKeys"] = ["uploads/tok11111/aaaaaaaaaaaaaaaaaaaa.jpg"]
+        with patch("app.B2_BUCKET", "test-bucket"), \
+             patch.dict(os.environ, {"B2_KEY_ID": "k", "B2_APPLICATION_KEY": "s", "B2_ENDPOINT": "s3.test.backblazeb2.com"}):
+            self.client.post("/api/near-miss", json=payload)
+
+            fake_client = MagicMock()
+            fake_client.get_object.side_effect = lambda **kwargs: {"Body": io.BytesIO(b"fake-photo-bytes")}
+            with patch("app.b2_client", return_value=fake_client):
+                response = self.client.get("/admin/backup?token=test-export-token")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(fake_client.get_object.call_count, 1)
+        archive = zipfile.ZipFile(io.BytesIO(response.data))
+        names = archive.namelist()
+        self.assertTrue(any(name.startswith("near-miss-photos/") for name in names))
+        pdf_name = next(name for name in names if name.startswith("near-miss-pdfs/"))
+        self.assertGreater(len(archive.read(pdf_name)), 0)
+
     def test_backup_works_without_photo_storage_configured(self):
         payload = self.near_miss_payload()
         payload["photoKeys"] = ["uploads/tok11111/aaaaaaaaaaaaaaaaaaaa.jpg"]
