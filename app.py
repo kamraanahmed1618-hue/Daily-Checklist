@@ -643,20 +643,27 @@ def log_audit(action: str, record_type: str, record_ref: str, actor_name: str) -
 def send_notification_email(subject: str, body: str) -> None:
     """Best-effort alert for a newly-submitted violation or near-miss. Silently does
     nothing if the NOTIFY_* env vars aren't configured, and never raises — a failed or
-    slow email must not break the actual submission, which has already been saved."""
+    slow email must not break the actual submission, which has already been saved.
+    Works with any SMTP-compatible provider (Gmail, Brevo, Mailgun, SendGrid, ...) —
+    NOTIFY_SMTP_HOST/PORT default to Gmail's but can point anywhere. NOTIFY_EMAIL_FROM
+    is separate from NOTIFY_SMTP_USER because some providers log in with an account
+    email/API key that differs from the verified "From" sender address."""
     recipient = os.environ.get("NOTIFY_EMAIL_TO")
-    sender = os.environ.get("NOTIFY_SMTP_USER")
+    smtp_user = os.environ.get("NOTIFY_SMTP_USER")
     password = os.environ.get("NOTIFY_SMTP_PASSWORD")
-    if not (recipient and sender and password):
+    if not (recipient and smtp_user and password):
         return
+    sender = os.environ.get("NOTIFY_EMAIL_FROM") or smtp_user
+    host = os.environ.get("NOTIFY_SMTP_HOST", "smtp.gmail.com")
+    port = int(os.environ.get("NOTIFY_SMTP_PORT", "465"))
     try:
         message = EmailMessage()
         message["Subject"] = subject
         message["From"] = sender
         message["To"] = recipient
         message.set_content(body)
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=10) as smtp:
-            smtp.login(sender, password)
+        with smtplib.SMTP_SSL(host, port, timeout=10) as smtp:
+            smtp.login(smtp_user, password)
             smtp.send_message(message)
     except Exception:
         app.logger.exception("Failed to send notification email")
