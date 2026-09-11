@@ -1241,6 +1241,44 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertTrue(any(name.startswith("ptw-log-") for name in names))
         self.assertTrue(any(name.startswith("training-log-") for name in names))
 
+    def test_backup_includes_photos_when_storage_configured(self):
+        near_miss_payload = self.near_miss_payload()
+        near_miss_payload["photoKeys"] = ["uploads/tok11111/aaaaaaaaaaaaaaaaaaaa.jpg"]
+        violation_payload = self.violation_payload()
+        violation_payload["photoKeys"] = ["uploads/tok22222/bbbbbbbbbbbbbbbbbbbb.jpg"]
+        training_payload = self.training_payload()
+        training_payload["photoKeys"] = ["uploads/tok33333/cccccccccccccccccccc.jpg"]
+        training_payload["attendancePhotoKeys"] = ["uploads/tok44444/dddddddddddddddddddd.jpg"]
+
+        with patch("app.B2_BUCKET", "test-bucket"), \
+             patch.dict(os.environ, {"B2_KEY_ID": "k", "B2_APPLICATION_KEY": "s", "B2_ENDPOINT": "s3.test.backblazeb2.com"}):
+            self.client.post("/api/near-miss", json=near_miss_payload)
+            self.client.post("/api/violations", json=violation_payload)
+            self.client.post("/api/training", json=training_payload)
+
+            fake_client = MagicMock()
+            fake_client.get_object.return_value = {"Body": io.BytesIO(b"fake-photo-bytes")}
+            with patch("app.b2_client", return_value=fake_client):
+                response = self.client.get("/admin/backup?token=test-export-token")
+
+        self.assertEqual(response.status_code, 200)
+        archive = zipfile.ZipFile(io.BytesIO(response.data))
+        names = archive.namelist()
+        self.assertTrue(any(name.startswith("near-miss-photos/") and name.endswith(".jpg") for name in names))
+        self.assertTrue(any(name.startswith("violation-photos/") and name.endswith(".jpg") for name in names))
+        self.assertTrue(any("training-photos/" in name and "/photos/" in name for name in names))
+        self.assertTrue(any("training-photos/" in name and "/attendance/" in name for name in names))
+
+    def test_backup_works_without_photo_storage_configured(self):
+        payload = self.near_miss_payload()
+        payload["photoKeys"] = ["uploads/tok11111/aaaaaaaaaaaaaaaaaaaa.jpg"]
+        self.client.post("/api/near-miss", json=payload)
+
+        response = self.client.get("/admin/backup?token=test-export-token")
+        self.assertEqual(response.status_code, 200)
+        archive = zipfile.ZipFile(io.BytesIO(response.data))
+        self.assertFalse(any(name.startswith("near-miss-photos/") for name in archive.namelist()))
+
 
 if __name__ == "__main__":
     unittest.main()
