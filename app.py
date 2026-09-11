@@ -2551,14 +2551,45 @@ def backup_all() -> Response | tuple[Response, int]:
         return jsonify({"error": "Unauthorized"}), 401
 
     today = datetime.now(timezone.utc).date().isoformat()
+    near_miss_records = filtered_near_miss(limit=5000)
+    violation_records = filtered_violations(limit=5000)
+    training_records = filtered_training(limit=5000)
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr(f"inspections-summary-{today}.csv", "\ufeff" + inspections_csv(filtered_records(limit=5000), detailed=False))
         archive.writestr(f"inspections-detailed-{today}.csv", "\ufeff" + inspections_csv(filtered_records(limit=5000), detailed=True))
-        archive.writestr(f"near-miss-{today}.csv", "\ufeff" + near_miss_csv(filtered_near_miss(limit=5000)))
-        archive.writestr(f"violations-{today}.csv", "\ufeff" + violations_csv(filtered_violations(limit=5000)))
+        archive.writestr(f"near-miss-{today}.csv", "\ufeff" + near_miss_csv(near_miss_records))
+        archive.writestr(f"violations-{today}.csv", "\ufeff" + violations_csv(violation_records))
         archive.writestr(f"ptw-log-{today}.csv", "\ufeff" + ptw_csv(filtered_ptw(limit=5000)))
-        archive.writestr(f"training-log-{today}.csv", "\ufeff" + training_csv(filtered_training(limit=5000)))
+        archive.writestr(f"training-log-{today}.csv", "\ufeff" + training_csv(training_records))
+
+        if b2_configured():
+            for record in near_miss_records:
+                folder = safe_archive_folder(record["report_no"])
+                for index, key in enumerate(safe_json_list(record["photos"]), start=1):
+                    fetched = fetch_photo_bytes(key)
+                    if fetched:
+                        data, extension = fetched
+                        archive.writestr(f"near-miss-photos/{folder}/photo-{index}.{extension}", data)
+            for record in violation_records:
+                folder = safe_archive_folder(record["violation_no"])
+                for index, key in enumerate(safe_json_list(record["photos"]), start=1):
+                    fetched = fetch_photo_bytes(key)
+                    if fetched:
+                        data, extension = fetched
+                        archive.writestr(f"violation-photos/{folder}/photo-{index}.{extension}", data)
+            for record in training_records:
+                folder = safe_archive_folder(f'{record["seq"]}-{record["topic"]}')
+                for index, key in enumerate(safe_json_list(record["photos"]), start=1):
+                    fetched = fetch_photo_bytes(key)
+                    if fetched:
+                        data, extension = fetched
+                        archive.writestr(f"training-photos/{folder}/photos/photo-{index}.{extension}", data)
+                for index, key in enumerate(safe_json_list(record["attendance_photos"]), start=1):
+                    fetched = fetch_photo_bytes(key)
+                    if fetched:
+                        data, extension = fetched
+                        archive.writestr(f"training-photos/{folder}/attendance/photo-{index}.{extension}", data)
     buffer.seek(0)
     filename = f"diriyah-ohs-backup-{today}.zip"
     return Response(buffer.getvalue(), mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
