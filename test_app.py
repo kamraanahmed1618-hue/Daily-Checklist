@@ -301,6 +301,21 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertEqual(sent_message["To"], "safety@example.com")
         self.assertIn("VIOLATION-001", sent_message["Subject"])
 
+    def test_notification_email_supports_third_party_smtp_provider(self):
+        fake_smtp = MagicMock()
+        fake_smtp.__enter__.return_value = fake_smtp
+        with patch.dict(os.environ, {
+            "NOTIFY_EMAIL_TO": "safety@example.com", "NOTIFY_SMTP_USER": "98a1b2c3d4e5f6@smtp-brevo.com",
+            "NOTIFY_SMTP_PASSWORD": "brevo-smtp-key", "NOTIFY_EMAIL_FROM": "alerts@example.com",
+            "NOTIFY_SMTP_HOST": "smtp-relay.brevo.com", "NOTIFY_SMTP_PORT": "587",
+        }), patch("app.smtplib.SMTP_SSL", return_value=fake_smtp) as mock_smtp_ssl:
+            response = self.client.post("/api/violations", json=self.violation_payload())
+        self.assertEqual(response.status_code, 201)
+        mock_smtp_ssl.assert_called_once_with("smtp-relay.brevo.com", 587, timeout=10)
+        fake_smtp.login.assert_called_once_with("98a1b2c3d4e5f6@smtp-brevo.com", "brevo-smtp-key")
+        sent_message = fake_smtp.send_message.call_args[0][0]
+        self.assertEqual(sent_message["From"], "alerts@example.com")
+
     def test_near_miss_submission_sends_notification_email_when_configured(self):
         fake_smtp = MagicMock()
         fake_smtp.__enter__.return_value = fake_smtp
