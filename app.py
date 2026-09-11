@@ -2458,9 +2458,7 @@ def export_near_miss() -> Response:
     return Response("\ufeff" + csv_text, mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
-@app.get("/admin/export/near-miss/bundle.zip")
-@admin_required
-def export_near_miss_bundle() -> Response:
+def near_miss_bundle_zip_bytes() -> bytes:
     records = filtered_near_miss(limit=5000)
     photo_cache: PhotoCache = {}
     pdf_entries = []
@@ -2473,10 +2471,16 @@ def export_near_miss_bundle() -> Response:
             app.logger.exception("Failed to render near-miss PDF for %s", record["report_no"])
         for index, key in enumerate(safe_json_list(record["photos"]), start=1):
             photo_entries.append((f"{folder}/photo-{index}", key))
-    zip_bytes = build_bundle_zip(
+    return build_bundle_zip(
         "near-miss.csv", near_miss_csv(records), pdf_entries,
         photo_entries if b2_configured() else [], photo_cache,
     )
+
+
+@app.get("/admin/export/near-miss/bundle.zip")
+@admin_required
+def export_near_miss_bundle() -> Response:
+    zip_bytes = near_miss_bundle_zip_bytes()
     filename = f'diriyah-near-miss-bundle-{datetime.now(timezone.utc).date().isoformat()}.zip'
     return Response(zip_bytes, mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
@@ -2489,9 +2493,7 @@ def export_violations() -> Response:
     return Response("\ufeff" + csv_text, mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
-@app.get("/admin/export/violations/bundle.zip")
-@admin_required
-def export_violations_bundle() -> Response:
+def violation_bundle_zip_bytes() -> bytes:
     records = filtered_violations(limit=5000)
     photo_cache: PhotoCache = {}
     pdf_entries = []
@@ -2504,10 +2506,16 @@ def export_violations_bundle() -> Response:
             app.logger.exception("Failed to render violation PDF for %s", record["violation_no"])
         for index, key in enumerate(safe_json_list(record["photos"]), start=1):
             photo_entries.append((f"{folder}/photo-{index}", key))
-    zip_bytes = build_bundle_zip(
+    return build_bundle_zip(
         "violations.csv", violations_csv(records), pdf_entries,
         photo_entries if b2_configured() else [], photo_cache,
     )
+
+
+@app.get("/admin/export/violations/bundle.zip")
+@admin_required
+def export_violations_bundle() -> Response:
+    zip_bytes = violation_bundle_zip_bytes()
     filename = f'diriyah-violations-bundle-{datetime.now(timezone.utc).date().isoformat()}.zip'
     return Response(zip_bytes, mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
@@ -2540,9 +2548,7 @@ def export_training() -> Response:
     return Response("﻿" + csv_text, mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
-@app.get("/admin/export/training/bundle.zip")
-@admin_required
-def export_training_bundle() -> Response:
+def training_bundle_zip_bytes() -> bytes:
     records = filtered_training(limit=5000)
     photo_cache: PhotoCache = {}
     pdf_entries = []
@@ -2557,79 +2563,74 @@ def export_training_bundle() -> Response:
             photo_entries.append((f"{folder}/photos/photo-{index}", key))
         for index, key in enumerate(safe_json_list(record["attendance_photos"]), start=1):
             photo_entries.append((f"{folder}/attendance/photo-{index}", key))
-    zip_bytes = build_bundle_zip(
+    return build_bundle_zip(
         "training-log.csv", training_csv(records), pdf_entries,
         photo_entries if b2_configured() else [], photo_cache,
     )
+
+
+@app.get("/admin/export/training/bundle.zip")
+@admin_required
+def export_training_bundle() -> Response:
+    zip_bytes = training_bundle_zip_bytes()
     filename = f'diriyah-training-bundle-{datetime.now(timezone.utc).date().isoformat()}.zip'
     return Response(zip_bytes, mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
-@app.get("/admin/backup")
-def backup_all() -> Response | tuple[Response, int]:
+def export_token_valid() -> bool:
     expected = os.environ.get("EXPORT_TOKEN")
     supplied = request.args.get("token") or request.headers.get("X-Export-Token", "")
-    if not expected or not hmac.compare_digest(supplied, expected):
+    return bool(expected) and hmac.compare_digest(supplied, expected)
+
+
+@app.get("/admin/backup")
+def backup_all() -> Response | tuple[Response, int]:
+    """Lightweight CSV-only backup, kept fast and reliable on purpose \u2014 the version
+    that also embedded every PDF and photo in one request was slow/heavy enough to
+    time out or crash on Render. Use /admin/backup/<type>.zip for the full per-record
+    PDFs+photos, split into four smaller, independent requests instead of one giant one."""
+    if not export_token_valid():
         return jsonify({"error": "Unauthorized"}), 401
 
     today = datetime.now(timezone.utc).date().isoformat()
-    near_miss_records = filtered_near_miss(limit=5000)
-    violation_records = filtered_violations(limit=5000)
-    training_records = filtered_training(limit=5000)
-    photo_cache: PhotoCache = {}
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr(f"inspections-summary-{today}.csv", "\ufeff" + inspections_csv(filtered_records(limit=5000), detailed=False))
         archive.writestr(f"inspections-detailed-{today}.csv", "\ufeff" + inspections_csv(filtered_records(limit=5000), detailed=True))
-        archive.writestr(f"near-miss-{today}.csv", "\ufeff" + near_miss_csv(near_miss_records))
-        archive.writestr(f"violations-{today}.csv", "\ufeff" + violations_csv(violation_records))
+        archive.writestr(f"near-miss-{today}.csv", "\ufeff" + near_miss_csv(filtered_near_miss(limit=5000)))
+        archive.writestr(f"violations-{today}.csv", "\ufeff" + violations_csv(filtered_violations(limit=5000)))
         archive.writestr(f"ptw-log-{today}.csv", "\ufeff" + ptw_csv(filtered_ptw(limit=5000)))
-        archive.writestr(f"training-log-{today}.csv", "\ufeff" + training_csv(training_records))
-
-        for record in near_miss_records:
-            folder = safe_archive_folder(record["report_no"])
-            try:
-                archive.writestr(f"near-miss-pdfs/{folder}.pdf", near_miss_pdf_bytes(record, photo_cache))
-            except Exception:
-                app.logger.exception("Failed to render near-miss PDF for backup: %s", record["report_no"])
-            if b2_configured():
-                for index, key in enumerate(safe_json_list(record["photos"]), start=1):
-                    fetched = cached_fetch_photo_bytes(key, photo_cache)
-                    if fetched:
-                        data, extension = fetched
-                        archive.writestr(f"near-miss-photos/{folder}/photo-{index}.{extension}", data)
-        for record in violation_records:
-            folder = safe_archive_folder(record["violation_no"])
-            try:
-                archive.writestr(f"violation-pdfs/{folder}.pdf", violation_pdf_bytes(record, photo_cache))
-            except Exception:
-                app.logger.exception("Failed to render violation PDF for backup: %s", record["violation_no"])
-            if b2_configured():
-                for index, key in enumerate(safe_json_list(record["photos"]), start=1):
-                    fetched = cached_fetch_photo_bytes(key, photo_cache)
-                    if fetched:
-                        data, extension = fetched
-                        archive.writestr(f"violation-photos/{folder}/photo-{index}.{extension}", data)
-        for record in training_records:
-            folder = safe_archive_folder(f'{record["seq"]}-{record["topic"]}')
-            try:
-                archive.writestr(f"training-pdfs/{folder}.pdf", training_pdf_bytes(record, photo_cache))
-            except Exception:
-                app.logger.exception("Failed to render training PDF for backup: %s", record["topic"])
-            if b2_configured():
-                for index, key in enumerate(safe_json_list(record["photos"]), start=1):
-                    fetched = cached_fetch_photo_bytes(key, photo_cache)
-                    if fetched:
-                        data, extension = fetched
-                        archive.writestr(f"training-photos/{folder}/photos/photo-{index}.{extension}", data)
-                for index, key in enumerate(safe_json_list(record["attendance_photos"]), start=1):
-                    fetched = cached_fetch_photo_bytes(key, photo_cache)
-                    if fetched:
-                        data, extension = fetched
-                        archive.writestr(f"training-photos/{folder}/attendance/photo-{index}.{extension}", data)
+        archive.writestr(f"training-log-{today}.csv", "\ufeff" + training_csv(filtered_training(limit=5000)))
     buffer.seek(0)
     filename = f"diriyah-ohs-backup-{today}.zip"
     return Response(buffer.getvalue(), mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@app.get("/admin/backup/near-miss.zip")
+def backup_near_miss() -> Response | tuple[Response, int]:
+    if not export_token_valid():
+        return jsonify({"error": "Unauthorized"}), 401
+    zip_bytes = near_miss_bundle_zip_bytes()
+    filename = f"diriyah-near-miss-backup-{datetime.now(timezone.utc).date().isoformat()}.zip"
+    return Response(zip_bytes, mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@app.get("/admin/backup/violations.zip")
+def backup_violations() -> Response | tuple[Response, int]:
+    if not export_token_valid():
+        return jsonify({"error": "Unauthorized"}), 401
+    zip_bytes = violation_bundle_zip_bytes()
+    filename = f"diriyah-violations-backup-{datetime.now(timezone.utc).date().isoformat()}.zip"
+    return Response(zip_bytes, mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@app.get("/admin/backup/training.zip")
+def backup_training() -> Response | tuple[Response, int]:
+    if not export_token_valid():
+        return jsonify({"error": "Unauthorized"}), 401
+    zip_bytes = training_bundle_zip_bytes()
+    filename = f"diriyah-training-backup-{datetime.now(timezone.utc).date().isoformat()}.zip"
+    return Response(zip_bytes, mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 @app.get("/health")

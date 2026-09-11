@@ -1231,20 +1231,25 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.mimetype, "application/zip")
 
+        # Kept CSV-only on purpose (fast/lightweight) — full PDFs+photos live in the
+        # separate /admin/backup/<type>.zip endpoints, so one heavy combined request
+        # can't time out or crash the whole backup.
         archive = zipfile.ZipFile(io.BytesIO(response.data))
         names = archive.namelist()
-        self.assertEqual(len(names), 9)  # 6 CSVs + 1 PDF each for near-miss, violation, training
+        self.assertEqual(len(names), 6)
         self.assertTrue(any(name.startswith("inspections-summary-") for name in names))
         self.assertTrue(any(name.startswith("inspections-detailed-") for name in names))
-        self.assertTrue(any(name.startswith("near-miss-") and name.endswith(".csv") for name in names))
-        self.assertTrue(any(name.startswith("violations-") and name.endswith(".csv") for name in names))
+        self.assertTrue(any(name.startswith("near-miss-") for name in names))
+        self.assertTrue(any(name.startswith("violations-") for name in names))
         self.assertTrue(any(name.startswith("ptw-log-") for name in names))
-        self.assertTrue(any(name.startswith("training-log-") and name.endswith(".csv") for name in names))
-        self.assertTrue(any(name.startswith("near-miss-pdfs/") and name.endswith(".pdf") for name in names))
-        self.assertTrue(any(name.startswith("violation-pdfs/") and name.endswith(".pdf") for name in names))
-        self.assertTrue(any(name.startswith("training-pdfs/") and name.endswith(".pdf") for name in names))
+        self.assertTrue(any(name.startswith("training-log-") for name in names))
 
-    def test_backup_includes_photos_when_storage_configured(self):
+    def test_per_type_backup_endpoints_reject_missing_or_wrong_token(self):
+        for path in ("/admin/backup/near-miss.zip", "/admin/backup/violations.zip", "/admin/backup/training.zip"):
+            self.assertEqual(self.client.get(path).status_code, 401)
+            self.assertEqual(self.client.get(f"{path}?token=wrong").status_code, 401)
+
+    def test_per_type_backup_endpoints_include_pdfs_and_photos(self):
         near_miss_payload = self.near_miss_payload()
         near_miss_payload["photoKeys"] = ["uploads/tok11111/aaaaaaaaaaaaaaaaaaaa.jpg"]
         violation_payload = self.violation_payload()
@@ -1260,20 +1265,31 @@ class ChecklistApplicationTests(unittest.TestCase):
             self.client.post("/api/training", json=training_payload)
 
             fake_client = MagicMock()
-            fake_client.get_object.return_value = {"Body": io.BytesIO(b"fake-photo-bytes")}
+            fake_client.get_object.side_effect = lambda **kwargs: {"Body": io.BytesIO(b"fake-photo-bytes")}
             with patch("app.b2_client", return_value=fake_client):
-                response = self.client.get("/admin/backup?token=test-export-token")
+                near_miss_response = self.client.get("/admin/backup/near-miss.zip?token=test-export-token")
+                violation_response = self.client.get("/admin/backup/violations.zip?token=test-export-token")
+                training_response = self.client.get("/admin/backup/training.zip?token=test-export-token")
 
-        self.assertEqual(response.status_code, 200)
-        archive = zipfile.ZipFile(io.BytesIO(response.data))
-        names = archive.namelist()
-        self.assertTrue(any(name.startswith("near-miss-photos/") and name.endswith(".jpg") for name in names))
-        self.assertTrue(any(name.startswith("violation-photos/") and name.endswith(".jpg") for name in names))
-        self.assertTrue(any("training-photos/" in name and "/photos/" in name for name in names))
-        self.assertTrue(any("training-photos/" in name and "/attendance/" in name for name in names))
+        for response in (near_miss_response, violation_response, training_response):
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.mimetype, "application/zip")
 
-    def test_backup_fetches_each_photo_from_storage_only_once(self):
-        # Every photo appears twice in the backup (embedded in its record's PDF, and as
+        near_miss_names = zipfile.ZipFile(io.BytesIO(near_miss_response.data)).namelist()
+        self.assertTrue(any(name.endswith(".pdf") for name in near_miss_names))
+        self.assertTrue(any(name.endswith(".jpg") for name in near_miss_names))
+
+        violation_names = zipfile.ZipFile(io.BytesIO(violation_response.data)).namelist()
+        self.assertTrue(any(name.endswith(".pdf") for name in violation_names))
+        self.assertTrue(any(name.endswith(".jpg") for name in violation_names))
+
+        training_names = zipfile.ZipFile(io.BytesIO(training_response.data)).namelist()
+        self.assertTrue(any(name.endswith(".pdf") for name in training_names))
+        self.assertTrue(any("photos/" in name for name in training_names))
+        self.assertTrue(any("attendance/" in name for name in training_names))
+
+    def test_per_type_backup_fetches_each_photo_from_storage_only_once(self):
+        # Every photo appears twice in the bundle (embedded in its record's PDF, and as
         # a raw file) — without a per-request cache this fetches the same key from B2
         # twice, which was slow enough to blow a platform request timeout on Render.
         payload = self.near_miss_payload()
@@ -1285,25 +1301,22 @@ class ChecklistApplicationTests(unittest.TestCase):
             fake_client = MagicMock()
             fake_client.get_object.side_effect = lambda **kwargs: {"Body": io.BytesIO(b"fake-photo-bytes")}
             with patch("app.b2_client", return_value=fake_client):
-                response = self.client.get("/admin/backup?token=test-export-token")
+                response = self.client.get("/admin/backup/near-miss.zip?token=test-export-token")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(fake_client.get_object.call_count, 1)
-        archive = zipfile.ZipFile(io.BytesIO(response.data))
-        names = archive.namelist()
-        self.assertTrue(any(name.startswith("near-miss-photos/") for name in names))
-        pdf_name = next(name for name in names if name.startswith("near-miss-pdfs/"))
-        self.assertGreater(len(archive.read(pdf_name)), 0)
 
-    def test_backup_works_without_photo_storage_configured(self):
+    def test_per_type_backup_endpoint_works_without_photo_storage_configured(self):
         payload = self.near_miss_payload()
         payload["photoKeys"] = ["uploads/tok11111/aaaaaaaaaaaaaaaaaaaa.jpg"]
         self.client.post("/api/near-miss", json=payload)
 
-        response = self.client.get("/admin/backup?token=test-export-token")
+        response = self.client.get("/admin/backup/near-miss.zip?token=test-export-token")
         self.assertEqual(response.status_code, 200)
         archive = zipfile.ZipFile(io.BytesIO(response.data))
-        self.assertFalse(any(name.startswith("near-miss-photos/") for name in archive.namelist()))
+        names = archive.namelist()
+        self.assertFalse(any(name.endswith(".jpg") for name in names))
+        self.assertTrue(any(name.endswith(".pdf") for name in names))
 
 
 if __name__ == "__main__":
