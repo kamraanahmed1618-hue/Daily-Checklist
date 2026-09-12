@@ -116,6 +116,12 @@ class ChecklistApplicationTests(unittest.TestCase):
         for path in ("/inspection", "/near-miss", "/violation", "/ptw", "/training", "/admin"):
             self.assertIn(path.encode(), response.data)
 
+    def test_homepage_is_never_cached(self):
+        # The homepage shows time-sensitive data (this week's stat tiles) — a cached
+        # copy could keep showing a past week's numbers indefinitely.
+        response = self.client.get("/")
+        self.assertEqual(response.headers.get("Cache-Control"), "no-store")
+
     def test_homepage_stats_only_count_current_work_week(self):
         from datetime import date, timedelta
 

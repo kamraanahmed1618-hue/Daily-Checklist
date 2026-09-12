@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "ohs-diriyah-v6";
+const CACHE_NAME = "ohs-diriyah-v7";
 const APP_SHELL = [
   "/",
   "/inspection",
@@ -44,10 +44,13 @@ self.addEventListener("fetch", (event) => {
   // handle the request itself, the same way it always could.
   if (url.origin !== self.location.origin) return;
 
-  // Code assets: always prefer a fresh copy so a deploy takes effect on the next load
-  // instead of silently running stale JS against the new server until the cache
-  // happens to revalidate. Only fall back to the cache when actually offline.
-  if (url.pathname.endsWith(".js") || url.pathname.endsWith(".css")) {
+  // Code assets and the homepage: always prefer a fresh copy. For .js/.css this is so
+  // a deploy takes effect on the next load instead of running stale JS against the new
+  // server. For "/" specifically, the homepage shows time-sensitive data (this week's
+  // stat tiles) that changes daily/weekly — serving a cached copy could show a stale
+  // week's numbers indefinitely until the cache happened to revalidate in the
+  // background. Only fall back to the cache when actually offline.
+  if (url.pathname.endsWith(".js") || url.pathname.endsWith(".css") || url.pathname === "/") {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
