@@ -257,7 +257,7 @@ td small { margin-top: 3px; color: var(--muted); }
 .doc-checkbox.checked { font-weight: 700; }
 .doc-note { margin: 8px 0; font-size: 13px; }
 .doc-evidence { margin: 8px 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
-.doc-evidence img { width: 100%; height: 140px; object-fit: cover; display: block; border: 1px solid #000; }
+.doc-evidence img { width: 100%; height: 140px; object-fit: contain; background: #f4f4f4; display: block; border: 1px solid #000; }
 
 /* Violation notice — mirrors the company's official "Occupational Health & Safety
    Violation Notice" Word template exactly: sans-serif body text, a plain
@@ -279,7 +279,7 @@ td small { margin-top: 3px; color: var(--muted); }
 .doc-evidence-table { margin-left: 20px; width: calc(100% - 20px); }
 .doc-evidence-table thead th { background: #002060; color: white; font-weight: 700; text-align: center; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 .doc-evidence-table td { width: 50%; text-align: center; }
-.doc-evidence-table img { width: 100%; height: 160px; object-fit: cover; display: block; }
+.doc-evidence-table img { width: 100%; height: 160px; object-fit: contain; background: #f4f4f4; display: block; }
 
 /* Training / TBT / Induction record — mirrors a real filled-in TBT record: a small
    eyebrow label, a big topic heading, an optional objective subtitle, a shaded summary
