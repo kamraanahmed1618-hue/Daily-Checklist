@@ -1610,6 +1610,11 @@ def admin() -> str | Response:
             ]),
         }
 
+    this_week_start, this_week_end_exclusive = current_work_week_range()
+    this_week_end = (date.fromisoformat(this_week_end_exclusive) - timedelta(days=1)).isoformat()
+    last_week_start = (date.fromisoformat(this_week_start) - timedelta(days=7)).isoformat()
+    last_week_end = (date.fromisoformat(this_week_end) - timedelta(days=7)).isoformat()
+
     return render_template(
         "admin.html",
         view=view,
@@ -1630,6 +1635,8 @@ def admin() -> str | Response:
         ptw_count=counts["ptw"],
         training_count=counts["training"],
         training_type_labels=TRAINING_TYPE_LABELS,
+        this_week_start=this_week_start, this_week_end=this_week_end,
+        last_week_start=last_week_start, last_week_end=last_week_end,
     )
 
 
