@@ -112,6 +112,8 @@
             <input type="date" name="date_to" value="{{ request.args.get('date_to', '') }}">
         </label>
         <button class="button secondary" type="submit">Apply filters</button>
+        <a class="text-link" href="{{ url_for('admin', view=view, q=request.args.get('q', ''), date_from=this_week_start, date_to=this_week_end) }}">This week</a>
+        <a class="text-link" href="{{ url_for('admin', view=view, q=request.args.get('q', ''), date_from=last_week_start, date_to=last_week_end) }}">Last week</a>
         <a class="text-link" href="{{ url_for('admin', view=view) }}">Clear</a>
     </form>
 

@@ -142,6 +142,42 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertIn(week_start, html)
         self.assertIn(week_end_display, html)
 
+    def test_admin_shows_this_week_and_last_week_quick_filter_links(self):
+        from datetime import date, timedelta
+
+        from app import current_work_week_range
+
+        week_start, week_end_exclusive = current_work_week_range()
+        week_end = (date.fromisoformat(week_end_exclusive) - timedelta(days=1)).isoformat()
+        last_week_start = (date.fromisoformat(week_start) - timedelta(days=7)).isoformat()
+        last_week_end = (date.fromisoformat(week_end) - timedelta(days=7)).isoformat()
+
+        self.login()
+        html = self.client.get("/admin?view=near-miss").get_data(as_text=True)
+        self.assertIn(f"date_from={week_start}&amp;date_to={week_end}", html)
+        self.assertIn(f"date_from={last_week_start}&amp;date_to={last_week_end}", html)
+
+    def test_admin_week_quick_filter_actually_narrows_results(self):
+        from app import current_work_week_range
+
+        week_start, _ = current_work_week_range()
+        this_week_payload = self.near_miss_payload()
+        this_week_payload["incidentDate"] = week_start
+        self.client.post("/api/near-miss", json=this_week_payload)
+
+        old_payload = self.near_miss_payload()
+        old_payload["incidentDate"] = "2020-01-01"
+        self.client.post("/api/near-miss", json=old_payload)
+
+        self.login()
+        unfiltered = self.client.get("/admin?view=near-miss").get_data(as_text=True)
+        self.assertIn("NEAR-MISS-001", unfiltered)
+        self.assertIn("NEAR-MISS-002", unfiltered)
+
+        filtered = self.client.get(f"/admin?view=near-miss&date_from={week_start}&date_to={week_start}").get_data(as_text=True)
+        self.assertIn("NEAR-MISS-001", filtered)
+        self.assertNotIn("NEAR-MISS-002", filtered)
+
     def test_current_work_week_range_excludes_friday(self):
         from datetime import date
         from app import current_work_week_range
