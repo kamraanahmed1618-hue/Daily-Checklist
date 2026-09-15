@@ -372,6 +372,22 @@ def training_pdf_bytes(record: dict[str, Any], photo_cache: "PhotoCache | None" 
     ))
 
 
+def good_practice_pdf_bytes(record: dict[str, Any], photo_cache: "PhotoCache | None" = None) -> bytes:
+    return render_pdf(record_pdf_html(
+        title="Good Practice Observation",
+        band_title="Observation Details",
+        info_rows=[
+            ("Report No.", record["report_no"]), ("Project / Department", record["project_name"]),
+            ("Date", record["practice_date"]), ("Location", record["location"]),
+            ("Observed By", record["observed_by"]),
+            ("Category", record["category_other"] if record["category"] == "Other" and record["category_other"] else record["category"]),
+        ],
+        summary=record["description"], bullets=[],
+        photo_sections=[("Photographic Record", record_photos(safe_json_list(record["photos"]), photo_cache))],
+        doc_number="",
+    ))
+
+
 def build_bundle_zip(
     csv_filename: str, csv_text: str, pdf_entries: list[tuple[str, bytes]], photo_entries: list[tuple[str, str]],
     photo_cache: "PhotoCache | None" = None,
@@ -593,6 +609,22 @@ def init_db() -> None:
         "CREATE INDEX IF NOT EXISTS training_date_idx ON training_logs (session_date)",
         "CREATE INDEX IF NOT EXISTS training_created_idx ON training_logs (created_at)",
         "CREATE INDEX IF NOT EXISTS training_type_idx ON training_logs (session_type)",
+        """CREATE TABLE IF NOT EXISTS good_practices (
+            id TEXT PRIMARY KEY,
+            seq INTEGER,
+            report_no TEXT NOT NULL UNIQUE,
+            project_name TEXT NOT NULL,
+            practice_date TEXT NOT NULL,
+            location TEXT NOT NULL,
+            observed_by TEXT NOT NULL,
+            category TEXT NOT NULL,
+            category_other TEXT NOT NULL DEFAULT '',
+            description TEXT NOT NULL,
+            photos TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL
+        )""",
+        "CREATE INDEX IF NOT EXISTS good_practices_date_idx ON good_practices (practice_date)",
+        "CREATE INDEX IF NOT EXISTS good_practices_created_idx ON good_practices (created_at)",
         """CREATE TABLE IF NOT EXISTS audit_log (
             id TEXT PRIMARY KEY,
             occurred_at TEXT NOT NULL,
@@ -625,7 +657,7 @@ def init_db() -> None:
         ensure_column("training_logs", "summary", "TEXT NOT NULL DEFAULT ''")
         ensure_column("training_logs", "key_lessons", "TEXT NOT NULL DEFAULT '[]'")
         # Backfill sequential numbers for any pre-existing records in submission order.
-        for table in ("inspections", "near_miss_reports", "violation_notices", "ptw_logs", "training_logs"):
+        for table in ("inspections", "near_miss_reports", "violation_notices", "ptw_logs", "training_logs", "good_practices"):
             cursor.execute(sql(f"SELECT COALESCE(MAX(seq), 0) AS next_seq FROM {table}"))
             next_seq = cursor.fetchone()["next_seq"] or 0
             cursor.execute(sql(f"SELECT id FROM {table} WHERE seq IS NULL ORDER BY created_at ASC"))
@@ -790,6 +822,11 @@ TRAINING_TYPE_LABELS = {
     "Induction": "Induction", "TBT": "TBT (Toolbox Talk)", "Mass TBT": "Mass TBT (large combined session)",
     "Specific Training": "Specific Training",
 }
+GOOD_PRACTICE_CATEGORIES = [
+    "Housekeeping", "PPE Compliance", "Safe Use of Tools & Equipment", "Proper Lifting / Ergonomics",
+    "Barricading & Signage", "Emergency Preparedness", "Environmental Practice",
+    "Teamwork & Communication", "Other",
+]
 
 
 def clean_choices(value: Any, field: str, allowed: list[str]) -> list[str]:
@@ -975,6 +1012,21 @@ def validate_training(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def validate_good_practice(payload: dict[str, Any]) -> dict[str, Any]:
+    record = {
+        "project_name": clean_text(payload.get("projectName"), "Project / Department"),
+        "practice_date": clean_date(payload.get("practiceDate"), "Date observed"),
+        "location": clean_text(payload.get("location"), "Location"),
+        "observed_by": clean_text(payload.get("observedBy"), "Observed by"),
+        "category": clean_text(payload.get("category"), "Category", 60),
+        "category_other": clean_text(payload.get("categoryOther"), "Category (other)", 200, False),
+        "description": clean_text(payload.get("description"), "Description of the good practice", 3000),
+    }
+    if record["category"] not in GOOD_PRACTICE_CATEGORIES:
+        raise ValueError("Select a valid category.")
+    return {**record, "photos": clean_photo_keys(payload.get("photoKeys"))}
+
+
 def admin_required(view: Any) -> Any:
     @wraps(view)
     def wrapped(*args: Any, **kwargs: Any) -> Any:
@@ -1082,6 +1134,10 @@ def filtered_training(limit: int = 1000) -> list[dict[str, Any]]:
     return filtered_rows("training_logs", ["topic", "trainer", "location", "session_type"], "session_date", limit)
 
 
+def filtered_good_practices(limit: int = 1000) -> list[dict[str, Any]]:
+    return filtered_rows("good_practices", ["report_no", "observed_by", "project_name", "location", "category"], "practice_date", limit)
+
+
 def record_counts() -> dict[str, int]:
     auto_close_expired_ptw()
     with database() as connection:
@@ -1098,9 +1154,11 @@ def record_counts() -> dict[str, int]:
         ptw_open = cursor.fetchone()["c"]
         cursor.execute("SELECT COUNT(*) AS c FROM training_logs")
         training = cursor.fetchone()["c"]
+        cursor.execute("SELECT COUNT(*) AS c FROM good_practices")
+        good_practices = cursor.fetchone()["c"]
     return {
         "inspections": inspections, "near_miss": near_miss, "violations": violations,
-        "ptw": ptw, "ptw_open": ptw_open, "training": training,
+        "ptw": ptw, "ptw_open": ptw_open, "training": training, "good_practices": good_practices,
     }
 
 
@@ -1132,10 +1190,12 @@ def weekly_record_counts() -> dict[str, int]:
         ptw_open = cursor.fetchone()["c"]
         cursor.execute(sql("SELECT COUNT(*) AS c FROM training_logs WHERE session_date >= ? AND session_date < ?"), [week_start, week_end])
         training = cursor.fetchone()["c"]
+        cursor.execute(sql("SELECT COUNT(*) AS c FROM good_practices WHERE practice_date >= ? AND practice_date < ?"), [week_start, week_end])
+        good_practices = cursor.fetchone()["c"]
     week_end_display = (date.fromisoformat(week_end) - timedelta(days=1)).isoformat()
     return {
         "inspections": inspections, "near_miss": near_miss, "violations": violations,
-        "ptw_open": ptw_open, "training": training,
+        "ptw_open": ptw_open, "training": training, "good_practices": good_practices,
         "week_start": week_start, "week_end": week_end_display,
     }
 
@@ -1270,6 +1330,11 @@ def near_miss_form() -> str:
 @app.get("/violation")
 def violation_form() -> str:
     return render_template("violation.html", actions=VIOLATION_ACTIONS)
+
+
+@app.get("/good-practice")
+def good_practice_form() -> str:
+    return render_template("good_practice.html", categories=GOOD_PRACTICE_CATEGORIES)
 
 
 @app.get("/ptw")
@@ -1569,6 +1634,44 @@ def submit_training() -> tuple[Response, int] | Response:
         return jsonify({"error": "The training log entry could not be saved."}), 500
 
 
+@app.post("/api/good-practice")
+def submit_good_practice() -> tuple[Response, int] | Response:
+    try:
+        payload = request.get_json(force=True, silent=False)
+        if not isinstance(payload, dict):
+            raise ValueError("The good practice data is invalid.")
+        record = validate_good_practice(payload)
+        record_id = secrets.token_hex(16)
+        created_at = datetime.now(timezone.utc).isoformat()
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute(sql("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM good_practices"))
+            seq = cursor.fetchone()["next_seq"]
+            report_no = f"GOOD-PRACTICE-{seq:03d}"
+            values = [
+                record_id, seq, report_no, record["project_name"], record["practice_date"], record["location"],
+                record["observed_by"], record["category"], record["category_other"], record["description"],
+                json.dumps(record["photos"]), created_at,
+            ]
+            columns = (
+                "id, seq, report_no, project_name, practice_date, location, "
+                "observed_by, category, category_other, description, photos, created_at"
+            )
+            placeholders = ",".join("?" for _ in values)
+            cursor.execute(sql(f"INSERT INTO good_practices ({columns}) VALUES ({placeholders})"), values)
+        return jsonify({"id": record_id, "reportNo": report_no}), 201
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+    except HTTPException:
+        raise
+    except Exception as error:
+        message = str(error)
+        if "unique" in message.lower():
+            return jsonify({"error": "That report number already exists. Enter another report number."}), 409
+        app.logger.exception("Good practice submission failed")
+        return jsonify({"error": "The good practice entry could not be saved."}), 500
+
+
 @app.route("/admin", methods=["GET", "POST"])
 def admin() -> str | Response:
     error = ""
@@ -1586,7 +1689,7 @@ def admin() -> str | Response:
         return render_template("login.html", error=error, configured=configured)
 
     view = request.args.get("view", "inspections")
-    if view not in {"inspections", "near-miss", "violations", "ptw", "training", "trends"}:
+    if view not in {"inspections", "near-miss", "violations", "ptw", "training", "good-practices", "trends"}:
         view = "inspections"
 
     counts = record_counts()
@@ -1596,6 +1699,7 @@ def admin() -> str | Response:
     violations: list[dict[str, Any]] = []
     ptw_logs: list[dict[str, Any]] = []
     training_logs: list[dict[str, Any]] = []
+    good_practice_records: list[dict[str, Any]] = []
     trends: list[dict[str, Any]] = []
     ptw_stats: dict[str, Any] = {}
     total = average = non_compliant = 0
@@ -1613,6 +1717,8 @@ def admin() -> str | Response:
         ptw_stats = ptw_overview()
     elif view == "training":
         training_logs = filtered_training()
+    elif view == "good-practices":
+        good_practice_records = filtered_good_practices()
     else:
         trends = compute_trends()
 
@@ -1645,6 +1751,7 @@ def admin() -> str | Response:
         ptw_logs=ptw_logs,
         ptw_stats=ptw_stats,
         training_logs=training_logs,
+        good_practice_records=good_practice_records,
         trends=trends,
         trend_charts=trend_charts,
         inspections_count=counts["inspections"],
@@ -1652,6 +1759,7 @@ def admin() -> str | Response:
         violations_count=counts["violations"],
         ptw_count=counts["ptw"],
         training_count=counts["training"],
+        good_practices_count=counts["good_practices"],
         training_type_labels=TRAINING_TYPE_LABELS,
         this_week_start=this_week_start, this_week_end=this_week_end,
         last_week_start=last_week_start, last_week_end=last_week_end,
@@ -2187,6 +2295,100 @@ def training_pdf(record_id: str) -> Response | tuple[Response, int]:
     return Response(pdf_bytes, mimetype="application/pdf", headers={"Content-Disposition": f'attachment; filename="training-{record["seq"]}.pdf"'})
 
 
+@app.get("/admin/good-practices/<record_id>")
+@admin_required
+def good_practice_detail(record_id: str) -> str | tuple[str, int]:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT * FROM good_practices WHERE id = ?"), [record_id])
+        row = cursor.fetchone()
+    if not row:
+        return "Record not found", 404
+    record = dict(row)
+    record["photos"] = safe_json_list(record["photos"])
+    return render_template("good_practice_record.html", record=record, photo_urls=photo_urls(record["photos"]))
+
+
+GOOD_PRACTICE_FORM_FIELDS = {
+    "projectName": "project_name", "practiceDate": "practice_date", "location": "location",
+    "observedBy": "observed_by", "category": "category", "categoryOther": "category_other",
+    "description": "description",
+}
+
+
+@app.route("/admin/good-practices/<record_id>/edit", methods=["GET", "POST"])
+@admin_required
+def good_practice_edit(record_id: str) -> str | tuple[str, int] | Response:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT * FROM good_practices WHERE id = ?"), [record_id])
+        row = cursor.fetchone()
+    if not row:
+        return "Record not found", 404
+    record = dict(row)
+    record["photos"] = safe_json_list(record["photos"])
+    error = ""
+    if request.method == "POST":
+        form_payload = {form_key: request.form.get(form_key) for form_key in GOOD_PRACTICE_FORM_FIELDS}
+        try:
+            updated = validate_good_practice(form_payload)
+            with database() as connection:
+                cursor = connection.cursor()
+                cursor.execute(sql(
+                    "UPDATE good_practices SET project_name=?, practice_date=?, location=?, observed_by=?, "
+                    "category=?, category_other=?, description=? WHERE id=?"
+                ), [
+                    updated["project_name"], updated["practice_date"], updated["location"], updated["observed_by"],
+                    updated["category"], updated["category_other"], updated["description"], record_id,
+                ])
+            log_audit("updated", "good_practice", record["report_no"])
+            return redirect(url_for("good_practice_detail", record_id=record_id))
+        except ValueError as err:
+            error = str(err)
+            record = {**record, **{db_key: form_payload[form_key] for form_key, db_key in GOOD_PRACTICE_FORM_FIELDS.items()}}
+    return render_template("good_practice_edit.html", record=record, categories=GOOD_PRACTICE_CATEGORIES, error=error)
+
+
+@app.post("/admin/good-practices/<record_id>/delete")
+@admin_required
+def delete_good_practice(record_id: str) -> Response | tuple[str, int]:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT report_no, photos FROM good_practices WHERE id = ?"), [record_id])
+        row = cursor.fetchone()
+        cursor.execute(sql("DELETE FROM good_practices WHERE id = ?"), [record_id])
+    if row:
+        delete_photos(safe_json_list(row["photos"]))
+        log_audit("deleted", "good_practice", row["report_no"])
+    return redirect(url_for("admin", view="good-practices"))
+
+
+@app.get("/admin/good-practices/<record_id>/photos.zip")
+@admin_required
+def good_practice_photos_zip(record_id: str) -> Response | tuple[Response, int]:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT report_no, photos FROM good_practices WHERE id = ?"), [record_id])
+        row = cursor.fetchone()
+    if not row:
+        return jsonify({"error": "Record not found."}), 404
+    return photos_zip_response(safe_json_list(row["photos"]), f'{row["report_no"]}-photos.zip')
+
+
+@app.get("/admin/good-practices/<record_id>/report.pdf")
+@admin_required
+def good_practice_pdf(record_id: str) -> Response | tuple[Response, int]:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT * FROM good_practices WHERE id = ?"), [record_id])
+        row = cursor.fetchone()
+    if not row:
+        return jsonify({"error": "Record not found."}), 404
+    record = dict(row)
+    pdf_bytes = good_practice_pdf_bytes(record)
+    return Response(pdf_bytes, mimetype="application/pdf", headers={"Content-Disposition": f'attachment; filename="{record["report_no"]}.pdf"'})
+
+
 def inspections_csv(records: list[dict[str, Any]], detailed: bool) -> str:
     output = io.StringIO()
     writer = csv.writer(output)
@@ -2572,6 +2774,58 @@ def export_training_bundle() -> Response:
     return Response(zip_bytes, mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
+def good_practices_csv(records: list[dict[str, Any]]) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Report No.", "Date", "Project / Department", "Location", "Observed By", "Category",
+        "Description", "Submitted At",
+    ])
+    for record in records:
+        writer.writerow([
+            record["report_no"], record["practice_date"], record["project_name"], record["location"],
+            record["observed_by"],
+            record["category_other"] if record["category"] == "Other" and record["category_other"] else record["category"],
+            record["description"], record["created_at"],
+        ])
+    return output.getvalue()
+
+
+@app.get("/admin/export/good-practices")
+@admin_required
+def export_good_practices() -> Response:
+    csv_text = good_practices_csv(filtered_good_practices(limit=5000))
+    filename = f'diriyah-good-practices-{datetime.now(timezone.utc).date().isoformat()}.csv'
+    return Response("﻿" + csv_text, mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+def good_practice_bundle_zip_bytes() -> bytes:
+    records = filtered_good_practices(limit=5000)
+    photo_cache: PhotoCache = {}
+    pdf_entries = []
+    photo_entries = []
+    for record in records:
+        folder = safe_archive_folder(record["report_no"])
+        try:
+            pdf_entries.append((f"{folder}/{record['report_no']}", good_practice_pdf_bytes(record, photo_cache)))
+        except Exception:
+            app.logger.exception("Failed to render good practice PDF for %s", record["report_no"])
+        for index, key in enumerate(safe_json_list(record["photos"]), start=1):
+            photo_entries.append((f"{folder}/photo-{index}", key))
+    return build_bundle_zip(
+        "good-practices.csv", good_practices_csv(records), pdf_entries,
+        photo_entries if b2_configured() else [], photo_cache,
+    )
+
+
+@app.get("/admin/export/good-practices/bundle.zip")
+@admin_required
+def export_good_practice_bundle() -> Response:
+    zip_bytes = good_practice_bundle_zip_bytes()
+    filename = f'diriyah-good-practices-bundle-{datetime.now(timezone.utc).date().isoformat()}.zip'
+    return Response(zip_bytes, mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
 def export_token_valid() -> bool:
     expected = os.environ.get("EXPORT_TOKEN")
     supplied = request.args.get("token") or request.headers.get("X-Export-Token", "")
@@ -2596,6 +2850,7 @@ def backup_all() -> Response | tuple[Response, int]:
         archive.writestr(f"violations-{today}.csv", "\ufeff" + violations_csv(filtered_violations(limit=5000)))
         archive.writestr(f"ptw-log-{today}.csv", "\ufeff" + ptw_csv(filtered_ptw(limit=5000)))
         archive.writestr(f"training-log-{today}.csv", "\ufeff" + training_csv(filtered_training(limit=5000)))
+        archive.writestr(f"good-practices-{today}.csv", "\ufeff" + good_practices_csv(filtered_good_practices(limit=5000)))
     buffer.seek(0)
     filename = f"diriyah-ohs-backup-{today}.zip"
     return Response(buffer.getvalue(), mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
@@ -2625,6 +2880,15 @@ def backup_training() -> Response | tuple[Response, int]:
         return jsonify({"error": "Unauthorized"}), 401
     zip_bytes = training_bundle_zip_bytes()
     filename = f"diriyah-training-backup-{datetime.now(timezone.utc).date().isoformat()}.zip"
+    return Response(zip_bytes, mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@app.get("/admin/backup/good-practices.zip")
+def backup_good_practices() -> Response | tuple[Response, int]:
+    if not export_token_valid():
+        return jsonify({"error": "Unauthorized"}), 401
+    zip_bytes = good_practice_bundle_zip_bytes()
+    filename = f"diriyah-good-practices-backup-{datetime.now(timezone.utc).date().isoformat()}.zip"
     return Response(zip_bytes, mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 

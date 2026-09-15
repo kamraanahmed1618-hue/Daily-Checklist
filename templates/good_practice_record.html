@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}{{ record.report_no }} · Good Practice Record{% endblock %}
+{% block body_class %}record-page{% endblock %}
+{% block content %}
+<section class="record-toolbar no-print">
+  <a class="text-link" href="{{ url_for('admin', view='good-practices') }}">← Back to records</a>
+  <div class="record-toolbar-actions">
+    <form class="delete-form" method="post" action="{{ url_for('delete_good_practice', record_id=record.id) }}">
+      <button class="button ghost danger" type="submit">Delete record</button>
+    </form>
+    <a class="button ghost" href="{{ url_for('good_practice_edit', record_id=record.id) }}">Edit record</a>
+    <a class="button primary" href="{{ url_for('good_practice_pdf', record_id=record.id) }}">Download PDF</a>
+    <button class="button primary" id="print-record" type="button">Print / Save PDF</button>
+  </div>
+</section>
+
+<article class="doc-sheet">
+  <div class="doc-letterhead"><img src="{{ url_for('static', filename='bec-arabia-contracting.png') }}" alt="BEC Arabia Contracting"></div>
+  <div class="doc-band">GOOD PRACTICE OBSERVATION</div>
+
+  <table class="doc-info">
+    <tr><td class="info-label tan">Project / Department:</td><td>{{ record.project_name }}</td><td class="info-label tan">Date:</td><td>{{ record.practice_date }}</td></tr>
+    <tr><td class="info-label tan">Location:</td><td>{{ record.location }}</td><td class="info-label tan">Observed By:</td><td>{{ record.observed_by }}</td></tr>
+    <tr><td class="info-label tan">Category:</td><td colspan="3">{{ record.category }}{% if record.category == 'Other' and record.category_other %} — {{ record.category_other }}{% endif %}</td></tr>
+  </table>
+
+  <div class="doc-band">Description</div>
+  <table class="doc-info stacked">
+    <tr><td>{{ record.description }}</td></tr>
+  </table>
+
+  <div class="doc-band">The Attached Images</div>
+  {% if photo_urls %}
+  <p class="no-print"><a class="text-link" href="{{ url_for('good_practice_photos_zip', record_id=record.id) }}">Download all photos</a></p>
+  <div class="doc-evidence">
+    {% for url in photo_urls %}<a href="{{ url }}" target="_blank" rel="noopener"><img src="{{ url }}" alt="Good practice evidence photo {{ loop.index }}"></a>{% endfor %}
+  </div>
+  {% else %}
+  <p class="doc-note">No photos attached.</p>
+  {% endif %}
+
+  <div class="doc-classification">
+    <span>Classification: BEC Arabia - External - Unrestricted Use</span>
+  </div>
+</article>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='record.js') }}" defer></script>{% endblock %}

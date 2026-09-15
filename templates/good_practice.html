@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Good Practice Observation · 1 Hotel Diriyah OHS{% endblock %}
+{% block body_class %}form-page{% endblock %}
+{% block content %}
+<section class="hero">
+  <div>
+    <div class="partner-logos">
+      <img src="{{ url_for('static', filename='egis.png') }}" alt="Egis">
+      <img src="{{ url_for('static', filename='dewan.png') }}" alt="Dewan">
+      <img src="{{ url_for('static', filename='bec-ashoka.png') }}" alt="BEC Ashoka">
+    </div>
+    <span class="eyebrow">Daily site assurance</span>
+    <h1>Good Practice Observation</h1>
+    <p>Recognize a good safety practice observed on site so it can be shared and repeated elsewhere.</p>
+  </div>
+</section>
+
+<div id="success-panel" class="success-panel hidden" role="status" aria-live="polite">
+  <span class="success-icon">✓</span>
+  <div>
+    <span class="eyebrow">Observation saved</span>
+    <h2>Good practice submitted</h2>
+    <p id="success-copy"></p>
+    <button class="button primary" id="new-report" type="button">Log another good practice</button>
+  </div>
+</div>
+
+<form id="good-practice-form" novalidate>
+  <section class="card">
+    <div class="section-heading">
+      <div><span class="step-number">01</span><h2>Basic information</h2></div>
+      <p>Fields marked <span class="required">*</span> are required</p>
+    </div>
+    <div class="field-grid">
+      <label><span>Project / Department <b>*</b></span><input name="projectName" required maxlength="200" value="1 Hotel Diriyah"></label>
+      <label><span>Location <b>*</b></span><input name="location" required maxlength="200" placeholder="Area / section"></label>
+      <label><span>Date observed <b>*</b></span><input name="practiceDate" type="date" required></label>
+      <label><span>Observed by (name &amp; designation) <b>*</b></span><input name="observedBy" required maxlength="200"></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-heading"><div><span class="step-number">02</span><h2>Category</h2></div></div>
+    <div class="field-grid">
+      <label><span>Category <b>*</b></span>
+        <select name="category" required>
+          <option value="">Select</option>
+          {% for item in categories %}<option value="{{ item }}">{{ item }}</option>{% endfor %}
+        </select>
+      </label>
+      <label><span>If "Other", specify</span><input name="categoryOther" maxlength="200"></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-heading"><div><span class="step-number">03</span><h2>Description</h2></div></div>
+    <div class="field-grid one-col">
+      <label><span>Describe the good practice observed <b>*</b></span><textarea name="description" rows="4" maxlength="3000" required></textarea></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-heading"><div><span class="step-number">04</span><h2>Attached photos</h2></div></div>
+    <div class="photo-upload" id="good-practice-photo-upload">
+      <input type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
+      <button class="button secondary photo-add-button" type="button">+ Add photos</button>
+      <span class="field-note">JPEG, PNG, or WEBP · up to 8 photos · 8 MB each</span>
+      <div class="photo-grid"></div>
+    </div>
+  </section>
+
+  <div id="form-error" class="form-error hidden" role="alert"></div>
+  <div class="submit-bar">
+    <div><strong>Good practice observation</strong><span>Submit to add it to the records dashboard</span></div>
+    <button class="button primary submit-button" type="submit">Submit observation</button>
+  </div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='photo_upload.js') }}" defer></script>
+<script src="{{ url_for('static', filename='good_practice.js') }}" defer></script>
+{% endblock %}

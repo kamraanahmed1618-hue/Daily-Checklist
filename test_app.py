@@ -31,6 +31,7 @@ class ChecklistApplicationTests(unittest.TestCase):
             connection.execute("DELETE FROM violation_notices")
             connection.execute("DELETE FROM ptw_logs")
             connection.execute("DELETE FROM training_logs")
+            connection.execute("DELETE FROM good_practices")
             connection.execute("DELETE FROM audit_log")
 
     def payload(self):
@@ -110,10 +111,20 @@ class ChecklistApplicationTests(unittest.TestCase):
             "remarks": "Covered anchor points and harness inspection.",
         }
 
+    def good_practice_payload(self):
+        return {
+            "projectName": "1 Hotel Diriyah",
+            "location": "Zone 3",
+            "practiceDate": "2026-08-20",
+            "observedBy": "Ali (Safety Officer)",
+            "category": "Housekeeping",
+            "description": "Materials neatly stacked and walkway kept clear.",
+        }
+
     def test_homepage_links_to_all_systems(self):
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
-        for path in ("/inspection", "/near-miss", "/violation", "/ptw", "/training", "/admin"):
+        for path in ("/inspection", "/near-miss", "/violation", "/ptw", "/training", "/good-practice", "/admin"):
             self.assertIn(path.encode(), response.data)
 
     def test_homepage_is_never_cached(self):
@@ -302,6 +313,44 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertEqual(pdf_response.status_code, 200)
         self.assertEqual(pdf_response.mimetype, "application/pdf")
         self.assertIn("NEAR-MISS-001.pdf", pdf_response.headers["Content-Disposition"])
+        self.assertTrue(pdf_response.data.startswith(b"%PDF"))
+
+    def test_good_practice_form_page_loads(self):
+        self.assertEqual(self.client.get("/good-practice").status_code, 200)
+
+    def test_good_practice_requires_valid_category(self):
+        payload = self.good_practice_payload()
+        payload["category"] = "Not a real category"
+        response = self.client.post("/api/good-practice", json=payload)
+        self.assertEqual(response.status_code, 400)
+
+    def test_submit_review_and_export_good_practice(self):
+        response = self.client.post("/api/good-practice", json=self.good_practice_payload())
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json["reportNo"], "GOOD-PRACTICE-001")
+        record_id = response.json["id"]
+
+        self.login()
+        dashboard = self.client.get("/admin?view=good-practices")
+        self.assertIn(b"GOOD-PRACTICE-001", dashboard.data)
+        detail = self.client.get(f"/admin/good-practices/{record_id}")
+        self.assertEqual(detail.status_code, 200)
+        self.assertIn(b"GOOD PRACTICE OBSERVATION", detail.data)
+        self.assertIn(b"Housekeeping", detail.data)
+
+        export = self.client.get("/admin/export/good-practices")
+        self.assertEqual(export.status_code, 200)
+        self.assertIn("GOOD-PRACTICE-001", export.get_data(as_text=True))
+
+    def test_good_practice_pdf_download(self):
+        response = self.client.post("/api/good-practice", json=self.good_practice_payload())
+        record_id = response.json["id"]
+        self.login()
+
+        pdf_response = self.client.get(f"/admin/good-practices/{record_id}/report.pdf")
+        self.assertEqual(pdf_response.status_code, 200)
+        self.assertEqual(pdf_response.mimetype, "application/pdf")
+        self.assertIn("GOOD-PRACTICE-001.pdf", pdf_response.headers["Content-Disposition"])
         self.assertTrue(pdf_response.data.startswith(b"%PDF"))
 
     def test_violation_requires_employee_name(self):
@@ -1055,6 +1104,82 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertEqual(row["action"], "deleted")
         self.assertEqual(row["record_type"], "near_miss")
 
+    def test_delete_good_practice(self):
+        record_id = self.client.post("/api/good-practice", json=self.good_practice_payload()).json["id"]
+        self.login()
+        response = self.client.post(f"/admin/good-practices/{record_id}/delete")
+        self.assertEqual(response.status_code, 302)
+        detail = self.client.get(f"/admin/good-practices/{record_id}")
+        self.assertEqual(detail.status_code, 404)
+
+    def test_delete_good_practice_logs_audit_entry(self):
+        from app import database
+
+        response = self.client.post("/api/good-practice", json=self.good_practice_payload())
+        record_id = response.json["id"]
+        report_no = response.json["reportNo"]
+        self.login()
+        self.client.post(f"/admin/good-practices/{record_id}/delete")
+
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT * FROM audit_log WHERE record_ref = ?", [report_no])
+            row = cursor.fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row["action"], "deleted")
+        self.assertEqual(row["record_type"], "good_practice")
+
+    def test_good_practice_edit_page_prefills_existing_values(self):
+        record_id = self.client.post("/api/good-practice", json=self.good_practice_payload()).json["id"]
+        self.login()
+        response = self.client.get(f"/admin/good-practices/{record_id}/edit")
+        self.assertEqual(response.status_code, 200)
+        body = response.data.decode()
+        self.assertIn('value="Zone 3"', body)
+        self.assertIn('value="Ali (Safety Officer)"', body)
+        self.assertIn('value="Housekeeping" selected', body)
+
+    def test_good_practice_edit_saves_changes_and_logs_audit(self):
+        from app import database
+
+        response = self.client.post("/api/good-practice", json=self.good_practice_payload())
+        record_id = response.json["id"]
+        report_no = response.json["reportNo"]
+        self.login()
+        edit_response = self.client.post(f"/admin/good-practices/{record_id}/edit", data={
+            "projectName": "1 Hotel Diriyah", "location": "Zone 4", "practiceDate": "2026-08-21",
+            "observedBy": "Ali (Safety Officer)", "category": "PPE Compliance", "categoryOther": "",
+            "description": "All workers wearing full PPE at height.",
+        })
+        self.assertEqual(edit_response.status_code, 302)
+        detail = self.client.get(f"/admin/good-practices/{record_id}")
+        self.assertIn(b"Zone 4", detail.data)
+        self.assertIn(b"PPE Compliance", detail.data)
+        self.assertIn(b"All workers wearing full PPE at height.", detail.data)
+
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT * FROM audit_log WHERE record_ref = ?", [report_no])
+            row = cursor.fetchone()
+        self.assertEqual(row["action"], "updated")
+        self.assertEqual(row["record_type"], "good_practice")
+
+    def test_good_practice_edit_does_not_touch_photos(self):
+        payload = self.good_practice_payload()
+        payload["photoKeys"] = ["uploads/tok11111/aaaaaaaaaaaaaaaaaaaa.jpg"]
+        record_id = self.client.post("/api/good-practice", json=payload).json["id"]
+        self.login()
+        self.client.post(f"/admin/good-practices/{record_id}/edit", data={
+            "projectName": "1 Hotel Diriyah", "location": "Zone 3", "practiceDate": "2026-08-20",
+            "observedBy": "Ali (Safety Officer)", "category": "Housekeeping", "categoryOther": "",
+            "description": "Materials neatly stacked and walkway kept clear.",
+        })
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT photos FROM good_practices WHERE id = ?", [record_id])
+            row = cursor.fetchone()
+        self.assertIn("aaaaaaaaaaaaaaaaaaaa.jpg", row["photos"])
+
     def test_near_miss_and_violation_detail_pages_render(self):
         near_miss_id = self.client.post("/api/near-miss", json=self.near_miss_payload()).json["id"]
         violation_id = self.client.post("/api/violations", json=self.violation_payload()).json["id"]
@@ -1295,6 +1420,7 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.client.post("/api/violations", json=self.violation_payload())
         self.client.post("/api/ptw", json=self.ptw_payload())
         self.client.post("/api/training", json=self.training_payload())
+        self.client.post("/api/good-practice", json=self.good_practice_payload())
 
         response = self.client.get("/admin/backup?token=test-export-token")
         self.assertEqual(response.status_code, 200)
@@ -1305,13 +1431,14 @@ class ChecklistApplicationTests(unittest.TestCase):
         # can't time out or crash the whole backup.
         archive = zipfile.ZipFile(io.BytesIO(response.data))
         names = archive.namelist()
-        self.assertEqual(len(names), 6)
+        self.assertEqual(len(names), 7)
         self.assertTrue(any(name.startswith("inspections-summary-") for name in names))
         self.assertTrue(any(name.startswith("inspections-detailed-") for name in names))
         self.assertTrue(any(name.startswith("near-miss-") for name in names))
         self.assertTrue(any(name.startswith("violations-") for name in names))
         self.assertTrue(any(name.startswith("ptw-log-") for name in names))
         self.assertTrue(any(name.startswith("training-log-") for name in names))
+        self.assertTrue(any(name.startswith("good-practices-") for name in names))
 
     def test_per_type_backup_endpoints_reject_missing_or_wrong_token(self):
         for path in ("/admin/backup/near-miss.zip", "/admin/backup/violations.zip", "/admin/backup/training.zip"):
