@@ -659,10 +659,10 @@ def init_db() -> None:
         app.logger.exception("Could not create unique index on ptw_logs.ptw_number (likely pre-existing duplicates)")
 
 
-def log_audit(action: str, record_type: str, record_ref: str, actor_name: str) -> None:
-    """Records who edited or deleted a record, and when — there are no individual admin
-    accounts (one shared password), so actor_name is whatever the admin typed into the
-    "Your name" field at the point of action, not an authenticated identity."""
+def log_audit(action: str, record_type: str, record_ref: str, actor_name: str = "") -> None:
+    """Records what was edited or deleted, and when — there are no individual admin
+    accounts (one shared password) and the admin is no longer prompted for a name at
+    the point of action, so actor_name is unused today but kept for schema stability."""
     with database() as connection:
         cursor = connection.cursor()
         cursor.execute(sql(
@@ -1716,13 +1716,10 @@ def record_edit(record_id: str) -> str | tuple[str, int] | Response:
     record = dict(row)
     error = ""
     if request.method == "POST":
-        edited_by = request.form.get("editedBy", "").strip()
         form_payload = {form_key: request.form.get(form_key) for form_key in INSPECTION_HEADER_FIELDS}
         form_payload["inspectionDate"] = request.form.get("inspectionDate")
         form_payload["inspectionTime"] = request.form.get("inspectionTime")
         try:
-            if not edited_by:
-                raise ValueError("Your name is required to save changes.")
             updated = validate_inspection_header(form_payload)
             with database() as connection:
                 cursor = connection.cursor()
@@ -1734,7 +1731,7 @@ def record_edit(record_id: str) -> str | tuple[str, int] | Response:
                     updated["inspection_date"], updated["inspection_time"], updated["shift"], updated["remarks"],
                     updated["signoff_name"], record_id,
                 ])
-            log_audit("updated", "inspection", record["report_no"], edited_by)
+            log_audit("updated", "inspection", record["report_no"])
             return redirect(url_for("record_detail", record_id=record_id))
         except ValueError as err:
             error = str(err)
@@ -1747,16 +1744,13 @@ def record_edit(record_id: str) -> str | tuple[str, int] | Response:
 @app.post("/admin/records/<record_id>/delete")
 @admin_required
 def delete_record(record_id: str) -> Response | tuple[str, int]:
-    deleted_by = request.form.get("deletedBy", "").strip()
-    if not deleted_by:
-        return "Your name is required to delete a record.", 400
     with database() as connection:
         cursor = connection.cursor()
         cursor.execute(sql("SELECT report_no FROM inspections WHERE id = ?"), [record_id])
         row = cursor.fetchone()
         cursor.execute(sql("DELETE FROM inspections WHERE id = ?"), [record_id])
     if row:
-        log_audit("deleted", "inspection", row["report_no"], deleted_by)
+        log_audit("deleted", "inspection", row["report_no"])
     return redirect(url_for("admin", view="inspections"))
 
 
@@ -1803,15 +1797,12 @@ def near_miss_edit(record_id: str) -> str | tuple[str, int] | Response:
         record[field] = safe_json_list(record[field])
     error = ""
     if request.method == "POST":
-        edited_by = request.form.get("editedBy", "").strip()
         form_payload = {form_key: request.form.get(form_key) for form_key in NEAR_MISS_FORM_FIELDS}
         form_payload["nearMissTypes"] = request.form.getlist("nearMissTypes")
         form_payload["rootCauses"] = request.form.getlist("rootCauses")
         form_payload["correctiveActions"] = [line.strip() for line in request.form.get("correctiveActions", "").splitlines()]
         form_payload["preventiveMeasures"] = [line.strip() for line in request.form.get("preventiveMeasures", "").splitlines()]
         try:
-            if not edited_by:
-                raise ValueError("Your name is required to save changes.")
             updated = validate_near_miss(form_payload)
             with database() as connection:
                 cursor = connection.cursor()
@@ -1833,7 +1824,7 @@ def near_miss_edit(record_id: str) -> str | tuple[str, int] | Response:
                     updated["reported_by_signoff"], updated["hse_manager_signoff"], updated["followup_by"],
                     updated["followup_date"], updated["status"], updated["status_reason"], record_id,
                 ])
-            log_audit("updated", "near_miss", record["report_no"], edited_by)
+            log_audit("updated", "near_miss", record["report_no"])
             return redirect(url_for("near_miss_detail", record_id=record_id))
         except ValueError as err:
             error = str(err)
@@ -1852,9 +1843,6 @@ def near_miss_edit(record_id: str) -> str | tuple[str, int] | Response:
 @app.post("/admin/near-miss/<record_id>/delete")
 @admin_required
 def delete_near_miss(record_id: str) -> Response | tuple[str, int]:
-    deleted_by = request.form.get("deletedBy", "").strip()
-    if not deleted_by:
-        return "Your name is required to delete a record.", 400
     with database() as connection:
         cursor = connection.cursor()
         cursor.execute(sql("SELECT report_no, photos FROM near_miss_reports WHERE id = ?"), [record_id])
@@ -1862,7 +1850,7 @@ def delete_near_miss(record_id: str) -> Response | tuple[str, int]:
         cursor.execute(sql("DELETE FROM near_miss_reports WHERE id = ?"), [record_id])
     if row:
         delete_photos(safe_json_list(row["photos"]))
-        log_audit("deleted", "near_miss", row["report_no"], deleted_by)
+        log_audit("deleted", "near_miss", row["report_no"])
     return redirect(url_for("admin", view="near-miss"))
 
 
@@ -1940,12 +1928,9 @@ def violation_edit(record_id: str) -> str | tuple[str, int] | Response:
     record["photos"] = safe_json_list(record["photos"])
     error = ""
     if request.method == "POST":
-        edited_by = request.form.get("editedBy", "").strip()
         form_payload = {form_key: request.form.get(form_key) for form_key in VIOLATION_FORM_FIELDS}
         form_payload["actions"] = request.form.getlist("actions")
         try:
-            if not edited_by:
-                raise ValueError("Your name is required to save changes.")
             updated = validate_violation(form_payload)
             with database() as connection:
                 cursor = connection.cursor()
@@ -1961,7 +1946,7 @@ def violation_edit(record_id: str) -> str | tuple[str, int] | Response:
                     json.dumps(updated["actions"]), updated["issued_by_name"], updated["issued_by_position"],
                     record_id,
                 ])
-            log_audit("updated", "violation", record["violation_no"], edited_by)
+            log_audit("updated", "violation", record["violation_no"])
             return redirect(url_for("violation_detail", record_id=record_id))
         except ValueError as err:
             error = str(err)
@@ -1976,9 +1961,6 @@ def violation_edit(record_id: str) -> str | tuple[str, int] | Response:
 @app.post("/admin/violations/<record_id>/delete")
 @admin_required
 def delete_violation(record_id: str) -> Response | tuple[str, int]:
-    deleted_by = request.form.get("deletedBy", "").strip()
-    if not deleted_by:
-        return "Your name is required to delete a record.", 400
     with database() as connection:
         cursor = connection.cursor()
         cursor.execute(sql("SELECT violation_no, photos FROM violation_notices WHERE id = ?"), [record_id])
@@ -1986,7 +1968,7 @@ def delete_violation(record_id: str) -> Response | tuple[str, int]:
         cursor.execute(sql("DELETE FROM violation_notices WHERE id = ?"), [record_id])
     if row:
         delete_photos(safe_json_list(row["photos"]))
-        log_audit("deleted", "violation", row["violation_no"], deleted_by)
+        log_audit("deleted", "violation", row["violation_no"])
     return redirect(url_for("admin", view="violations"))
 
 
@@ -2040,10 +2022,7 @@ def ptw_detail(record_id: str) -> str | tuple[str, int] | Response:
     error = ""
     if request.method == "POST":
         form_payload = {key: request.form.get(key) for key in PTW_FORM_FIELDS}
-        edited_by = request.form.get("editedBy", "").strip()
         try:
-            if not edited_by:
-                raise ValueError("Your name is required to save changes.")
             updated = validate_ptw(form_payload)
             with database() as connection:
                 cursor = connection.cursor()
@@ -2061,7 +2040,7 @@ def ptw_detail(record_id: str) -> str | tuple[str, int] | Response:
                     updated["company"], updated["status"], updated["workers_count"], updated["reviewed_by"],
                     datetime.now(timezone.utc).isoformat(), record_id,
                 ])
-            log_audit("updated", "ptw", updated["ptw_number"], edited_by)
+            log_audit("updated", "ptw", updated["ptw_number"])
             return redirect(url_for("admin", view="ptw"))
         except ValueError as err:
             error = str(err)
@@ -2072,16 +2051,13 @@ def ptw_detail(record_id: str) -> str | tuple[str, int] | Response:
 @app.post("/admin/ptw/<record_id>/delete")
 @admin_required
 def delete_ptw(record_id: str) -> Response | tuple[str, int]:
-    deleted_by = request.form.get("deletedBy", "").strip()
-    if not deleted_by:
-        return "Your name is required to delete a record.", 400
     with database() as connection:
         cursor = connection.cursor()
         cursor.execute(sql("SELECT ptw_number FROM ptw_logs WHERE id = ?"), [record_id])
         row = cursor.fetchone()
         cursor.execute(sql("DELETE FROM ptw_logs WHERE id = ?"), [record_id])
     if row:
-        log_audit("deleted", "ptw", row["ptw_number"], deleted_by)
+        log_audit("deleted", "ptw", row["ptw_number"])
     return redirect(url_for("admin", view="ptw"))
 
 
@@ -2129,13 +2105,10 @@ def training_edit(record_id: str) -> str | tuple[str, int] | Response:
     record["key_lessons"] = safe_json_list(record["key_lessons"])
     error = ""
     if request.method == "POST":
-        edited_by = request.form.get("editedBy", "").strip()
         form_payload = {form_key: request.form.get(form_key) for form_key in TRAINING_FORM_FIELDS}
         form_payload["attendeesCount"] = request.form.get("attendeesCount")
         form_payload["keyLessons"] = [line.strip() for line in request.form.get("keyLessons", "").splitlines()]
         try:
-            if not edited_by:
-                raise ValueError("Your name is required to save changes.")
             updated = validate_training(form_payload)
             with database() as connection:
                 cursor = connection.cursor()
@@ -2147,7 +2120,7 @@ def training_edit(record_id: str) -> str | tuple[str, int] | Response:
                     updated["location"], updated["duration"], updated["attendees_count"], updated["objective"],
                     updated["summary"], json.dumps(updated["key_lessons"]), updated["remarks"], record_id,
                 ])
-            log_audit("updated", "training", f'{record["seq"]} - {record["topic"]}', edited_by)
+            log_audit("updated", "training", f'{record["seq"]} - {record["topic"]}')
             return redirect(url_for("training_detail", record_id=record_id))
         except ValueError as err:
             error = str(err)
@@ -2165,9 +2138,6 @@ def training_edit(record_id: str) -> str | tuple[str, int] | Response:
 @app.post("/admin/training/<record_id>/delete")
 @admin_required
 def delete_training(record_id: str) -> Response | tuple[str, int]:
-    deleted_by = request.form.get("deletedBy", "").strip()
-    if not deleted_by:
-        return "Your name is required to delete a record.", 400
     with database() as connection:
         cursor = connection.cursor()
         cursor.execute(sql("SELECT topic, seq, photos, attendance_photos FROM training_logs WHERE id = ?"), [record_id])
@@ -2175,7 +2145,7 @@ def delete_training(record_id: str) -> Response | tuple[str, int]:
         cursor.execute(sql("DELETE FROM training_logs WHERE id = ?"), [record_id])
     if row:
         delete_photos(safe_json_list(row["photos"]) + safe_json_list(row["attendance_photos"]))
-        log_audit("deleted", "training", f'{row["seq"]} - {row["topic"]}', deleted_by)
+        log_audit("deleted", "training", f'{row["seq"]} - {row["topic"]}')
     return redirect(url_for("admin", view="training"))
 
 

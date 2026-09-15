@@ -450,7 +450,6 @@ class ChecklistApplicationTests(unittest.TestCase):
             "workDescription": "Drilling", "areaHsePersonnel": "", "location": "Basement", "shift": "",
             "startDate": "2026-08-18", "startTime": "08:00", "endDate": "2026-08-18", "endTime": "17:00",
             "company": "BAJV", "status": "closed", "workersCount": "", "reviewedBy": "",
-            "editedBy": "QA Inspector",
         })
 
         response = self.client.get("/admin/export/ptw.xlsx")
@@ -536,7 +535,6 @@ class ChecklistApplicationTests(unittest.TestCase):
             "workDescription": "Drilling", "areaHsePersonnel": "", "location": "Basement", "shift": "",
             "startDate": "2026-08-18", "startTime": "08:00", "endDate": "2026-08-18", "endTime": "17:00",
             "company": "BAJV", "status": "closed", "workersCount": "", "reviewedBy": "",
-            "editedBy": "QA Inspector",
         })
 
         overview = self.client.get("/admin?view=ptw")
@@ -559,7 +557,6 @@ class ChecklistApplicationTests(unittest.TestCase):
             "location": payload["location"], "shift": "", "startDate": payload["startDate"],
             "startTime": payload["startTime"], "endDate": payload["endDate"], "endTime": payload["endTime"],
             "company": payload["company"], "status": "closed", "workersCount": "", "reviewedBy": "Faisal",
-            "editedBy": "QA Inspector",
         })
         self.assertEqual(response.status_code, 302)
         detail = self.client.get(f"/admin/ptw/{record_id}")
@@ -573,7 +570,6 @@ class ChecklistApplicationTests(unittest.TestCase):
             row = cursor.fetchone()
         self.assertIsNotNone(row)
         self.assertEqual(row["action"], "updated")
-        self.assertEqual(row["actor_name"], "QA Inspector")
 
     def test_ptw_edit_rejects_invalid_update_and_keeps_entered_values(self):
         record_id = self.client.post("/api/ptw", json=self.ptw_payload()).json["id"]
@@ -583,24 +579,9 @@ class ChecklistApplicationTests(unittest.TestCase):
             "workDescription": "Drilling", "areaHsePersonnel": "", "location": "Basement", "shift": "",
             "startDate": "2026-08-18", "startTime": "08:00", "endDate": "2026-08-18", "endTime": "17:00",
             "company": "BAJV", "status": "open", "workersCount": "", "reviewedBy": "",
-            "editedBy": "QA Inspector",
         })
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"PTW number is required", response.data)
-
-    def test_ptw_edit_requires_actor_name(self):
-        record_id = self.client.post("/api/ptw", json=self.ptw_payload()).json["id"]
-        self.login()
-        payload = self.ptw_payload()
-        response = self.client.post(f"/admin/ptw/{record_id}", data={
-            "ptwNumber": payload["ptwNumber"], "issuer": payload["issuer"], "receiver": payload["receiver"],
-            "ptwType": payload["ptwType"], "workDescription": payload["workDescription"], "areaHsePersonnel": "",
-            "location": payload["location"], "shift": "", "startDate": payload["startDate"],
-            "startTime": payload["startTime"], "endDate": payload["endDate"], "endTime": payload["endTime"],
-            "company": payload["company"], "status": "open", "workersCount": "", "reviewedBy": "",
-        })
-        self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Your name is required", response.data)
 
     def test_ptw_number_must_be_unique_on_create(self):
         self.client.post("/api/ptw", json=self.ptw_payload())
@@ -622,7 +603,6 @@ class ChecklistApplicationTests(unittest.TestCase):
             "location": payload["location"], "shift": "", "startDate": payload["startDate"],
             "startTime": payload["startTime"], "endDate": payload["endDate"], "endTime": payload["endTime"],
             "company": payload["company"], "status": "open", "workersCount": "", "reviewedBy": "",
-            "editedBy": "QA Inspector",
         })
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"already in use", response.data)
@@ -633,25 +613,16 @@ class ChecklistApplicationTests(unittest.TestCase):
             "location": payload["location"], "shift": "", "startDate": payload["startDate"],
             "startTime": payload["startTime"], "endDate": payload["endDate"], "endTime": payload["endTime"],
             "company": payload["company"], "status": "open", "workersCount": "", "reviewedBy": "",
-            "editedBy": "QA Inspector",
         })
         self.assertEqual(unchanged.status_code, 302)
 
     def test_delete_ptw(self):
         record_id = self.client.post("/api/ptw", json=self.ptw_payload()).json["id"]
         self.login()
-        response = self.client.post(f"/admin/ptw/{record_id}/delete", data={"deletedBy": "QA Inspector"})
+        response = self.client.post(f"/admin/ptw/{record_id}/delete")
         self.assertEqual(response.status_code, 302)
         detail = self.client.get(f"/admin/ptw/{record_id}")
         self.assertEqual(detail.status_code, 404)
-
-    def test_delete_ptw_requires_actor_name(self):
-        record_id = self.client.post("/api/ptw", json=self.ptw_payload()).json["id"]
-        self.login()
-        response = self.client.post(f"/admin/ptw/{record_id}/delete")
-        self.assertEqual(response.status_code, 400)
-        detail = self.client.get(f"/admin/ptw/{record_id}")
-        self.assertEqual(detail.status_code, 200)  # not deleted
 
     def test_training_requires_valid_session_type(self):
         payload = self.training_payload()
@@ -795,7 +766,7 @@ class ChecklistApplicationTests(unittest.TestCase):
     def test_delete_training(self):
         record_id = self.client.post("/api/training", json=self.training_payload()).json["id"]
         self.login()
-        response = self.client.post(f"/admin/training/{record_id}/delete", data={"deletedBy": "QA Inspector"})
+        response = self.client.post(f"/admin/training/{record_id}/delete")
         self.assertEqual(response.status_code, 302)
         detail = self.client.get(f"/admin/training/{record_id}")
         self.assertEqual(detail.status_code, 404)
@@ -1038,7 +1009,7 @@ class ChecklistApplicationTests(unittest.TestCase):
     def test_delete_record(self):
         record_id = self.client.post("/api/inspections", json=self.payload()).json["id"]
         self.login()
-        response = self.client.post(f"/admin/records/{record_id}/delete", data={"deletedBy": "QA Inspector"})
+        response = self.client.post(f"/admin/records/{record_id}/delete")
         self.assertEqual(response.status_code, 302)
         detail = self.client.get(f"/admin/records/{record_id}")
         self.assertEqual(detail.status_code, 404)
@@ -1046,7 +1017,7 @@ class ChecklistApplicationTests(unittest.TestCase):
     def test_delete_near_miss(self):
         record_id = self.client.post("/api/near-miss", json=self.near_miss_payload()).json["id"]
         self.login()
-        response = self.client.post(f"/admin/near-miss/{record_id}/delete", data={"deletedBy": "QA Inspector"})
+        response = self.client.post(f"/admin/near-miss/{record_id}/delete")
         self.assertEqual(response.status_code, 302)
         detail = self.client.get(f"/admin/near-miss/{record_id}")
         self.assertEqual(detail.status_code, 404)
@@ -1054,18 +1025,18 @@ class ChecklistApplicationTests(unittest.TestCase):
     def test_delete_violation(self):
         record_id = self.client.post("/api/violations", json=self.violation_payload()).json["id"]
         self.login()
-        response = self.client.post(f"/admin/violations/{record_id}/delete", data={"deletedBy": "QA Inspector"})
+        response = self.client.post(f"/admin/violations/{record_id}/delete")
         self.assertEqual(response.status_code, 302)
         detail = self.client.get(f"/admin/violations/{record_id}")
         self.assertEqual(detail.status_code, 404)
 
-    def test_delete_requires_actor_name(self):
+    def test_delete_without_form_data_still_works(self):
         record_id = self.client.post("/api/near-miss", json=self.near_miss_payload()).json["id"]
         self.login()
         response = self.client.post(f"/admin/near-miss/{record_id}/delete")
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 302)
         detail = self.client.get(f"/admin/near-miss/{record_id}")
-        self.assertEqual(detail.status_code, 200)  # not deleted
+        self.assertEqual(detail.status_code, 404)
 
     def test_delete_logs_audit_entry(self):
         from app import database
@@ -1074,7 +1045,7 @@ class ChecklistApplicationTests(unittest.TestCase):
         record_id = response.json["id"]
         report_no = response.json["reportNo"]
         self.login()
-        self.client.post(f"/admin/near-miss/{record_id}/delete", data={"deletedBy": "QA Inspector"})
+        self.client.post(f"/admin/near-miss/{record_id}/delete")
 
         with database() as connection:
             cursor = connection.cursor()
@@ -1083,7 +1054,6 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertIsNotNone(row)
         self.assertEqual(row["action"], "deleted")
         self.assertEqual(row["record_type"], "near_miss")
-        self.assertEqual(row["actor_name"], "QA Inspector")
 
     def test_near_miss_and_violation_detail_pages_render(self):
         near_miss_id = self.client.post("/api/near-miss", json=self.near_miss_payload()).json["id"]
@@ -1112,7 +1082,7 @@ class ChecklistApplicationTests(unittest.TestCase):
         edit_response = self.client.post(f"/admin/near-miss/{record_id}/edit", data={
             "departmentProject": "Zone 3B", "location": "Podium Level 3", "incidentDate": "2026-08-16",
             "incidentTime": "10:00", "reportedBy": "Foreman A", "whatHappened": "Ladder slipped on wet floor.",
-            "nearMissTypes": "Unsafe Condition", "reportedBySignoff": "Foreman A", "editedBy": "QA Tester",
+            "nearMissTypes": "Unsafe Condition", "reportedBySignoff": "Foreman A",
         })
         self.assertEqual(edit_response.status_code, 302)
         detail = self.client.get(f"/admin/near-miss/{record_id}")
@@ -1125,18 +1095,6 @@ class ChecklistApplicationTests(unittest.TestCase):
             cursor.execute("SELECT * FROM audit_log WHERE record_ref = ?", [report_no])
             row = cursor.fetchone()
         self.assertEqual(row["action"], "updated")
-        self.assertEqual(row["actor_name"], "QA Tester")
-
-    def test_near_miss_edit_requires_actor_name(self):
-        record_id = self.client.post("/api/near-miss", json=self.near_miss_payload()).json["id"]
-        self.login()
-        response = self.client.post(f"/admin/near-miss/{record_id}/edit", data={
-            "departmentProject": "Zone 3", "location": "Podium Level 2", "incidentDate": "2026-08-16",
-            "incidentTime": "10:00", "reportedBy": "Foreman A", "whatHappened": "Ladder slipped.",
-            "nearMissTypes": "Unsafe Condition", "reportedBySignoff": "Foreman A",
-        })
-        self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Your name is required", response.data)
 
     def test_near_miss_edit_does_not_touch_photos(self):
         payload = self.near_miss_payload()
@@ -1146,7 +1104,7 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.client.post(f"/admin/near-miss/{record_id}/edit", data={
             "departmentProject": "Zone 3", "location": "Podium Level 2", "incidentDate": "2026-08-16",
             "incidentTime": "10:00", "reportedBy": "Foreman A", "whatHappened": "Ladder slipped.",
-            "nearMissTypes": "Unsafe Condition", "reportedBySignoff": "Foreman A", "editedBy": "QA Tester",
+            "nearMissTypes": "Unsafe Condition", "reportedBySignoff": "Foreman A",
         })
         with database() as connection:
             cursor = connection.cursor()
@@ -1174,7 +1132,7 @@ class ChecklistApplicationTests(unittest.TestCase):
             "employeeName": "Jane Doe", "companyContractor": payload["companyContractor"],
             "violationLocation": payload["violationLocation"], "violationType": payload["violationType"],
             "violationDescription": "Worker observed without safety glasses.",
-            "actions": "Final Warning", "issuedByName": payload["issuedByName"], "editedBy": "QA Tester",
+            "actions": "Final Warning", "issuedByName": payload["issuedByName"],
         })
         self.assertEqual(edit_response.status_code, 302)
         detail = self.client.get(f"/admin/violations/{record_id}")
@@ -1186,21 +1144,6 @@ class ChecklistApplicationTests(unittest.TestCase):
             cursor.execute("SELECT * FROM audit_log WHERE record_ref = ?", [violation_no])
             row = cursor.fetchone()
         self.assertEqual(row["action"], "updated")
-        self.assertEqual(row["actor_name"], "QA Tester")
-
-    def test_violation_edit_requires_actor_name(self):
-        record_id = self.client.post("/api/violations", json=self.violation_payload()).json["id"]
-        self.login()
-        payload = self.violation_payload()
-        response = self.client.post(f"/admin/violations/{record_id}/edit", data={
-            "projectName": payload["projectName"], "violationDate": payload["violationDate"],
-            "employeeName": payload["employeeName"], "companyContractor": payload["companyContractor"],
-            "violationLocation": payload["violationLocation"], "violationType": payload["violationType"],
-            "violationDescription": payload["violationDescription"],
-            "issuedByName": payload["issuedByName"],
-        })
-        self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Your name is required", response.data)
 
     def test_violation_edit_does_not_touch_photos(self):
         payload = self.violation_payload()
@@ -1213,7 +1156,7 @@ class ChecklistApplicationTests(unittest.TestCase):
             "employeeName": edit_payload["employeeName"], "companyContractor": edit_payload["companyContractor"],
             "violationLocation": edit_payload["violationLocation"], "violationType": edit_payload["violationType"],
             "violationDescription": edit_payload["violationDescription"],
-            "issuedByName": edit_payload["issuedByName"], "editedBy": "QA Tester",
+            "issuedByName": edit_payload["issuedByName"],
         })
         with database() as connection:
             cursor = connection.cursor()
@@ -1242,7 +1185,7 @@ class ChecklistApplicationTests(unittest.TestCase):
             "duration": payload["duration"], "attendeesCount": payload["attendeesCount"],
             "objective": payload["objective"], "summary": "Updated summary text.",
             "keyLessons": "Inspect harness daily.\nUse tie-off above shoulder height.",
-            "remarks": payload["remarks"], "editedBy": "QA Tester",
+            "remarks": payload["remarks"],
         })
         self.assertEqual(edit_response.status_code, 302)
         detail = self.client.get(f"/admin/training/{record_id}")
@@ -1255,17 +1198,6 @@ class ChecklistApplicationTests(unittest.TestCase):
             cursor.execute("SELECT * FROM audit_log WHERE record_ref LIKE '%Work at Height%'")
             row = cursor.fetchone()
         self.assertEqual(row["action"], "updated")
-        self.assertEqual(row["actor_name"], "QA Tester")
-
-    def test_training_edit_requires_actor_name(self):
-        record_id = self.client.post("/api/training", json=self.training_payload()).json["id"]
-        self.login()
-        payload = self.training_payload()
-        response = self.client.post(f"/admin/training/{record_id}/edit", data={
-            "sessionType": payload["sessionType"], "topic": payload["topic"], "sessionDate": payload["sessionDate"],
-        })
-        self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Your name is required", response.data)
 
     def test_training_edit_does_not_touch_photos(self):
         payload = self.training_payload()
@@ -1276,7 +1208,7 @@ class ChecklistApplicationTests(unittest.TestCase):
         edit_payload = self.training_payload()
         self.client.post(f"/admin/training/{record_id}/edit", data={
             "sessionType": edit_payload["sessionType"], "topic": edit_payload["topic"],
-            "sessionDate": edit_payload["sessionDate"], "editedBy": "QA Tester",
+            "sessionDate": edit_payload["sessionDate"],
         })
         with database() as connection:
             cursor = connection.cursor()
@@ -1304,7 +1236,7 @@ class ChecklistApplicationTests(unittest.TestCase):
             "contractor": payload["contractor"], "inspectedBy": payload["inspectedBy"],
             "inspectionDate": payload["inspectionDate"], "inspectionTime": payload["inspectionTime"],
             "shift": payload["shift"], "remarks": "Corrected zone after review.",
-            "signoffName": payload["signoffName"], "editedBy": "QA Tester",
+            "signoffName": payload["signoffName"],
         })
         self.assertEqual(edit_response.status_code, 302)
         detail = self.client.get(f"/admin/records/{record_id}")
@@ -1316,20 +1248,6 @@ class ChecklistApplicationTests(unittest.TestCase):
             cursor.execute("SELECT * FROM audit_log WHERE record_type = 'inspection'")
             row = cursor.fetchone()
         self.assertEqual(row["action"], "updated")
-        self.assertEqual(row["actor_name"], "QA Tester")
-
-    def test_inspection_edit_requires_actor_name(self):
-        record_id = self.client.post("/api/inspections", json=self.payload()).json["id"]
-        self.login()
-        payload = self.payload()
-        response = self.client.post(f"/admin/records/{record_id}/edit", data={
-            "projectName": payload["projectName"], "workLocation": payload["workLocation"],
-            "contractor": payload["contractor"], "inspectedBy": payload["inspectedBy"],
-            "inspectionDate": payload["inspectionDate"], "inspectionTime": payload["inspectionTime"],
-            "shift": payload["shift"], "signoffName": payload["signoffName"],
-        })
-        self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Your name is required", response.data)
 
     def test_inspection_edit_does_not_touch_checklist_responses(self):
         record_id = self.client.post("/api/inspections", json=self.payload()).json["id"]
@@ -1339,7 +1257,7 @@ class ChecklistApplicationTests(unittest.TestCase):
             "projectName": payload["projectName"], "workLocation": payload["workLocation"],
             "contractor": payload["contractor"], "inspectedBy": payload["inspectedBy"],
             "inspectionDate": payload["inspectionDate"], "inspectionTime": payload["inspectionTime"],
-            "shift": payload["shift"], "signoffName": payload["signoffName"], "editedBy": "QA Tester",
+            "shift": payload["shift"], "signoffName": payload["signoffName"],
         })
         with database() as connection:
             cursor = connection.cursor()
