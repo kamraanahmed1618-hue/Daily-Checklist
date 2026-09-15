@@ -127,6 +127,41 @@ class ChecklistApplicationTests(unittest.TestCase):
         for path in ("/inspection", "/near-miss", "/violation", "/ptw", "/training", "/good-practice", "/admin"):
             self.assertIn(path.encode(), response.data)
 
+    def test_homepage_splits_training_sessions_by_type(self):
+        from app import current_work_week_range
+
+        week_start, _ = current_work_week_range()
+
+        induction = self.training_payload()
+        induction["sessionType"] = "Induction"
+        induction["sessionDate"] = week_start
+        self.client.post("/api/training", json=induction)
+
+        specific = self.training_payload()
+        specific["sessionType"] = "Specific Training"
+        specific["sessionDate"] = week_start
+        self.client.post("/api/training", json=specific)
+
+        tbt = self.training_payload()
+        tbt["sessionType"] = "TBT"
+        tbt["sessionDate"] = week_start
+        self.client.post("/api/training", json=tbt)
+
+        mass_tbt = self.training_payload()
+        mass_tbt["sessionType"] = "Mass TBT"
+        mass_tbt["sessionDate"] = week_start
+        self.client.post("/api/training", json=mass_tbt)
+
+        html = self.client.get("/").get_data(as_text=True)
+        self.assertIn("Inductions", html)
+        self.assertIn("Trainings", html)
+        self.assertIn("TBTs", html)
+        # TBT + Mass TBT are combined into one "TBTs" tile.
+        induction_index = html.index("Inductions")
+        self.assertIn(">1<", html[induction_index:induction_index + 200])
+        tbts_index = html.index("TBTs")
+        self.assertIn(">2<", html[tbts_index:tbts_index + 200])
+
     def test_homepage_is_never_cached(self):
         # The homepage shows time-sensitive data (this week's stat tiles) — a cached
         # copy could keep showing a past week's numbers indefinitely.
