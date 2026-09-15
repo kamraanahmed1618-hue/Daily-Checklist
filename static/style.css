@@ -176,6 +176,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--navy-2); box-sha
 .stats-grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
 .stats-grid.cols-5 { grid-template-columns: repeat(5, 1fr); }
 .stats-grid.cols-6 { grid-template-columns: repeat(6, 1fr); }
+.stats-grid.cols-8 { grid-template-columns: repeat(4, 1fr); }
 .stats-grid article { padding: 21px 23px; background: white; border: 1px solid var(--line); border-radius: 14px; }
 .stats-grid span, .stats-grid strong { display: block; }
 .stats-grid span { margin-bottom: 7px; color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
@@ -318,7 +319,7 @@ td small { margin-top: 3px; color: var(--muted); }
   .filter-bar { grid-template-columns: 1fr 1fr; }
   .filter-bar .search-field { grid-column: span 2; }
   .records-actions { align-items: flex-start; flex-direction: column; }
-  .stats-grid.cols-4, .stats-grid.cols-5, .stats-grid.cols-6 { grid-template-columns: repeat(2, 1fr); }
+  .stats-grid.cols-4, .stats-grid.cols-5, .stats-grid.cols-6, .stats-grid.cols-8 { grid-template-columns: repeat(2, 1fr); }
   .overview-grid { grid-template-columns: 1fr; }
 }
 

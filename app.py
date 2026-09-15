@@ -1188,14 +1188,21 @@ def weekly_record_counts() -> dict[str, int]:
         violations = cursor.fetchone()["c"]
         cursor.execute(sql("SELECT COUNT(*) AS c FROM ptw_logs WHERE status = ?"), ["open"])
         ptw_open = cursor.fetchone()["c"]
-        cursor.execute(sql("SELECT COUNT(*) AS c FROM training_logs WHERE session_date >= ? AND session_date < ?"), [week_start, week_end])
-        training = cursor.fetchone()["c"]
+        cursor.execute(sql(
+            "SELECT session_type, COUNT(*) AS c FROM training_logs WHERE session_date >= ? AND session_date < ? "
+            "GROUP BY session_type"
+        ), [week_start, week_end])
+        training_by_type = {row["session_type"]: row["c"] for row in cursor.fetchall()}
         cursor.execute(sql("SELECT COUNT(*) AS c FROM good_practices WHERE practice_date >= ? AND practice_date < ?"), [week_start, week_end])
         good_practices = cursor.fetchone()["c"]
     week_end_display = (date.fromisoformat(week_end) - timedelta(days=1)).isoformat()
+    inductions = training_by_type.get("Induction", 0)
+    trainings = training_by_type.get("Specific Training", 0)
+    tbts = training_by_type.get("TBT", 0) + training_by_type.get("Mass TBT", 0)
     return {
         "inspections": inspections, "near_miss": near_miss, "violations": violations,
-        "ptw_open": ptw_open, "training": training, "good_practices": good_practices,
+        "ptw_open": ptw_open, "inductions": inductions, "trainings": trainings, "tbts": tbts,
+        "good_practices": good_practices,
         "week_start": week_start, "week_end": week_end_display,
     }
 
