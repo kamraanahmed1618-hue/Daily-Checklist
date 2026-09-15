@@ -683,6 +683,115 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertIn("Work at Height", export_text)
         self.assertIn("Always inspect harness before use.", export_text)
 
+    def test_training_records_are_numbered_per_session_type(self):
+        tbt_payload = self.training_payload()
+        tbt_payload["sessionType"] = "TBT"
+        self.client.post("/api/training", json=tbt_payload)
+        self.client.post("/api/training", json=tbt_payload)  # TBT #2
+
+        induction_payload = self.training_payload()
+        induction_payload["sessionType"] = "Induction"
+        self.client.post("/api/training", json=induction_payload)  # Induction #1, not #3
+
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT session_type, seq FROM training_logs ORDER BY session_type, seq")
+            rows = [dict(row) for row in cursor.fetchall()]
+
+        tbt_seqs = sorted(row["seq"] for row in rows if row["session_type"] == "TBT")
+        induction_seqs = sorted(row["seq"] for row in rows if row["session_type"] == "Induction")
+        self.assertEqual(tbt_seqs, [1, 2])
+        self.assertEqual(induction_seqs, [1])
+
+    def test_training_bulk_import_numbers_per_session_type(self):
+        # An unrelated TBT record already at a high seq shouldn't affect the numbering
+        # of the bulk-imported types (Induction, Specific Training).
+        tbt_payload = self.training_payload()
+        tbt_payload["sessionType"] = "TBT"
+        for _ in range(5):
+            self.client.post("/api/training", json=tbt_payload)  # TBT seq 1..5
+
+        workbook = openpyxl.Workbook()
+        sheet = workbook.active
+        sheet["A2"] = "Week No.# Date: From 22-08-2026 To 27-08-2026"
+        sheet["A3"] = "SAFETY INDUCTION"
+        sheet["A4"] = "Sl. No."
+        sheet["B4"] = "Employee's Inducted"
+        sheet["E4"] = "Numbers"
+        sheet["A5"] = 1
+        sheet["B5"] = "Total no . of Employees Inducted This Week"
+        sheet["E5"] = "70  ( 13 Session ) "
+        sheet["A6"] = "In-house Trainings"
+        sheet["A7"] = "Sl. No."
+        sheet["B7"] = "In-house Training"
+        sheet["D7"] = "Date"
+        sheet["E7"] = "Number of Attendees"
+        sheet["F7"] = "Time Duration"
+        sheet["A8"] = 1
+        sheet["B8"] = "Work Permit System"
+        sheet["D8"] = datetime(2026, 8, 22)
+        sheet["E8"] = 12
+        sheet["F8"] = "One Hour"
+        buffer = io.BytesIO()
+        workbook.save(buffer)
+        buffer.seek(0)
+
+        self.login()
+        response = self.client.post(
+            "/admin/training/import", data={"file": (buffer, "weekly.xlsx")}, content_type="multipart/form-data"
+        )
+        self.assertEqual(response.status_code, 201)
+
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT session_type, seq FROM training_logs WHERE session_type IN ('Induction', 'Specific Training')")
+            rows = [dict(row) for row in cursor.fetchall()]
+        # Both bulk-imported types start their own numbering at 1, independent of
+        # the unrelated TBT records already at seq 1..5.
+        self.assertEqual(sorted(row["seq"] for row in rows if row["session_type"] == "Induction"), [1])
+        self.assertEqual(sorted(row["seq"] for row in rows if row["session_type"] == "Specific Training"), [1])
+
+    def test_startup_migration_renumbers_existing_mixed_training_seq(self):
+        from datetime import timezone
+
+        from app import init_db
+
+        now = datetime.now(timezone.utc).isoformat()
+        with database() as connection:
+            cursor = connection.cursor()
+            # Simulate old data from before per-type numbering: TBT and Induction
+            # records sharing one global counter (seq 1, 2, 3 mixed across types).
+            for record_id, seq, session_type in [("id-tbt-a", 1, "TBT"), ("id-induction-a", 2, "Induction"), ("id-tbt-b", 3, "TBT")]:
+                cursor.execute(
+                    "INSERT INTO training_logs (id, seq, session_type, topic, session_date, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    [record_id, seq, session_type, "Legacy topic", "2026-09-01", now],
+                )
+
+        init_db()
+
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT id, seq FROM training_logs WHERE id IN ('id-tbt-a', 'id-tbt-b', 'id-induction-a')")
+            seq_by_id = {row["id"]: row["seq"] for row in cursor.fetchall()}
+        self.assertEqual(seq_by_id["id-tbt-a"], 1)
+        self.assertEqual(seq_by_id["id-tbt-b"], 2)
+        self.assertEqual(seq_by_id["id-induction-a"], 1)
+
+    def test_training_list_sorted_by_session_date_not_submission_order(self):
+        # Submitted out of date order (the middle date first) to confirm the list
+        # reflects each record's actual session date, not when it was typed in.
+        for date_str, topic in [("2026-09-14", "Middle Day"), ("2026-09-15", "Latest Day"), ("2026-09-13", "Earliest Day")]:
+            payload = self.training_payload()
+            payload["sessionDate"] = date_str
+            payload["topic"] = topic
+            self.client.post("/api/training", json=payload)
+
+        self.login()
+        body = self.client.get("/admin?view=training").data.decode()
+        self.assertLess(body.index("Latest Day"), body.index("Middle Day"))
+        self.assertLess(body.index("Middle Day"), body.index("Earliest Day"))
+
     def test_delete_training(self):
         record_id = self.client.post("/api/training", json=self.training_payload()).json["id"]
         self.login()
