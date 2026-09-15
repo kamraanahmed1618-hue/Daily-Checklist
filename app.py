@@ -633,6 +633,21 @@ def init_db() -> None:
                 next_seq += 1
                 cursor.execute(sql(f"UPDATE {table} SET seq = ? WHERE id = ?"), [next_seq, row["id"]])
 
+        # Training records are numbered per session type — Induction/TBT/Specific
+        # Training previously shared one counter, which produced confusing jumps
+        # (an Induction showing "No. 2" right next to a TBT showing "No. 125").
+        # Renumber each type's records 1, 2, 3... on their own, using the existing
+        # (globally-assigned) seq to preserve each type's original relative order.
+        # Runs every startup — harmless since the result is always the same.
+        cursor.execute("SELECT DISTINCT session_type FROM training_logs")
+        for type_row in cursor.fetchall():
+            cursor.execute(
+                sql("SELECT id FROM training_logs WHERE session_type = ? ORDER BY seq ASC, created_at ASC"),
+                [type_row["session_type"]],
+            )
+            for index, training_row in enumerate(cursor.fetchall(), start=1):
+                cursor.execute(sql("UPDATE training_logs SET seq = ? WHERE id = ?"), [index, training_row["id"]])
+
     # In its own transaction: if pre-existing duplicate ptw_number values make this fail,
     # a Postgres transaction aborts entirely on any statement error, which would otherwise
     # silently roll back every migration above too. The app-level check in submit/edit
@@ -988,7 +1003,10 @@ def filtered_rows(table: str, search_columns: list[str], date_column: str, limit
     where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
     with database() as connection:
         cursor = connection.cursor()
-        cursor.execute(sql(f"SELECT * FROM {table}{where} ORDER BY created_at DESC LIMIT ?"), [*params, limit])
+        # Ordered by the record's real-world date (not when it happened to be typed
+        # in), so admins reviewing a list see it chronologically; created_at as a
+        # tiebreaker for same-day records keeps that order stable.
+        cursor.execute(sql(f"SELECT * FROM {table}{where} ORDER BY {date_column} DESC, created_at DESC LIMIT ?"), [*params, limit])
         rows = cursor.fetchall()
     return [dict(row) for row in rows]
 
@@ -1525,7 +1543,7 @@ def submit_training() -> tuple[Response, int] | Response:
         now = datetime.now(timezone.utc).isoformat()
         with database() as connection:
             cursor = connection.cursor()
-            cursor.execute(sql("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM training_logs"))
+            cursor.execute(sql("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM training_logs WHERE session_type = ?"), [record["session_type"]])
             seq = cursor.fetchone()["next_seq"]
             values = [
                 record_id, seq, record["session_type"], record["topic"], record["session_date"],
@@ -2428,7 +2446,7 @@ def import_training() -> tuple[Response, int] | Response:
                 })
             except ValueError:
                 continue
-            cursor.execute(sql("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM training_logs"))
+            cursor.execute(sql("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM training_logs WHERE session_type = ?"), [record["session_type"]])
             seq = cursor.fetchone()["next_seq"]
             values = [
                 secrets.token_hex(16), seq, record["session_type"], record["topic"], record["session_date"],
