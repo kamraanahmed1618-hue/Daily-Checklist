@@ -226,6 +226,26 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertIn("NEAR-MISS-001", filtered)
         self.assertNotIn("NEAR-MISS-002", filtered)
 
+    def test_admin_training_type_filter_narrows_results(self):
+        induction = self.training_payload()
+        induction["sessionType"] = "Induction"
+        induction["topic"] = "Site Induction"
+        self.client.post("/api/training", json=induction)
+
+        specific = self.training_payload()
+        specific["sessionType"] = "Specific Training"
+        specific["topic"] = "Scaffold Training"
+        self.client.post("/api/training", json=specific)
+
+        self.login()
+        unfiltered = self.client.get("/admin?view=training").get_data(as_text=True)
+        self.assertIn("Site Induction", unfiltered)
+        self.assertIn("Scaffold Training", unfiltered)
+
+        filtered = self.client.get("/admin?view=training&type=Specific+Training").get_data(as_text=True)
+        self.assertIn("Scaffold Training", filtered)
+        self.assertNotIn("Site Induction", filtered)
+
     def test_current_work_week_range_excludes_friday(self):
         from datetime import date
         from app import current_work_week_range
