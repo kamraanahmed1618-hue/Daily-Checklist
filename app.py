@@ -1189,19 +1189,24 @@ def weekly_record_counts() -> dict[str, int]:
         cursor.execute(sql("SELECT COUNT(*) AS c FROM ptw_logs WHERE status = ?"), ["open"])
         ptw_open = cursor.fetchone()["c"]
         cursor.execute(sql(
-            "SELECT session_type, COUNT(*) AS c FROM training_logs WHERE session_date >= ? AND session_date < ? "
-            "GROUP BY session_type"
+            "SELECT session_type, COUNT(*) AS c, COALESCE(SUM(attendees_count), 0) AS attendees "
+            "FROM training_logs WHERE session_date >= ? AND session_date < ? GROUP BY session_type"
         ), [week_start, week_end])
-        training_by_type = {row["session_type"]: row["c"] for row in cursor.fetchall()}
+        training_by_type = {row["session_type"]: (row["c"], row["attendees"]) for row in cursor.fetchall()}
         cursor.execute(sql("SELECT COUNT(*) AS c FROM good_practices WHERE practice_date >= ? AND practice_date < ?"), [week_start, week_end])
         good_practices = cursor.fetchone()["c"]
     week_end_display = (date.fromisoformat(week_end) - timedelta(days=1)).isoformat()
-    inductions = training_by_type.get("Induction", 0)
-    trainings = training_by_type.get("Specific Training", 0)
-    tbts = training_by_type.get("TBT", 0) + training_by_type.get("Mass TBT", 0)
+    inductions, inductions_attendees = training_by_type.get("Induction", (0, 0))
+    trainings, trainings_attendees = training_by_type.get("Specific Training", (0, 0))
+    tbt_count, tbt_attendees = training_by_type.get("TBT", (0, 0))
+    mass_tbt_count, mass_tbt_attendees = training_by_type.get("Mass TBT", (0, 0))
+    tbts = tbt_count + mass_tbt_count
+    tbts_attendees = tbt_attendees + mass_tbt_attendees
     return {
         "inspections": inspections, "near_miss": near_miss, "violations": violations,
         "ptw_open": ptw_open, "inductions": inductions, "trainings": trainings, "tbts": tbts,
+        "inductions_attendees": inductions_attendees, "trainings_attendees": trainings_attendees,
+        "tbts_attendees": tbts_attendees,
         "good_practices": good_practices,
         "week_start": week_start, "week_end": week_end_display,
     }
