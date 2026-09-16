@@ -1036,7 +1036,10 @@ def admin_required(view: Any) -> Any:
     return wrapped
 
 
-def filtered_rows(table: str, search_columns: list[str], date_column: str, limit: int = 1000) -> list[dict[str, Any]]:
+def filtered_rows(
+    table: str, search_columns: list[str], date_column: str, limit: int = 1000,
+    exact_filters: list[tuple[str, str]] | None = None,
+) -> list[dict[str, Any]]:
     clauses: list[str] = []
     params: list[Any] = []
     query = request.args.get("q", "").strip()
@@ -1052,6 +1055,11 @@ def filtered_rows(table: str, search_columns: list[str], date_column: str, limit
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_to):
         clauses.append(f"{date_column} <= ?")
         params.append(date_to)
+    for column, arg_name in exact_filters or []:
+        value = request.args.get(arg_name, "").strip()
+        if value:
+            clauses.append(f"{column} = ?")
+            params.append(value)
     where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
     with database() as connection:
         cursor = connection.cursor()
@@ -1131,7 +1139,10 @@ def filtered_ptw(limit: int = 1000) -> list[dict[str, Any]]:
 
 
 def filtered_training(limit: int = 1000) -> list[dict[str, Any]]:
-    return filtered_rows("training_logs", ["topic", "trainer", "location", "session_type"], "session_date", limit)
+    return filtered_rows(
+        "training_logs", ["topic", "trainer", "location", "session_type"], "session_date", limit,
+        exact_filters=[("session_type", "type")],
+    )
 
 
 def filtered_good_practices(limit: int = 1000) -> list[dict[str, Any]]:
