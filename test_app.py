@@ -159,8 +159,10 @@ class ChecklistApplicationTests(unittest.TestCase):
         # TBT + Mass TBT are combined into one "TBTs" tile.
         induction_index = html.index("Inductions")
         self.assertIn(">1<", html[induction_index:induction_index + 200])
+        self.assertIn("12 attendees", html[induction_index:induction_index + 200])
         tbts_index = html.index("TBTs")
         self.assertIn(">2<", html[tbts_index:tbts_index + 200])
+        self.assertIn("24 attendees", html[tbts_index:tbts_index + 200])
 
     def test_homepage_is_never_cached(self):
         # The homepage shows time-sensitive data (this week's stat tiles) — a cached
