@@ -323,6 +323,114 @@ class ChecklistApplicationTests(unittest.TestCase):
         page2 = self.client.get("/admin?view=ptw&page=2").get_data(as_text=True)
         self.assertIn("BAJV-1<", page2)
 
+    def test_daily_kpis_aggregates_by_day(self):
+        from app import daily_kpis
+
+        day_x = "2026-02-10"
+        day_y = "2026-02-11"
+
+        inspection_payload = self.payload()
+        inspection_payload["inspectionDate"] = day_x
+        self.client.post("/api/inspections", json=inspection_payload)
+
+        near_miss_payload = self.near_miss_payload()
+        near_miss_payload["incidentDate"] = day_x
+        self.client.post("/api/near-miss", json=near_miss_payload)
+
+        violation_payload = self.violation_payload()
+        violation_payload["violationDate"] = day_y
+        self.client.post("/api/violations", json=violation_payload)
+
+        good_practice_payload = self.good_practice_payload()
+        good_practice_payload["practiceDate"] = day_x
+        self.client.post("/api/good-practice", json=good_practice_payload)
+
+        induction = self.training_payload()
+        induction["sessionType"] = "Induction"
+        induction["sessionDate"] = day_x
+        induction["attendeesCount"] = "10"
+        self.client.post("/api/training", json=induction)
+
+        tbt = self.training_payload()
+        tbt["sessionType"] = "TBT"
+        tbt["sessionDate"] = day_x
+        tbt["attendeesCount"] = "5"
+        self.client.post("/api/training", json=tbt)
+
+        specific = self.training_payload()
+        specific["sessionType"] = "Specific Training"
+        specific["sessionDate"] = day_y
+        specific["attendeesCount"] = "8"
+        self.client.post("/api/training", json=specific)
+
+        ptw = self.ptw_payload()
+        ptw["startDate"] = day_x
+        ptw["endDate"] = day_y
+        self.client.post("/api/ptw", json=ptw)
+
+        rows = daily_kpis(day_x, day_y)
+        by_date = {row["date"]: row for row in rows}
+
+        self.assertEqual(by_date[day_x]["inspections"], 1)
+        self.assertEqual(by_date[day_x]["near_miss"], 1)
+        self.assertEqual(by_date[day_x]["good_practices"], 1)
+        self.assertEqual(by_date[day_x]["induction_sessions"], 1)
+        self.assertEqual(by_date[day_x]["induction_attendees"], 10)
+        self.assertEqual(by_date[day_x]["tbt_sessions"], 1)
+        self.assertEqual(by_date[day_x]["tbt_attendees"], 5)
+        self.assertEqual(by_date[day_x]["ptw_issued"], 1)
+
+        self.assertEqual(by_date[day_y]["violations"], 1)
+        self.assertEqual(by_date[day_y]["training_sessions"], 1)
+        self.assertEqual(by_date[day_y]["training_attendees"], 8)
+        self.assertEqual(by_date[day_y]["ptw_issued"], 0)  # only counted on its issuance/start date
+
+    def test_admin_daily_kpis_view_defaults_to_this_week(self):
+        from datetime import date
+
+        from app import current_work_week_range
+
+        week_start, week_end_exclusive = current_work_week_range()
+        week_end = (date.fromisoformat(week_end_exclusive) - timedelta(days=1)).isoformat()
+
+        self.login()
+        response = self.client.get("/admin?view=daily-kpis")
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn(week_start, html)
+        self.assertIn(week_end, html)
+
+    def test_admin_daily_kpis_view_respects_custom_range(self):
+        payload = self.good_practice_payload()
+        payload["practiceDate"] = "2026-03-05"
+        self.client.post("/api/good-practice", json=payload)
+
+        self.login()
+        response = self.client.get("/admin?view=daily-kpis&date_from=2026-03-01&date_to=2026-03-10")
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("2026-03-05", html)
+        self.assertIn("2026-03-10", html)
+        self.assertNotIn("2026-02-28", html)
+
+    def test_admin_daily_kpis_csv_export(self):
+        payload = self.near_miss_payload()
+        payload["incidentDate"] = "2026-04-01"
+        self.client.post("/api/near-miss", json=payload)
+
+        self.login()
+        response = self.client.get("/admin/export/daily-kpis?date_from=2026-04-01&date_to=2026-04-01")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "text/csv")
+        csv_text = response.get_data(as_text=True)
+        self.assertIn("2026-04-01", csv_text)
+        self.assertIn("Near-Miss", csv_text)
+
+    def test_admin_export_daily_kpis_requires_valid_dates(self):
+        self.login()
+        response = self.client.get("/admin/export/daily-kpis")
+        self.assertEqual(response.status_code, 400)
+
     def test_current_work_week_range_excludes_friday(self):
         from datetime import date
         from app import current_work_week_range
