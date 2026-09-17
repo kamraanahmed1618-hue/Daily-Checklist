@@ -82,17 +82,27 @@
     {{ trend_charts.score|safe }}
 </section>
 <section class="card chart-card">
-    <div class="chart-heading"><h2>Weekly submission volume</h2><p>Inspections, near-miss reports, and violation notices per week</p></div>
+    <div class="chart-heading"><h2>Weekly submission volume</h2><p>Inspections, near-miss reports, violations, and good practices per week</p></div>
     <div class="chart-legend">
         <span><i class="inspections"></i>Inspections</span>
         <span><i class="near-miss"></i>Near-Miss</span>
         <span><i class="violations"></i>Violations</span>
+        <span><i class="good-practices"></i>Good Practices</span>
     </div>
     {{ trend_charts.volume|safe }}
 </section>
 <section class="card chart-card">
     <div class="chart-heading"><h2>Non-compliant findings</h2><p>Count of "No" responses recorded per week</p></div>
     {{ trend_charts.non_compliant|safe }}
+</section>
+<section class="card chart-card">
+    <div class="chart-heading"><h2>Weekly training sessions by type</h2><p>Inductions, Trainings, and TBTs per week (TBT + Mass TBT combined)</p></div>
+    <div class="chart-legend">
+        <span><i class="inductions"></i>Inductions</span>
+        <span><i class="trainings"></i>Trainings</span>
+        <span><i class="tbts"></i>TBTs</span>
+    </div>
+    {{ trend_charts.training|safe }}
 </section>
 {% else %}
 

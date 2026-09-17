@@ -331,6 +331,48 @@ class ChecklistApplicationTests(unittest.TestCase):
         response = self.client.get("/admin?view=trends")
         self.assertNotIn(b'<i style=', response.data)
 
+    def test_trends_includes_good_practices_and_training_breakdown(self):
+        from datetime import timezone
+
+        from app import compute_trends
+
+        today = datetime.now(timezone.utc).date().isoformat()
+
+        good_practice = self.good_practice_payload()
+        good_practice["practiceDate"] = today
+        self.client.post("/api/good-practice", json=good_practice)
+
+        induction = self.training_payload()
+        induction["sessionType"] = "Induction"
+        induction["sessionDate"] = today
+        self.client.post("/api/training", json=induction)
+        tbt = self.training_payload()
+        tbt["sessionType"] = "TBT"
+        tbt["sessionDate"] = today
+        self.client.post("/api/training", json=tbt)
+        mass_tbt = self.training_payload()
+        mass_tbt["sessionType"] = "Mass TBT"
+        mass_tbt["sessionDate"] = today
+        self.client.post("/api/training", json=mass_tbt)
+        specific = self.training_payload()
+        specific["sessionType"] = "Specific Training"
+        specific["sessionDate"] = today
+        self.client.post("/api/training", json=specific)
+
+        weeks = compute_trends()
+        this_week = weeks[-1]
+        self.assertEqual(this_week["good_practices"], 1)
+        self.assertEqual(this_week["induction"], 1)
+        self.assertEqual(this_week["specific_training"], 1)
+        self.assertEqual(this_week["tbt"], 2)  # TBT + Mass TBT combined
+
+        self.login()
+        response = self.client.get("/admin?view=trends")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Good Practices", response.data)
+        self.assertIn(b"Inductions", response.data)
+        self.assertIn(b"TBTs", response.data)
+
     def test_near_miss_form_pages_load(self):
         self.assertEqual(self.client.get("/near-miss").status_code, 200)
         self.assertEqual(self.client.get("/violation").status_code, 200)

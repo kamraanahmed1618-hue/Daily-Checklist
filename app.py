@@ -1276,7 +1276,10 @@ def compute_trends(weeks: int = 12) -> list[dict[str, Any]]:
     cutoff = week_starts[0].isoformat()
 
     buckets = {
-        w.isoformat(): {"inspections": 0, "score_sum": 0.0, "score_count": 0, "non_compliant": 0, "near_miss": 0, "violations": 0}
+        w.isoformat(): {
+            "inspections": 0, "score_sum": 0.0, "score_count": 0, "non_compliant": 0, "near_miss": 0,
+            "violations": 0, "good_practices": 0, "induction": 0, "specific_training": 0, "tbt": 0,
+        }
         for w in week_starts
     }
 
@@ -1300,6 +1303,22 @@ def compute_trends(weeks: int = 12) -> list[dict[str, Any]]:
             key = week_start(row["violation_date"])
             if key in buckets:
                 buckets[key]["violations"] += 1
+        cursor.execute(sql("SELECT practice_date FROM good_practices WHERE practice_date >= ?"), [cutoff])
+        for row in cursor.fetchall():
+            key = week_start(row["practice_date"])
+            if key in buckets:
+                buckets[key]["good_practices"] += 1
+        cursor.execute(sql("SELECT session_date, session_type FROM training_logs WHERE session_date >= ?"), [cutoff])
+        for row in cursor.fetchall():
+            key = week_start(row["session_date"])
+            if key not in buckets:
+                continue
+            if row["session_type"] == "Induction":
+                buckets[key]["induction"] += 1
+            elif row["session_type"] == "Specific Training":
+                buckets[key]["specific_training"] += 1
+            elif row["session_type"] in ("TBT", "Mass TBT"):
+                buckets[key]["tbt"] += 1
 
     result = []
     for w in week_starts:
@@ -1312,6 +1331,10 @@ def compute_trends(weeks: int = 12) -> list[dict[str, Any]]:
             "inspections": bucket["inspections"],
             "near_miss": bucket["near_miss"],
             "violations": bucket["violations"],
+            "good_practices": bucket["good_practices"],
+            "induction": bucket["induction"],
+            "specific_training": bucket["specific_training"],
+            "tbt": bucket["tbt"],
         })
     return result
 
@@ -1754,6 +1777,12 @@ def admin() -> str | Response:
                 ("inspections", "#2a78d6", "Inspections"),
                 ("near_miss", "#eb6834", "Near-Miss"),
                 ("violations", "#1baf7a", "Violations"),
+                ("good_practices", "#0e9488", "Good Practices"),
+            ]),
+            "training": grouped_bar_chart_svg(trends, [
+                ("induction", "#7c3aed", "Inductions"),
+                ("specific_training", "#c026d3", "Trainings"),
+                ("tbt", "#f59e0b", "TBTs"),
             ]),
         }
 
