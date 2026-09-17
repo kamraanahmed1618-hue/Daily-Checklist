@@ -1428,6 +1428,87 @@ def compute_trends(weeks: int = 12) -> list[dict[str, Any]]:
     return result
 
 
+DAILY_KPI_RANGE_CAP = 92  # ~3 months, so an unbounded range picked by mistake can't render a huge table
+
+
+def daily_kpis(date_from: str, date_to: str) -> list[dict[str, Any]]:
+    """Per-day breakdown of the same KPIs the homepage/Trends tabs show per week —
+    date_from/date_to are inclusive ISO dates, already validated by the caller."""
+    start = date.fromisoformat(date_from)
+    end = date.fromisoformat(date_to)
+    days = [(start + timedelta(days=i)).isoformat() for i in range((end - start).days + 1)]
+    buckets = {
+        d: {
+            "inspections": 0, "near_miss": 0, "violations": 0, "good_practices": 0,
+            "induction_sessions": 0, "induction_attendees": 0,
+            "training_sessions": 0, "training_attendees": 0,
+            "tbt_sessions": 0, "tbt_attendees": 0,
+            "ptw_issued": 0,
+        }
+        for d in days
+    }
+
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT inspection_date FROM inspections WHERE inspection_date >= ? AND inspection_date <= ?"), [date_from, date_to])
+        for row in cursor.fetchall():
+            if row["inspection_date"] in buckets:
+                buckets[row["inspection_date"]]["inspections"] += 1
+        cursor.execute(sql("SELECT incident_date FROM near_miss_reports WHERE incident_date >= ? AND incident_date <= ?"), [date_from, date_to])
+        for row in cursor.fetchall():
+            if row["incident_date"] in buckets:
+                buckets[row["incident_date"]]["near_miss"] += 1
+        cursor.execute(sql("SELECT violation_date FROM violation_notices WHERE violation_date >= ? AND violation_date <= ?"), [date_from, date_to])
+        for row in cursor.fetchall():
+            if row["violation_date"] in buckets:
+                buckets[row["violation_date"]]["violations"] += 1
+        cursor.execute(sql("SELECT practice_date FROM good_practices WHERE practice_date >= ? AND practice_date <= ?"), [date_from, date_to])
+        for row in cursor.fetchall():
+            if row["practice_date"] in buckets:
+                buckets[row["practice_date"]]["good_practices"] += 1
+        cursor.execute(
+            sql("SELECT session_date, session_type, attendees_count FROM training_logs WHERE session_date >= ? AND session_date <= ?"),
+            [date_from, date_to],
+        )
+        for row in cursor.fetchall():
+            bucket = buckets.get(row["session_date"])
+            if bucket is None:
+                continue
+            attendees = row["attendees_count"] or 0
+            if row["session_type"] == "Induction":
+                bucket["induction_sessions"] += 1
+                bucket["induction_attendees"] += attendees
+            elif row["session_type"] == "Specific Training":
+                bucket["training_sessions"] += 1
+                bucket["training_attendees"] += attendees
+            elif row["session_type"] in ("TBT", "Mass TBT"):
+                bucket["tbt_sessions"] += 1
+                bucket["tbt_attendees"] += attendees
+        cursor.execute(sql("SELECT start_date FROM ptw_logs WHERE start_date >= ? AND start_date <= ?"), [date_from, date_to])
+        for row in cursor.fetchall():
+            if row["start_date"] in buckets:
+                buckets[row["start_date"]]["ptw_issued"] += 1
+
+    return [{"date": d, **buckets[d]} for d in sorted(days, reverse=True)]
+
+
+def daily_kpis_csv(rows: list[dict[str, Any]]) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Date", "Inspections", "Near-Miss", "Violations", "Good Practices",
+        "Induction Sessions", "Induction Attendees", "Training Sessions", "Training Attendees",
+        "TBT Sessions", "TBT Attendees", "PTW Issued",
+    ])
+    for row in rows:
+        writer.writerow([
+            row["date"], row["inspections"], row["near_miss"], row["violations"], row["good_practices"],
+            row["induction_sessions"], row["induction_attendees"], row["training_sessions"], row["training_attendees"],
+            row["tbt_sessions"], row["tbt_attendees"], row["ptw_issued"],
+        ])
+    return output.getvalue()
+
+
 @app.after_request
 def security_headers(response: Response) -> Response:
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -1824,10 +1905,15 @@ def admin() -> str | Response:
         return render_template("login.html", error=error, configured=configured)
 
     view = request.args.get("view", "inspections")
-    if view not in {"inspections", "near-miss", "violations", "ptw", "training", "good-practices", "trends"}:
+    if view not in {"inspections", "near-miss", "violations", "ptw", "training", "good-practices", "daily-kpis", "trends"}:
         view = "inspections"
 
     counts = record_counts()
+
+    this_week_start, this_week_end_exclusive = current_work_week_range()
+    this_week_end = (date.fromisoformat(this_week_end_exclusive) - timedelta(days=1)).isoformat()
+    last_week_start = (date.fromisoformat(this_week_start) - timedelta(days=7)).isoformat()
+    last_week_end = (date.fromisoformat(this_week_end) - timedelta(days=7)).isoformat()
 
     records: list[dict[str, Any]] = []
     near_miss_records: list[dict[str, Any]] = []
@@ -1836,6 +1922,8 @@ def admin() -> str | Response:
     training_logs: list[dict[str, Any]] = []
     good_practice_records: list[dict[str, Any]] = []
     trends: list[dict[str, Any]] = []
+    daily_kpi_rows: list[dict[str, Any]] = []
+    daily_kpi_from = daily_kpi_to = ""
     ptw_stats: dict[str, Any] = {}
     total = average = non_compliant = 0
     page = total_pages = total_count = 1
@@ -1853,6 +1941,16 @@ def admin() -> str | Response:
         training_logs, page, total_pages, total_count = paginated_training()
     elif view == "good-practices":
         good_practice_records, page, total_pages, total_count = paginated_good_practices()
+    elif view == "daily-kpis":
+        raw_from = request.args.get("date_from", "").strip()
+        raw_to = request.args.get("date_to", "").strip()
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw_from) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw_to):
+            daily_kpi_from, daily_kpi_to = sorted([raw_from, raw_to])
+        else:
+            daily_kpi_from, daily_kpi_to = this_week_start, this_week_end
+        if (date.fromisoformat(daily_kpi_to) - date.fromisoformat(daily_kpi_from)).days > DAILY_KPI_RANGE_CAP:
+            daily_kpi_to = (date.fromisoformat(daily_kpi_from) + timedelta(days=DAILY_KPI_RANGE_CAP)).isoformat()
+        daily_kpi_rows = daily_kpis(daily_kpi_from, daily_kpi_to)
     else:
         trends = compute_trends()
 
@@ -1874,10 +1972,6 @@ def admin() -> str | Response:
             ]),
         }
 
-    this_week_start, this_week_end_exclusive = current_work_week_range()
-    this_week_end = (date.fromisoformat(this_week_end_exclusive) - timedelta(days=1)).isoformat()
-    last_week_start = (date.fromisoformat(this_week_start) - timedelta(days=7)).isoformat()
-    last_week_end = (date.fromisoformat(this_week_end) - timedelta(days=7)).isoformat()
     page_query_args = {key: value for key, value in request.args.items() if key != "page"}
 
     return render_template(
@@ -1895,6 +1989,9 @@ def admin() -> str | Response:
         good_practice_records=good_practice_records,
         trends=trends,
         trend_charts=trend_charts,
+        daily_kpi_rows=daily_kpi_rows,
+        daily_kpi_from=daily_kpi_from,
+        daily_kpi_to=daily_kpi_to,
         inspections_count=counts["inspections"],
         near_miss_count=counts["near_miss"],
         violations_count=counts["violations"],
@@ -2938,6 +3035,21 @@ def good_practices_csv(records: list[dict[str, Any]]) -> str:
 def export_good_practices() -> Response:
     csv_text = good_practices_csv(filtered_good_practices(limit=5000))
     filename = f'diriyah-good-practices-{datetime.now(timezone.utc).date().isoformat()}.csv'
+    return Response("﻿" + csv_text, mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@app.get("/admin/export/daily-kpis")
+@admin_required
+def export_daily_kpis() -> Response:
+    date_from = request.args.get("date_from", "").strip()
+    date_to = request.args.get("date_to", "").strip()
+    if not (re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_from) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_to)):
+        return jsonify({"error": "A valid date_from and date_to are required."}), 400
+    date_from, date_to = sorted([date_from, date_to])
+    if (date.fromisoformat(date_to) - date.fromisoformat(date_from)).days > DAILY_KPI_RANGE_CAP:
+        date_to = (date.fromisoformat(date_from) + timedelta(days=DAILY_KPI_RANGE_CAP)).isoformat()
+    csv_text = daily_kpis_csv(daily_kpis(date_from, date_to))
+    filename = f'diriyah-daily-kpis-{date_from}-to-{date_to}.csv'
     return Response("﻿" + csv_text, mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
