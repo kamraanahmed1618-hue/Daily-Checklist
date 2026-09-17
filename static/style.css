@@ -215,6 +215,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--navy-2); box-sha
 .training-import { padding: 14px 22px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
 .training-import label { font-size: 13px; font-weight: 650; }
 .table-wrap { overflow-x: auto; }
+.pagination { padding: 16px 22px; display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.pagination span { color: var(--muted); font-size: 12px; font-weight: 650; }
+.pagination-links { display: flex; gap: 8px; }
 table { width: 100%; border-collapse: collapse; }
 th { padding: 12px 14px; color: #5c6578; background: #fbfcff; border-bottom: 1px solid var(--line); font-size: 10px; font-weight: 850; letter-spacing: .07em; text-align: left; text-transform: uppercase; }
 td { padding: 15px 14px; border-bottom: 1px solid #e6eaf2; font-size: 12px; vertical-align: middle; }
