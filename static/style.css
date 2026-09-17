@@ -171,6 +171,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--navy-2); box-sha
 .chart-legend i.inspections { background: #2a78d6; }
 .chart-legend i.near-miss { background: #eb6834; }
 .chart-legend i.violations { background: #1baf7a; }
+.chart-legend i.good-practices { background: #0e9488; }
+.chart-legend i.inductions { background: #7c3aed; }
+.chart-legend i.trainings { background: #c026d3; }
+.chart-legend i.tbts { background: #f59e0b; }
 .stats-period { margin: 0 0 10px; color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
 .stats-grid { margin-bottom: 22px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
 .stats-grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
