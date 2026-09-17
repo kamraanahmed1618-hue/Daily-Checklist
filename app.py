@@ -6,6 +6,7 @@ import hmac
 import html
 import io
 import json
+import math
 import os
 import re
 import secrets
@@ -1036,10 +1037,9 @@ def admin_required(view: Any) -> Any:
     return wrapped
 
 
-def filtered_rows(
-    table: str, search_columns: list[str], date_column: str, limit: int = 1000,
-    exact_filters: list[tuple[str, str]] | None = None,
-) -> list[dict[str, Any]]:
+def _filter_clause(
+    search_columns: list[str], date_column: str, exact_filters: list[tuple[str, str]] | None = None,
+) -> tuple[str, list[Any]]:
     clauses: list[str] = []
     params: list[Any] = []
     query = request.args.get("q", "").strip()
@@ -1061,6 +1061,14 @@ def filtered_rows(
             clauses.append(f"{column} = ?")
             params.append(value)
     where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    return where, params
+
+
+def filtered_rows(
+    table: str, search_columns: list[str], date_column: str, limit: int = 1000,
+    exact_filters: list[tuple[str, str]] | None = None,
+) -> list[dict[str, Any]]:
+    where, params = _filter_clause(search_columns, date_column, exact_filters)
     with database() as connection:
         cursor = connection.cursor()
         # Ordered by the record's real-world date (not when it happened to be typed
@@ -1071,16 +1079,70 @@ def filtered_rows(
     return [dict(row) for row in rows]
 
 
+PAGE_SIZE = 50
+
+
+def filtered_rows_page(
+    table: str, search_columns: list[str], date_column: str,
+    exact_filters: list[tuple[str, str]] | None = None, page_size: int = PAGE_SIZE,
+) -> tuple[list[dict[str, Any]], int, int, int]:
+    """Like filtered_rows, but returns one page of results instead of everything up
+    to a large cap — record lists were capped at 1000-5000 rows with no way to see
+    past that as data grows. Returns (rows, page, total_pages, total_count)."""
+    where, params = _filter_clause(search_columns, date_column, exact_filters)
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql(f"SELECT COUNT(*) AS c FROM {table}{where}"), params)
+        total_count = cursor.fetchone()["c"]
+        total_pages = max(1, math.ceil(total_count / page_size))
+        page_arg = request.args.get("page", "1")
+        page = int(page_arg) if page_arg.isdigit() else 1
+        page = min(max(1, page), total_pages)
+        offset = (page - 1) * page_size
+        cursor.execute(
+            sql(f"SELECT * FROM {table}{where} ORDER BY {date_column} DESC, created_at DESC LIMIT ? OFFSET ?"),
+            [*params, page_size, offset],
+        )
+        rows = cursor.fetchall()
+    return [dict(row) for row in rows], page, total_pages, total_count
+
+
+def inspection_filtered_stats() -> tuple[int, float, int]:
+    """Aggregate stats (matching count, average score, non-compliant total) over the
+    full filtered set of inspections, not just the current page of results."""
+    where, params = _filter_clause(["report_no", "inspected_by", "contractor", "work_location"], "inspection_date")
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql(
+            f"SELECT COUNT(*) AS total, COALESCE(AVG(score), 0) AS avg_score, "
+            f"COALESCE(SUM(non_compliant), 0) AS non_compliant FROM inspections{where}"
+        ), params)
+        row = cursor.fetchone()
+    return row["total"], round(float(row["avg_score"]), 1), int(row["non_compliant"])
+
+
 def filtered_records(limit: int = 1000) -> list[dict[str, Any]]:
     return filtered_rows("inspections", ["report_no", "inspected_by", "contractor", "work_location"], "inspection_date", limit)
+
+
+def paginated_records() -> tuple[list[dict[str, Any]], int, int, int]:
+    return filtered_rows_page("inspections", ["report_no", "inspected_by", "contractor", "work_location"], "inspection_date")
 
 
 def filtered_near_miss(limit: int = 1000) -> list[dict[str, Any]]:
     return filtered_rows("near_miss_reports", ["report_no", "reported_by", "department_project", "location"], "incident_date", limit)
 
 
+def paginated_near_miss() -> tuple[list[dict[str, Any]], int, int, int]:
+    return filtered_rows_page("near_miss_reports", ["report_no", "reported_by", "department_project", "location"], "incident_date")
+
+
 def filtered_violations(limit: int = 1000) -> list[dict[str, Any]]:
     return filtered_rows("violation_notices", ["violation_no", "employee_name", "company_contractor", "violation_location"], "violation_date", limit)
+
+
+def paginated_violations() -> tuple[list[dict[str, Any]], int, int, int]:
+    return filtered_rows_page("violation_notices", ["violation_no", "employee_name", "company_contractor", "violation_location"], "violation_date")
 
 
 def auto_close_expired_ptw() -> None:
@@ -1138,6 +1200,22 @@ def filtered_ptw(limit: int = 1000) -> list[dict[str, Any]]:
     return sorted(records, key=ptw_sort_key, reverse=True)
 
 
+def paginated_ptw() -> tuple[list[dict[str, Any]], int, int, int]:
+    # PTW's meaningful order is a Python-level sort on the numeric suffix of
+    # ptw_number (see ptw_sort_key), not a SQL ORDER BY — so unlike the other
+    # record types, pagination here has to sort everything first, then slice
+    # the requested page in Python, rather than using SQL LIMIT/OFFSET.
+    auto_close_expired_ptw()
+    records = sorted(filtered_rows("ptw_logs", ["ptw_number", "issuer", "receiver", "location", "company"], "start_date", limit=5000), key=ptw_sort_key, reverse=True)
+    total_count = len(records)
+    total_pages = max(1, math.ceil(total_count / PAGE_SIZE))
+    page_arg = request.args.get("page", "1")
+    page = int(page_arg) if page_arg.isdigit() else 1
+    page = min(max(1, page), total_pages)
+    start = (page - 1) * PAGE_SIZE
+    return records[start:start + PAGE_SIZE], page, total_pages, total_count
+
+
 def filtered_training(limit: int = 1000) -> list[dict[str, Any]]:
     return filtered_rows(
         "training_logs", ["topic", "trainer", "location", "session_type"], "session_date", limit,
@@ -1145,8 +1223,19 @@ def filtered_training(limit: int = 1000) -> list[dict[str, Any]]:
     )
 
 
+def paginated_training() -> tuple[list[dict[str, Any]], int, int, int]:
+    return filtered_rows_page(
+        "training_logs", ["topic", "trainer", "location", "session_type"], "session_date",
+        exact_filters=[("session_type", "type")],
+    )
+
+
 def filtered_good_practices(limit: int = 1000) -> list[dict[str, Any]]:
     return filtered_rows("good_practices", ["report_no", "observed_by", "project_name", "location", "category"], "practice_date", limit)
+
+
+def paginated_good_practices() -> tuple[list[dict[str, Any]], int, int, int]:
+    return filtered_rows_page("good_practices", ["report_no", "observed_by", "project_name", "location", "category"], "practice_date")
 
 
 def record_counts() -> dict[str, int]:
@@ -1749,22 +1838,21 @@ def admin() -> str | Response:
     trends: list[dict[str, Any]] = []
     ptw_stats: dict[str, Any] = {}
     total = average = non_compliant = 0
+    page = total_pages = total_count = 1
     if view == "inspections":
-        records = filtered_records()
-        total = len(records)
-        average = round(sum(float(record["score"]) for record in records) / total, 1) if total else 0
-        non_compliant = sum(int(record["non_compliant"]) for record in records)
+        records, page, total_pages, total_count = paginated_records()
+        total, average, non_compliant = inspection_filtered_stats()
     elif view == "near-miss":
-        near_miss_records = filtered_near_miss()
+        near_miss_records, page, total_pages, total_count = paginated_near_miss()
     elif view == "violations":
-        violations = filtered_violations()
+        violations, page, total_pages, total_count = paginated_violations()
     elif view == "ptw":
-        ptw_logs = filtered_ptw()
+        ptw_logs, page, total_pages, total_count = paginated_ptw()
         ptw_stats = ptw_overview()
     elif view == "training":
-        training_logs = filtered_training()
+        training_logs, page, total_pages, total_count = paginated_training()
     elif view == "good-practices":
-        good_practice_records = filtered_good_practices()
+        good_practice_records, page, total_pages, total_count = paginated_good_practices()
     else:
         trends = compute_trends()
 
@@ -1790,6 +1878,7 @@ def admin() -> str | Response:
     this_week_end = (date.fromisoformat(this_week_end_exclusive) - timedelta(days=1)).isoformat()
     last_week_start = (date.fromisoformat(this_week_start) - timedelta(days=7)).isoformat()
     last_week_end = (date.fromisoformat(this_week_end) - timedelta(days=7)).isoformat()
+    page_query_args = {key: value for key, value in request.args.items() if key != "page"}
 
     return render_template(
         "admin.html",
@@ -1815,6 +1904,7 @@ def admin() -> str | Response:
         training_type_labels=TRAINING_TYPE_LABELS,
         this_week_start=this_week_start, this_week_end=this_week_end,
         last_week_start=last_week_start, last_week_end=last_week_end,
+        page=page, total_pages=total_pages, total_count=total_count, page_query_args=page_query_args,
     )
 
 

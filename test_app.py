@@ -246,6 +246,83 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertIn("Scaffold Training", filtered)
         self.assertNotIn("Site Induction", filtered)
 
+    def test_admin_records_are_paginated(self):
+        for i in range(55):
+            payload = self.payload()
+            payload["inspectionDate"] = f"2026-01-{(i % 28) + 1:02d}"
+            payload["remarks"] = f"Record {i}"
+            self.client.post("/api/inspections", json=payload)
+
+        self.login()
+        page1 = self.client.get("/admin?view=inspections")
+        self.assertEqual(page1.status_code, 200)
+        page1_html = page1.get_data(as_text=True)
+        self.assertIn("Page 1 of 2", page1_html)
+        self.assertIn("55 records", page1_html)
+        # The "Matching records" stat tile reflects the full filtered set, not just this page.
+        self.assertIn("<strong>55</strong>", page1_html)
+
+        page2 = self.client.get("/admin?view=inspections&page=2")
+        page2_html = page2.get_data(as_text=True)
+        self.assertIn("Page 2 of 2", page2_html)
+
+        # Every record should appear exactly once across the two pages, none skipped or duplicated.
+        report_numbers = {f"OHS-{n:03d}" for n in range(1, 56)}
+        combined = page1_html + page2_html
+        for report_no in report_numbers:
+            self.assertEqual(combined.count(report_no), 1, report_no)
+
+    def test_admin_pagination_out_of_range_page_clamps_to_last_page(self):
+        for i in range(3):
+            payload = self.near_miss_payload()
+            payload["incidentDate"] = f"2026-01-{i + 1:02d}"
+            self.client.post("/api/near-miss", json=payload)
+        self.login()
+        response = self.client.get("/admin?view=near-miss&page=999")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"NEAR-MISS-001", response.data)
+
+    def test_admin_pagination_preserves_filters(self):
+        induction = self.training_payload()
+        induction["sessionType"] = "Induction"
+        induction["topic"] = "Kept Induction"
+        self.client.post("/api/training", json=induction)
+        for i in range(55):
+            specific = self.training_payload()
+            specific["sessionType"] = "Specific Training"
+            specific["topic"] = f"Scaffold Training {i}"
+            self.client.post("/api/training", json=specific)
+
+        self.login()
+        page1 = self.client.get("/admin?view=training&type=Specific+Training").get_data(as_text=True)
+        self.assertNotIn("Kept Induction", page1)
+        self.assertIn("Page 1 of 2", page1)
+        next_link_index = page1.index("Next")
+        self.assertIn("type=Specific", page1[max(0, next_link_index - 300):next_link_index])
+
+        page2 = self.client.get("/admin?view=training&type=Specific+Training&page=2").get_data(as_text=True)
+        self.assertNotIn("Kept Induction", page2)
+
+    def test_admin_ptw_pagination_keeps_numeric_sort_order(self):
+        from datetime import timezone
+
+        tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%d")
+        for i in range(1, 56):
+            payload = self.ptw_payload()
+            payload["ptwNumber"] = f"BAJV-{i}"
+            payload["startDate"] = tomorrow
+            payload["endDate"] = tomorrow
+            self.client.post("/api/ptw", json=payload)
+
+        self.login()
+        page1 = self.client.get("/admin?view=ptw").get_data(as_text=True)
+        self.assertIn("Page 1 of 2", page1)
+        self.assertIn("BAJV-55", page1)  # highest number sorts first
+        self.assertNotIn("BAJV-5<", page1)  # low numbers pushed to page 2
+
+        page2 = self.client.get("/admin?view=ptw&page=2").get_data(as_text=True)
+        self.assertIn("BAJV-1<", page2)
+
     def test_current_work_week_range_excludes_friday(self):
         from datetime import date
         from app import current_work_week_range

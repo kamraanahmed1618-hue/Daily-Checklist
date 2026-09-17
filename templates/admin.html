@@ -291,6 +291,20 @@
         {% endif %}
     </div>
 
+    {% if view != 'trends' and total_pages > 1 %}
+    <div class="pagination">
+        <span>Page {{ page }} of {{ total_pages }} ({{ total_count }} record{{ 's' if total_count != 1 }})</span>
+        <div class="pagination-links">
+            {% if page > 1 %}
+            <a class="button ghost" href="{{ url_for('admin', page=page - 1, **page_query_args) }}">← Previous</a>
+            {% endif %}
+            {% if page < total_pages %}
+            <a class="button ghost" href="{{ url_for('admin', page=page + 1, **page_query_args) }}">Next →</a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
 </section>
 {% endif %}
 
