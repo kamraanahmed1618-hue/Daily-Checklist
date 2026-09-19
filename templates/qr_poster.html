@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}QR Poster · Report Site Safety Issues{% endblock %}
+{% block body_class %}record-page{% endblock %}
+{% block content %}
+<section class="record-toolbar no-print">
+  <a class="text-link" href="{{ url_for('admin') }}">← Back to records</a>
+  <div class="record-toolbar-actions">
+    <button class="button primary" id="print-record" type="button">Print poster</button>
+  </div>
+</section>
+
+<article class="doc-sheet qr-poster">
+  <div class="doc-letterhead"><img src="{{ url_for('static', filename='bec-arabia-contracting.png') }}" alt="BEC Arabia Contracting"></div>
+  <div class="doc-band">REPORT A SITE SAFETY ISSUE</div>
+  <p class="qr-poster-intro">Scan a code below with your phone's camera to open the form. No app or login needed — it opens straight in your browser.</p>
+
+  <div class="qr-poster-grid">
+    {% for code in codes %}
+    <div class="qr-card">
+      <img class="qr-code-image" src="{{ code.qr_data_uri }}" alt="QR code linking to the {{ code.title }} form">
+      <h2>{{ code.title }}</h2>
+      <p>{{ code.subtitle }}</p>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="doc-classification">
+    <span>Classification: BEC Arabia - External - Unrestricted Use</span>
+  </div>
+</article>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='record.js') }}" defer></script>{% endblock %}

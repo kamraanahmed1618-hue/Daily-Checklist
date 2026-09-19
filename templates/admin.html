@@ -12,7 +12,8 @@
         <p>Search, review, print, and export submitted inspections, near-miss reports, violation notices, and good practices.</p>
     </div>
 
-    <form method="post" action="{{ url_for('logout') }}">
+    <form class="record-toolbar-actions" method="post" action="{{ url_for('logout') }}">
+        <a class="button ghost" href="{{ url_for('qr_poster') }}">QR poster</a>
         <button class="button ghost" type="submit">Sign out</button>
     </form>
 </section>
