@@ -170,6 +170,36 @@ class ChecklistApplicationTests(unittest.TestCase):
         response = self.client.get("/")
         self.assertEqual(response.headers.get("Cache-Control"), "no-store")
 
+    def test_onrender_host_redirects_to_canonical_host_when_configured(self):
+        with patch.dict(os.environ, {"CANONICAL_HOST": "ohs1hotel.com"}):
+            response = self.client.get(
+                "/near-miss", headers={"Host": "diriyah-ohs-checklist.onrender.com"}
+            )
+        self.assertEqual(response.status_code, 301)
+        self.assertEqual(response.headers["Location"], "https://ohs1hotel.com/near-miss")
+
+    def test_onrender_host_redirect_preserves_query_string(self):
+        with patch.dict(os.environ, {"CANONICAL_HOST": "ohs1hotel.com"}):
+            response = self.client.get(
+                "/admin?view=training", headers={"Host": "diriyah-ohs-checklist.onrender.com"}
+            )
+        self.assertEqual(response.status_code, 301)
+        self.assertEqual(response.headers["Location"], "https://ohs1hotel.com/admin?view=training")
+
+    def test_health_check_is_not_redirected_even_on_the_onrender_host(self):
+        with patch.dict(os.environ, {"CANONICAL_HOST": "ohs1hotel.com"}):
+            response = self.client.get("/health", headers={"Host": "diriyah-ohs-checklist.onrender.com"})
+        self.assertEqual(response.status_code, 200)
+
+    def test_canonical_host_itself_is_not_redirected(self):
+        with patch.dict(os.environ, {"CANONICAL_HOST": "ohs1hotel.com"}):
+            response = self.client.get("/", headers={"Host": "ohs1hotel.com"})
+        self.assertEqual(response.status_code, 200)
+
+    def test_no_redirect_when_canonical_host_is_not_configured(self):
+        response = self.client.get("/", headers={"Host": "diriyah-ohs-checklist.onrender.com"})
+        self.assertEqual(response.status_code, 200)
+
     def test_homepage_stats_only_count_current_work_week(self):
         from datetime import date, timedelta
 
