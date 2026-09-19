@@ -139,6 +139,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--navy-2); box-sha
 .button:disabled { opacity: .5; cursor: not-allowed; }
 .form-error, .notice { margin: 20px 0; padding: 14px 16px; border-radius: 10px; font-size: 13px; font-weight: 650; }
 .form-error, .notice.danger { color: #7e261e; background: var(--red-soft); border: 1px solid #efc1bb; }
+.notice.warning { color: #7a4a06; background: var(--amber-soft); border: 1px solid #f0d49a; }
+.notice ul { margin: 6px 0 0 18px; padding: 0; font-weight: 500; }
 .success-panel { margin: 20px 0 50px; padding: 48px; min-height: 320px; background: white; border: 1px solid var(--line); border-radius: var(--radius); display: flex; align-items: center; justify-content: center; gap: 26px; box-shadow: var(--shadow); }
 .success-icon { flex: 0 0 auto; width: 70px; height: 70px; display: grid; place-items: center; color: white; background: var(--navy-2); border-radius: 50%; font-size: 34px; }
 .success-panel h2 { margin-bottom: 10px; font-family: Georgia, serif; font-size: 32px; font-weight: 500; }

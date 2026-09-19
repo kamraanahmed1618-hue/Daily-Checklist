@@ -38,6 +38,16 @@
 {% endif %}
 
 {% if view == 'ptw' %}
+{% if flagged_ptw_duplicates %}
+<div class="notice warning" role="alert">
+    <strong>{{ flagged_ptw_duplicates|length }} permit{{ 's' if flagged_ptw_duplicates|length != 1 }} had a duplicate PTW number and were automatically renumbered</strong> — a later permit shared its number with an earlier one, so " (DUPn)" was appended to keep them distinct. Confirm the real number with whoever issued it and correct it via Edit:
+    <ul>
+        {% for permit in flagged_ptw_duplicates %}
+        <li><a href="{{ url_for('ptw_detail', record_id=permit.id) }}">{{ permit.ptw_number }}</a> — {{ permit.location or 'no location' }}, {{ permit.start_date }}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
 <section class="stats-grid cols-4">
     <article><span>Open permits</span><strong>{{ ptw_stats.total_open }}</strong></article>
     <article><span>Hot work (open)</span><strong>{{ ptw_stats.hot_work_open }}</strong></article>

@@ -696,11 +696,41 @@ def init_db() -> None:
     # a Postgres transaction aborts entirely on any statement error, which would otherwise
     # silently roll back every migration above too. The app-level check in submit/edit
     # still catches new duplicates going forward even if this index can't be created yet.
+    #
+    # Case-insensitive (UPPER(ptw_number)) because "BAJV-841" and "bajv-841" were slipping
+    # past a case-sensitive check as if they were different permits. Before creating the
+    # index, any existing rows that already collide once normalized are auto-renamed —
+    # every occurrence after the earliest (by created_at) gets " (DUPn)" appended, logged
+    # to the audit trail — so the index can actually be created instead of permanently
+    # failing because of data that predates this check. Runs every startup; harmless once
+    # there's nothing left to rename, since CREATE UNIQUE INDEX IF NOT EXISTS is then a no-op.
     try:
         with database() as connection:
-            connection.cursor().execute("CREATE UNIQUE INDEX IF NOT EXISTS ptw_number_unique_idx ON ptw_logs (ptw_number)")
+            cursor = connection.cursor()
+            cursor.execute("SELECT id, ptw_number FROM ptw_logs ORDER BY created_at ASC")
+            seen: dict[str, str] = {}
+            dup_counts: dict[str, int] = {}
+            for row in cursor.fetchall():
+                normalized = row["ptw_number"].strip().upper()
+                if normalized not in seen:
+                    seen[normalized] = row["ptw_number"]
+                    continue
+                dup_counts[normalized] = dup_counts.get(normalized, 1) + 1
+                new_number = f'{row["ptw_number"]} (DUP{dup_counts[normalized]})'
+                cursor.execute(sql("UPDATE ptw_logs SET ptw_number = ? WHERE id = ?"), [new_number, row["id"]])
+                # Not log_audit() here: it reads request.remote_addr, which doesn't exist
+                # during this startup migration (no active request context) — insert the
+                # audit row directly instead, same shape, empty actor/IP.
+                cursor.execute(sql(
+                    "INSERT INTO audit_log (id, occurred_at, action, record_type, record_ref, actor_name, ip_address) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)"
+                ), [
+                    secrets.token_hex(12), datetime.now(timezone.utc).isoformat(), "renamed", "ptw",
+                    f'{row["ptw_number"]} -> {new_number} (duplicate PTW number)', "", "",
+                ])
+            cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS ptw_number_unique_idx ON ptw_logs (UPPER(ptw_number))")
     except Exception:
-        app.logger.exception("Could not create unique index on ptw_logs.ptw_number (likely pre-existing duplicates)")
+        app.logger.exception("Could not deduplicate/create unique index on ptw_logs.ptw_number")
 
 
 def log_audit(action: str, record_type: str, record_ref: str, actor_name: str = "") -> None:
@@ -953,7 +983,10 @@ def clean_time(value: Any, field: str, required: bool = True) -> str:
 
 def validate_ptw(payload: dict[str, Any]) -> dict[str, Any]:
     record = {
-        "ptw_number": clean_text(payload.get("ptwNumber"), "PTW number", 80),
+        # Collapsed to single spaces (on top of clean_text's strip) so "BAJV- 841" and
+        # "BAJV-841" — the kind of stray-space variants people type by hand — don't slip
+        # past the duplicate-number check as if they were different permits.
+        "ptw_number": re.sub(r"\s+", " ", clean_text(payload.get("ptwNumber"), "PTW number", 80)),
         "issuer": clean_text(payload.get("issuer"), "PTW issuer"),
         "receiver": clean_text(payload.get("receiver"), "PTW receiver"),
         "ptw_type": clean_text(payload.get("ptwType"), "Type of PTW", 80),
@@ -1359,6 +1392,19 @@ def ptw_overview() -> dict[str, Any]:
         "by_area": by_area_list,
         "by_type": by_type,
     }
+
+
+def flagged_duplicate_ptw_permits() -> list[dict[str, Any]]:
+    """Permits the startup migration auto-renamed because their number collided
+    (case/whitespace-insensitively) with an earlier one — surfaced here so an admin
+    can go confirm the real number with whoever issued it, rather than the rename
+    only being discoverable by digging through the audit log."""
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql(
+            "SELECT id, ptw_number, location, start_date FROM ptw_logs WHERE ptw_number LIKE ? ORDER BY created_at DESC"
+        ), ["% (DUP%"])
+        return [dict(row) for row in cursor.fetchall()]
 
 
 def week_start(date_str: str) -> str | None:
@@ -1815,7 +1861,7 @@ def submit_ptw() -> tuple[Response, int] | Response:
         now = datetime.now(timezone.utc).isoformat()
         with database() as connection:
             cursor = connection.cursor()
-            cursor.execute(sql("SELECT 1 FROM ptw_logs WHERE ptw_number = ?"), [record["ptw_number"]])
+            cursor.execute(sql("SELECT 1 FROM ptw_logs WHERE UPPER(ptw_number) = UPPER(?)"), [record["ptw_number"]])
             if cursor.fetchone():
                 raise ValueError(f'PTW number "{record["ptw_number"]}" is already in use — choose a different number.')
             cursor.execute(sql("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM ptw_logs"))
@@ -1839,7 +1885,14 @@ def submit_ptw() -> tuple[Response, int] | Response:
         return jsonify({"error": str(error)}), 400
     except HTTPException:
         raise
-    except Exception:
+    except Exception as error:
+        message = str(error)
+        if "unique" in message.lower():
+            # Belt-and-suspenders for two people submitting the same number at nearly the
+            # same instant — the SELECT check above can't catch that race, but the database's
+            # own unique index still blocks the second INSERT; this turns that into the same
+            # friendly message instead of a raw 500.
+            return jsonify({"error": f'PTW number "{record["ptw_number"]}" is already in use — choose a different number.'}), 409
         app.logger.exception("PTW log submission failed")
         return jsonify({"error": "The PTW log entry could not be saved."}), 500
 
@@ -1956,6 +2009,7 @@ def admin() -> str | Response:
     daily_kpi_rows: list[dict[str, Any]] = []
     daily_kpi_from = daily_kpi_to = ""
     ptw_stats: dict[str, Any] = {}
+    flagged_ptw_duplicates: list[dict[str, Any]] = []
     total = average = non_compliant = 0
     page = total_pages = total_count = 1
     if view == "inspections":
@@ -1968,6 +2022,7 @@ def admin() -> str | Response:
     elif view == "ptw":
         ptw_logs, page, total_pages, total_count = paginated_ptw()
         ptw_stats = ptw_overview()
+        flagged_ptw_duplicates = flagged_duplicate_ptw_permits()
     elif view == "training":
         training_logs, page, total_pages, total_count = paginated_training()
     elif view == "good-practices":
@@ -2016,6 +2071,7 @@ def admin() -> str | Response:
         violations=violations,
         ptw_logs=ptw_logs,
         ptw_stats=ptw_stats,
+        flagged_ptw_duplicates=flagged_ptw_duplicates,
         training_logs=training_logs,
         good_practice_records=good_practice_records,
         trends=trends,
@@ -2433,7 +2489,7 @@ def ptw_detail(record_id: str) -> str | tuple[str, int] | Response:
             updated = validate_ptw(form_payload)
             with database() as connection:
                 cursor = connection.cursor()
-                cursor.execute(sql("SELECT 1 FROM ptw_logs WHERE ptw_number = ? AND id != ?"), [updated["ptw_number"], record_id])
+                cursor.execute(sql("SELECT 1 FROM ptw_logs WHERE UPPER(ptw_number) = UPPER(?) AND id != ?"), [updated["ptw_number"], record_id])
                 if cursor.fetchone():
                     raise ValueError(f'PTW number "{updated["ptw_number"]}" is already in use — choose a different number.')
                 cursor.execute(sql(
@@ -2452,6 +2508,12 @@ def ptw_detail(record_id: str) -> str | tuple[str, int] | Response:
         except ValueError as err:
             error = str(err)
             record = {**record, **{db_key: form_payload[form_key] for form_key, db_key in PTW_FORM_FIELDS.items()}}
+        except Exception as err:
+            if "unique" in str(err).lower():
+                error = f'PTW number "{form_payload.get("ptwNumber", "")}" is already in use — choose a different number.'
+                record = {**record, **{db_key: form_payload[form_key] for form_key, db_key in PTW_FORM_FIELDS.items()}}
+            else:
+                raise
     return render_template("ptw_edit.html", record=record, ptw_types=PTW_TYPES, shifts=PTW_SHIFTS, statuses=PTW_STATUSES, error=error)
 
 
