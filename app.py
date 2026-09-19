@@ -30,6 +30,7 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from PIL import Image, ImageOps
+import qrcode
 from xhtml2pdf import pisa
 
 from charts import bar_chart_svg, grouped_bar_chart_svg, line_chart_svg
@@ -203,6 +204,16 @@ def render_pdf(html_content: str) -> bytes:
 def photo_data_uri(data: bytes, extension: str) -> str:
     mime = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp"}.get(extension, "image/jpeg")
     return f"data:{mime};base64,{base64.b64encode(data).decode()}"
+
+
+def qr_code_data_uri(data: str) -> str:
+    """Generates a QR code as a self-contained PNG data URI — no external QR
+    service call, so the printable poster keeps working even if a third-party
+    API is down, and nothing about what's printed ever leaves this server."""
+    image = qrcode.make(data, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=10, border=2)
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return f"data:image/png;base64,{base64.b64encode(buffer.getvalue()).decode()}"
 
 
 PDF_PHOTO_MAX_DIMENSION = 900
@@ -2009,6 +2020,35 @@ def admin() -> str | Response:
 def logout() -> Response:
     session.clear()
     return redirect(url_for("admin"))
+
+
+@app.get("/admin/qr-poster")
+@admin_required
+def qr_poster() -> str:
+    """A printable poster of QR codes linking straight to the near-miss, violation,
+    and good-practice forms, so a site worker can self-report from their own phone
+    instead of it always going through the HSE office first."""
+    base_url = request.host_url.rstrip("/")
+    codes = [
+        {
+            "title": "Report a Near-Miss",
+            "subtitle": "Saw something that could have caused harm?",
+            "url": f"{base_url}{url_for('near_miss_form')}",
+        },
+        {
+            "title": "Report a Violation",
+            "subtitle": "Witnessed an unsafe act or condition?",
+            "url": f"{base_url}{url_for('violation_form')}",
+        },
+        {
+            "title": "Report a Good Practice",
+            "subtitle": "Spotted someone doing it right?",
+            "url": f"{base_url}{url_for('good_practice_form')}",
+        },
+    ]
+    for entry in codes:
+        entry["qr_data_uri"] = qr_code_data_uri(entry["url"])
+    return render_template("qr_poster.html", codes=codes)
 
 
 @app.get("/admin/records/<record_id>")

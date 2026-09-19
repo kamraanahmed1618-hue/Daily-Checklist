@@ -6,3 +6,4 @@ openpyxl==3.1.5
 tzdata==2026.3
 xhtml2pdf==0.2.18
 Pillow==12.3.0
+qrcode==8.2

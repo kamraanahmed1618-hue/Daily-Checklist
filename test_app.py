@@ -431,6 +431,28 @@ class ChecklistApplicationTests(unittest.TestCase):
         response = self.client.get("/admin/export/daily-kpis")
         self.assertEqual(response.status_code, 400)
 
+    def test_qr_poster_requires_login(self):
+        response = self.client.get("/admin/qr-poster")
+        self.assertEqual(response.status_code, 302)  # redirected to login, not shown directly
+
+    def test_qr_poster_page_renders_three_codes_linking_to_the_forms(self):
+        self.login()
+        response = self.client.get("/admin/qr-poster")
+        self.assertEqual(response.status_code, 200)
+        body = response.data.decode()
+        self.assertIn("Report a Near-Miss", body)
+        self.assertIn("Report a Violation", body)
+        self.assertIn("Report a Good Practice", body)
+        # Three self-contained QR images (data URIs), no calls out to an external QR service.
+        self.assertEqual(body.count('src="data:image/png;base64,'), 3)
+        self.assertNotIn("http://api.qrserver.com", body)
+
+    def test_qr_code_data_uri_encodes_the_given_url(self):
+        from app import qr_code_data_uri
+
+        uri = qr_code_data_uri("https://example.com/near-miss")
+        self.assertTrue(uri.startswith("data:image/png;base64,"))
+
     def test_current_work_week_range_excludes_friday(self):
         from datetime import date
         from app import current_work_week_range

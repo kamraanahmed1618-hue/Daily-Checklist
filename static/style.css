@@ -250,6 +250,13 @@ td small { margin-top: 3px; color: var(--muted); }
 
 .doc-classification { margin-top: 16px; padding-top: 6px; border-top: 1px solid #000; display: flex; justify-content: space-between; gap: 12px; font-size: 10px; color: #555; }
 
+.qr-poster-intro { margin: 14px 0; font-size: 14px; text-align: center; }
+.qr-poster-grid { margin: 20px 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.qr-card { padding: 20px 14px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; border: 1px solid #000; border-radius: 8px; }
+.qr-card .qr-code-image { width: 100%; max-width: 220px; height: auto; }
+.qr-card h2 { margin: 4px 0 0; font-size: 16px; font-weight: 700; }
+.qr-card p { margin: 0; font-size: 12px; color: #444; }
+
 .doc-banner { padding: 10px 12px; color: white; background: #002060; border: 1px solid #000; border-top: none; font-size: 22px; font-weight: 700; letter-spacing: .03em; text-align: center; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 
 .doc-title { margin: 14px 0 10px; color: #1F3864; font-size: 16px; font-weight: 700; text-align: center; text-decoration: underline; }
@@ -370,6 +377,7 @@ td small { margin-top: 3px; color: var(--muted); }
   .doc-logos { display: none; }
   .doc-banner { border-top: 1px solid #000; font-size: 17px; }
   .doc-columns { grid-template-columns: 1fr; }
+  .qr-poster-grid { grid-template-columns: 1fr; }
 }
 
 @media print {
@@ -397,4 +405,7 @@ td small { margin-top: 3px; color: var(--muted); }
   .doc-topic-title { font-size: 14pt; }
   .doc-topic-subtitle, .doc-summary-box, .doc-lessons-list { font-size: 9pt; }
   .doc-record-table tr { break-inside: avoid; }
+  .qr-poster-grid { grid-template-columns: repeat(3, 1fr); }
+  .qr-card { break-inside: avoid; padding: 16px 10px; }
+  .qr-card .qr-code-image { max-width: 180px; }
 }
