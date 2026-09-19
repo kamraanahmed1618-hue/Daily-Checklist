@@ -1001,6 +1001,123 @@ class ChecklistApplicationTests(unittest.TestCase):
         })
         self.assertEqual(unchanged.status_code, 302)
 
+    def test_ptw_number_duplicate_check_is_case_insensitive_on_create(self):
+        payload = self.ptw_payload()
+        self.client.post("/api/ptw", json=payload)
+        duplicate = self.ptw_payload()
+        duplicate["ptwNumber"] = payload["ptwNumber"].lower()
+        response = self.client.post("/api/ptw", json=duplicate)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("already in use", response.json["error"])
+
+    def test_ptw_number_duplicate_check_ignores_stray_internal_spaces(self):
+        payload = self.ptw_payload()
+        payload["ptwNumber"] = "BAJV - 841"
+        self.client.post("/api/ptw", json=payload)
+        duplicate = self.ptw_payload()
+        duplicate["ptwNumber"] = "BAJV  -  841"  # same text, extra spaces typed by hand
+        response = self.client.post("/api/ptw", json=duplicate)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("already in use", response.json["error"])
+
+    def test_ptw_number_duplicate_check_is_case_insensitive_on_edit(self):
+        first_id = self.client.post("/api/ptw", json=self.ptw_payload()).json["id"]
+        second_payload = self.ptw_payload()
+        second_payload["ptwNumber"] = "BAJV-830"
+        second_id = self.client.post("/api/ptw", json=second_payload).json["id"]
+
+        self.login()
+        payload = self.ptw_payload()
+        response = self.client.post(f"/admin/ptw/{second_id}", data={
+            "ptwNumber": payload["ptwNumber"].lower(), "issuer": payload["issuer"], "receiver": payload["receiver"],
+            "ptwType": payload["ptwType"], "workDescription": payload["workDescription"], "areaHsePersonnel": "",
+            "location": payload["location"], "shift": "", "startDate": payload["startDate"],
+            "startTime": payload["startTime"], "endDate": payload["endDate"], "endTime": payload["endTime"],
+            "company": payload["company"], "status": "open", "workersCount": "", "reviewedBy": "",
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"already in use", response.data)
+
+    def test_startup_migration_deduplicates_existing_ptw_numbers_and_enforces_uniqueness(self):
+        from datetime import timezone
+
+        from app import init_db
+
+        earlier = "2026-09-01T08:00:00+00:00"
+        later = "2026-09-01T09:00:00+00:00"
+        with database() as connection:
+            cursor = connection.cursor()
+            # The app's own startup already created the unique index against an empty
+            # table — drop it first to simulate data that predates this feature, same as
+            # what a real pre-existing duplicate in production looks like.
+            cursor.execute("DROP INDEX IF EXISTS ptw_number_unique_idx")
+            cursor.execute(
+                "INSERT INTO ptw_logs (id, seq, ptw_number, issuer, receiver, ptw_type, start_date, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ["ptw-first", 1, "BAJV-900", "Faisal", "Sayed", "Hot work", "2026-09-01", earlier, earlier],
+            )
+            cursor.execute(
+                "INSERT INTO ptw_logs (id, seq, ptw_number, issuer, receiver, ptw_type, start_date, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                ["ptw-second", 2, "bajv-900", "Ali", "Hassan", "Hot work", "2026-09-01", later, later],
+            )
+
+        init_db()
+
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT id, ptw_number FROM ptw_logs WHERE id IN ('ptw-first', 'ptw-second')")
+            numbers = {row["id"]: row["ptw_number"] for row in cursor.fetchall()}
+        self.assertEqual(numbers["ptw-first"], "BAJV-900")  # earliest keeps its original number
+        self.assertEqual(numbers["ptw-second"], "bajv-900 (DUP2)")  # later duplicate gets renamed
+
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT * FROM audit_log WHERE record_type = 'ptw' AND action = 'renamed'")
+            audit_rows = cursor.fetchall()
+        self.assertEqual(len(audit_rows), 1)
+
+        # The unique index is now active (case-insensitively) — a fresh exact-case
+        # collision with the untouched first row must fail at the database level.
+        with self.assertRaises(Exception):
+            with database() as connection:
+                cursor = connection.cursor()
+                cursor.execute(
+                    "INSERT INTO ptw_logs (id, seq, ptw_number, issuer, receiver, ptw_type, start_date, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    ["ptw-third", 3, "BAJV-900", "X", "Y", "Hot work", "2026-09-01", later, later],
+                )
+
+    def test_admin_ptw_tab_flags_auto_renamed_duplicates_for_review(self):
+        from app import init_db
+
+        now = datetime.now(ZoneInfo("Asia/Riyadh")).isoformat()
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("DROP INDEX IF EXISTS ptw_number_unique_idx")
+            for record_id, ptw_number, created_at in [
+                ("ptw-a", "BAJV-950", now),
+                ("ptw-b", "bajv-950", now),
+            ]:
+                cursor.execute(
+                    "INSERT INTO ptw_logs (id, seq, ptw_number, issuer, receiver, ptw_type, start_date, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    [record_id, 1, ptw_number, "Faisal", "Sayed", "Hot work", "2026-09-01", created_at, created_at],
+                )
+        init_db()
+
+        self.login()
+        response = self.client.get("/admin?view=ptw")
+        html = response.get_data(as_text=True)
+        self.assertIn("automatically renumbered", html)
+        self.assertIn("bajv-950 (DUP2)", html)
+
+        # A clean, dedup-free PTW log shouldn't show the banner at all.
+        with database() as connection:
+            connection.execute("DELETE FROM ptw_logs")
+        clean = self.client.get("/admin?view=ptw").get_data(as_text=True)
+        self.assertNotIn("automatically renumbered", clean)
+
     def test_delete_ptw(self):
         record_id = self.client.post("/api/ptw", json=self.ptw_payload()).json["id"]
         self.login()
