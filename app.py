@@ -1520,6 +1520,26 @@ def daily_kpis_csv(rows: list[dict[str, Any]]) -> str:
     return output.getvalue()
 
 
+@app.before_request
+def redirect_to_canonical_host() -> Response | None:
+    """Once a custom domain (CANONICAL_HOST) is configured, bounce any request that
+    arrives on the platform's shared *.onrender.com subdomain over to it instead —
+    that shared subdomain gets flagged by phone/browser "suspicious site" checks
+    since countless unrelated apps (some malicious) live on the same suffix.
+    /health is exempt so Render's own health checks against the onrender.com
+    hostname keep getting a 200 instead of a redirect."""
+    canonical_host = os.environ.get("CANONICAL_HOST", "").strip().lower()
+    if not canonical_host or request.path == "/health":
+        return None
+    host = request.host.split(":")[0].lower()
+    if host == canonical_host or not host.endswith(".onrender.com"):
+        return None
+    target = f"https://{canonical_host}{request.path}"
+    if request.query_string:
+        target += "?" + request.query_string.decode()
+    return redirect(target, code=301)
+
+
 @app.after_request
 def security_headers(response: Response) -> Response:
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
