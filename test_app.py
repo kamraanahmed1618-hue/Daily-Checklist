@@ -1706,7 +1706,7 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.login()
         payload = self.violation_payload()
         edit_response = self.client.post(f"/admin/violations/{record_id}/edit", data={
-            "projectName": payload["projectName"], "violationDate": payload["violationDate"],
+            "violationNo": violation_no, "projectName": payload["projectName"], "violationDate": payload["violationDate"],
             "employeeName": "Jane Doe", "companyContractor": payload["companyContractor"],
             "violationLocation": payload["violationLocation"], "violationType": payload["violationType"],
             "violationDescription": "Worker observed without safety glasses.",
@@ -1723,19 +1723,54 @@ class ChecklistApplicationTests(unittest.TestCase):
             row = cursor.fetchone()
         self.assertEqual(row["action"], "updated")
 
+    def test_violation_edit_can_renumber_violation_no(self):
+        response = self.client.post("/api/violations", json=self.violation_payload())
+        record_id = response.json["id"]
+        self.login()
+        payload = self.violation_payload()
+        edit_response = self.client.post(f"/admin/violations/{record_id}/edit", data={
+            "violationNo": "VIOLATION-024", "projectName": payload["projectName"], "violationDate": payload["violationDate"],
+            "employeeName": payload["employeeName"], "companyContractor": payload["companyContractor"],
+            "violationLocation": payload["violationLocation"], "violationType": payload["violationType"],
+            "violationDescription": payload["violationDescription"], "issuedByName": payload["issuedByName"],
+        })
+        self.assertEqual(edit_response.status_code, 302)
+        detail = self.client.get(f"/admin/violations/{record_id}")
+        self.assertIn(b"VIOLATION-024", detail.data)
+
+    def test_violation_edit_rejects_duplicate_violation_no(self):
+        first_id = self.client.post("/api/violations", json=self.violation_payload()).json["id"]
+        second_payload = self.violation_payload()
+        second_payload["employeeName"] = "Second Employee"
+        second_id = self.client.post("/api/violations", json=second_payload).json["id"]
+
+        self.login()
+        payload = self.violation_payload()
+        response = self.client.post(f"/admin/violations/{second_id}/edit", data={
+            "violationNo": "VIOLATION-001", "projectName": payload["projectName"], "violationDate": payload["violationDate"],
+            "employeeName": payload["employeeName"], "companyContractor": payload["companyContractor"],
+            "violationLocation": payload["violationLocation"], "violationType": payload["violationType"],
+            "violationDescription": payload["violationDescription"], "issuedByName": payload["issuedByName"],
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"already in use", response.data)
+
     def test_violation_edit_does_not_touch_photos(self):
         payload = self.violation_payload()
         payload["photoKeys"] = ["uploads/tok11111/aaaaaaaaaaaaaaaaaaaa.jpg"]
-        record_id = self.client.post("/api/violations", json=payload).json["id"]
+        creation = self.client.post("/api/violations", json=payload)
+        record_id = creation.json["id"]
+        violation_no = creation.json["violationNo"]
         self.login()
         edit_payload = self.violation_payload()
-        self.client.post(f"/admin/violations/{record_id}/edit", data={
-            "projectName": edit_payload["projectName"], "violationDate": edit_payload["violationDate"],
+        edit_response = self.client.post(f"/admin/violations/{record_id}/edit", data={
+            "violationNo": violation_no, "projectName": edit_payload["projectName"], "violationDate": edit_payload["violationDate"],
             "employeeName": edit_payload["employeeName"], "companyContractor": edit_payload["companyContractor"],
             "violationLocation": edit_payload["violationLocation"], "violationType": edit_payload["violationType"],
             "violationDescription": edit_payload["violationDescription"],
             "issuedByName": edit_payload["issuedByName"],
         })
+        self.assertEqual(edit_response.status_code, 302)
         with database() as connection:
             cursor = connection.cursor()
             cursor.execute("SELECT photos FROM violation_notices WHERE id = ?", [record_id])

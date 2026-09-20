@@ -23,6 +23,7 @@
       <p>Fields marked <span class="required">*</span> are required</p>
     </div>
     <div class="field-grid">
+      <label><span>Violation No. <b>*</b></span><input name="violationNo" required maxlength="80" value="{{ record.violation_no }}"></label>
       <label><span>Project name <b>*</b></span><input name="projectName" required maxlength="200" value="{{ record.project_name }}"></label>
       <label><span>Date <b>*</b></span><input name="violationDate" type="date" required value="{{ record.violation_date }}"></label>
     </div>
