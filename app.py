@@ -1940,9 +1940,11 @@ def import_violations() -> tuple[Response, int] | Response:
             imported.append(violation_no)
         except ValueError as error:
             failed.append(f"{filename}: {error}")
-        except Exception:
+        except Exception as error:
             app.logger.exception("Violation notice import failed for %s", filename)
-            failed.append(f"{filename}: could not be read as a violation notice.")
+            # This route is admin-only, so it's safe to show the real exception here —
+            # it saves a trip to the server logs to diagnose an environment-specific failure.
+            failed.append(f"{filename}: could not be read as a violation notice. ({type(error).__name__}: {error})")
     if not imported:
         return jsonify({"error": "No violation notices could be imported.", "failed": failed}), 400
     return jsonify({"imported": imported, "failed": failed}), 201
