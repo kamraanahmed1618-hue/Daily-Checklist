@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
 import openpyxl
+from docx import Document as DocxDocument
 
 
 TEST_FILES = tempfile.TemporaryDirectory()
@@ -77,6 +78,47 @@ class ChecklistApplicationTests(unittest.TestCase):
             "actions": ["First Warning"],
             "issuedByName": "Site HSE Officer",
         }
+
+    def violation_docx(self, *, project_name="1 Hotel Diriyah", violation_date="20 September 2026",
+                        employee_name="John Doe", employee_id="12345", company="BEC Arabia Contracting",
+                        job_title="Steel Fixer", location="Zone 2", violation_type="No PPE",
+                        description="Worker observed without a hard hat in an active work zone.",
+                        checked_actions=None, deduction_amount="—", issued_by_name="Site HSE Officer",
+                        issued_by_position="HSE Manager"):
+        checked_actions = ["First Warning"] if checked_actions is None else checked_actions
+        document = DocxDocument()
+
+        def kv_table(rows):
+            table = document.add_table(rows=len(rows) + 1, cols=2)
+            table.rows[0].cells[0].text = "Field"
+            table.rows[0].cells[1].text = "Details"
+            for index, (key, value) in enumerate(rows, start=1):
+                table.rows[index].cells[0].text = key
+                table.rows[index].cells[1].text = value
+
+        kv_table([("Project Name", project_name), ("Date", violation_date)])
+        kv_table([
+            ("Name", employee_name), ("Employee ID / Iqama No.", employee_id),
+            ("Company / Contractor", company), ("Job Title", job_title),
+        ])
+        kv_table([
+            ("Violation Location", location), ("Type of Violation", violation_type),
+            ("Description of Violation", description),
+        ])
+
+        actions_table = document.add_table(rows=2, cols=5)
+        all_actions = ["First Warning", "Final Warning", "Salary Deduction", "Deduction from Subcontractor Payment", "Removal from Site"]
+        for cell, action in zip(actions_table.rows[0].cells, all_actions):
+            symbol = "☑" if action in checked_actions else "☐"
+            cell.text = f"{symbol} {action}"
+        actions_table.rows[1].cells[-1].text = deduction_amount
+
+        kv_table([("Name", issued_by_name), ("Position", issued_by_position)])
+
+        buffer = io.BytesIO()
+        document.save(buffer)
+        buffer.seek(0)
+        return buffer
 
     def ptw_payload(self):
         # A day out (rather than a fixed date) so this stays "open" under the
@@ -1776,6 +1818,81 @@ class ChecklistApplicationTests(unittest.TestCase):
             cursor.execute("SELECT photos FROM violation_notices WHERE id = ?", [record_id])
             row = cursor.fetchone()
         self.assertIn("aaaaaaaaaaaaaaaaaaaa.jpg", row["photos"])
+
+    def test_violation_import_requires_login(self):
+        response = self.client.post(
+            "/admin/violations/import",
+            data={"files": (self.violation_docx(), "violation.docx")},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(response.status_code, 302)
+
+    def test_violation_import_creates_records_from_docx(self):
+        self.login()
+        first = self.violation_docx(employee_name="John Doe", checked_actions=["Removal from Site"], deduction_amount="—")
+        second = self.violation_docx(
+            employee_name="Jane Smith", location="Zone 5", violation_type="Unsafe Scaffolding",
+            checked_actions=["Final Warning", "Deduction from Subcontractor Payment"], deduction_amount="15,000 SAR",
+            issued_by_position="OHS Lead",
+        )
+        response = self.client.post(
+            "/admin/violations/import",
+            data={"files": [(first, "violation-1.docx"), (second, "violation-2.docx")]},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(len(response.json["imported"]), 2)
+        self.assertEqual(response.json["failed"], [])
+
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT * FROM violation_notices ORDER BY seq")
+            rows = [dict(row) for row in cursor.fetchall()]
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["employee_name"], "John Doe")
+        self.assertEqual(json.loads(rows[0]["actions"]), ["Removal from Site"])
+        self.assertEqual(rows[0]["deduction_amount"], "")
+        self.assertEqual(rows[0]["violation_date"], "2026-09-20")
+        self.assertEqual(rows[1]["employee_name"], "Jane Smith")
+        self.assertEqual(rows[1]["violation_location"], "Zone 5")
+        self.assertEqual(json.loads(rows[1]["actions"]), ["Final Warning", "Deduction from Subcontractor Payment"])
+        self.assertEqual(rows[1]["deduction_amount"], "15,000 SAR")
+        self.assertEqual(rows[1]["issued_by_position"], "OHS Lead")
+
+    def test_violation_import_reports_per_file_failure_without_losing_good_files(self):
+        self.login()
+        good = self.violation_docx(employee_name="Valid Employee")
+        response = self.client.post(
+            "/admin/violations/import",
+            data={"files": [(good, "good.docx"), (io.BytesIO(b"not a real word document"), "bad.docx")]},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(len(response.json["imported"]), 1)
+        self.assertEqual(len(response.json["failed"]), 1)
+        self.assertIn("bad.docx", response.json["failed"][0])
+
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT employee_name FROM violation_notices")
+            rows = [dict(row) for row in cursor.fetchall()]
+        self.assertEqual([row["employee_name"] for row in rows], ["Valid Employee"])
+
+    def test_violation_import_rejects_docx_without_expected_tables(self):
+        self.login()
+        document = DocxDocument()
+        document.add_table(rows=1, cols=2)
+        buffer = io.BytesIO()
+        document.save(buffer)
+        buffer.seek(0)
+        response = self.client.post(
+            "/admin/violations/import",
+            data={"files": (buffer, "incomplete.docx")},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn("imported", response.json)
+        self.assertIn("incomplete.docx", response.json["failed"][0])
 
     def test_training_edit_page_prefills_existing_values(self):
         record_id = self.client.post("/api/training", json=self.training_payload()).json["id"]

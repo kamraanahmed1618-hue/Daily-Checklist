@@ -30,6 +30,7 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from PIL import Image, ImageOps
+from docx import Document as DocxDocument
 import qrcode
 from xhtml2pdf import pisa
 
@@ -1589,6 +1590,21 @@ def redirect_to_canonical_host() -> Response | None:
     return redirect(target, code=301)
 
 
+VIOLATION_IMPORT_MAX_CONTENT_LENGTH = 40 * 1024 * 1024  # Word docs with embedded photos add up fast
+
+
+@app.before_request
+def raise_upload_limit_for_violation_import() -> None:
+    # The app-wide MAX_CONTENT_LENGTH (12MB) is sized around a single 8MB photo upload;
+    # bulk-importing a handful of violation notices as Word files — each one potentially
+    # carrying several embedded photos — needs more room. Scoped to this one
+    # admin-only route rather than raised globally, since a higher cap on a public,
+    # unauthenticated endpoint would just be a bigger DoS surface for no benefit there.
+    if request.endpoint == "import_violations":
+        request.max_content_length = VIOLATION_IMPORT_MAX_CONTENT_LENGTH
+        request.max_form_memory_size = VIOLATION_IMPORT_MAX_CONTENT_LENGTH
+
+
 @app.after_request
 def security_headers(response: Response) -> Response:
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -1800,6 +1816,138 @@ def submit_near_miss() -> tuple[Response, int] | Response:
         return jsonify({"error": "The near-miss report could not be saved."}), 500
 
 
+def insert_violation_notice(record: dict[str, Any]) -> tuple[str, str]:
+    """Shared by the public submission API and the admin bulk-import-from-Word route —
+    always auto-assigns the next sequential violation number; renumbering happens only
+    via the edit form afterward. Returns (record_id, violation_no)."""
+    record_id = secrets.token_hex(16)
+    created_at = datetime.now(timezone.utc).isoformat()
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM violation_notices"))
+        seq = cursor.fetchone()["next_seq"]
+        violation_no = f"VIOLATION-{seq:03d}"
+        values = [
+            record_id, seq, violation_no, record["project_name"], record["violation_date"], record["employee_name"],
+            record["employee_id"], record["company_contractor"], record["job_title"], record["violation_location"],
+            record["violation_type"], record["violation_description"], json.dumps(record["actions"]),
+            record["deduction_amount"], record["photos_attached"], record["documents_attached"],
+            record["issued_by_name"], record["issued_by_position"], json.dumps(record["photos"]), created_at,
+        ]
+        columns = (
+            "id, seq, violation_no, project_name, violation_date, employee_name, "
+            "employee_id, company_contractor, job_title, violation_location, "
+            "violation_type, violation_description, actions, "
+            "deduction_amount, photos_attached, documents_attached, "
+            "issued_by_name, issued_by_position, photos, created_at"
+        )
+        placeholders = ",".join("?" for _ in values)
+        cursor.execute(sql(f"INSERT INTO violation_notices ({columns}) VALUES ({placeholders})"), values)
+    return record_id, violation_no
+
+
+def _docx_kv_table(table: Any) -> dict[str, str]:
+    """Reads a two-column "Field | Details" table (as used throughout the app's own
+    violation notice layout) into a {label: value} dict, skipping the header row."""
+    result: dict[str, str] = {}
+    for row in table.rows:
+        cells = [cell.text.strip() for cell in row.cells]
+        if len(cells) >= 2 and cells[0] and cells[0].lower() != "field":
+            result[cells[0]] = cells[1]
+    return result
+
+
+def _docx_clean(value: str) -> str:
+    # The template uses "-" / "—" as a placeholder for "not applicable" — treat those
+    # the same as blank rather than storing the placeholder character itself.
+    value = value.strip()
+    return "" if value in ("-", "—") else value
+
+
+def _docx_field(values: dict[str, str], key: str) -> str:
+    return _docx_clean(values.get(key, ""))
+
+
+def parse_violation_docx(data: bytes) -> dict[str, Any]:
+    """Parses a violation notice filled out on the app's own Word template — printed
+    (or built to match) the same layout as the notice PDF the app itself generates —
+    back into the same fields /api/violations accepts. Table order in that template is
+    fixed: project info, employee details, violation details, action-taken checkboxes,
+    issued-by; raises ValueError if a docx doesn't have that shape."""
+    try:
+        document = DocxDocument(io.BytesIO(data))
+    except Exception:
+        raise ValueError("Could not open that file as a Word document.")
+    tables = document.tables
+    if len(tables) < 5:
+        raise ValueError("This doesn't look like a violation notice — expected template sections were not found.")
+
+    project = _docx_kv_table(tables[0])
+    employee = _docx_kv_table(tables[1])
+    details = _docx_kv_table(tables[2])
+    issued_by = _docx_kv_table(tables[4])
+
+    action_rows = [[cell.text.strip() for cell in row.cells] for row in tables[3].rows]
+    actions: list[str] = []
+    deduction_amount = ""
+    if action_rows:
+        header = action_rows[0]
+        for cell, action in zip(header, VIOLATION_ACTIONS):
+            if "☐" not in cell:
+                actions.append(action)
+        if len(action_rows) > 1 and action_rows[1]:
+            deduction_amount = _docx_clean(action_rows[1][-1])
+
+    violation_date = ""
+    raw_date = _docx_field(project, "Date")
+    if raw_date:
+        try:
+            violation_date = datetime.strptime(raw_date, "%d %B %Y").date().isoformat()
+        except ValueError:
+            pass
+
+    return {
+        "projectName": _docx_field(project, "Project Name"),
+        "violationDate": violation_date,
+        "employeeName": _docx_field(employee, "Name"),
+        "employeeId": _docx_field(employee, "Employee ID / Iqama No."),
+        "companyContractor": _docx_field(employee, "Company / Contractor"),
+        "jobTitle": _docx_field(employee, "Job Title"),
+        "violationLocation": _docx_field(details, "Violation Location"),
+        "violationType": _docx_field(details, "Type of Violation"),
+        "violationDescription": _docx_field(details, "Description of Violation"),
+        "actions": actions,
+        "deductionAmount": deduction_amount,
+        "issuedByName": _docx_field(issued_by, "Name"),
+        "issuedByPosition": _docx_field(issued_by, "Position"),
+    }
+
+
+@app.post("/admin/violations/import")
+@admin_required
+def import_violations() -> tuple[Response, int] | Response:
+    uploaded_files = request.files.getlist("files")
+    if not uploaded_files:
+        return jsonify({"error": "No files provided."}), 400
+    imported: list[str] = []
+    failed: list[str] = []
+    for uploaded in uploaded_files:
+        filename = uploaded.filename or "file"
+        try:
+            parsed = parse_violation_docx(uploaded.read())
+            record = validate_violation(parsed)
+            _, violation_no = insert_violation_notice(record)
+            imported.append(violation_no)
+        except ValueError as error:
+            failed.append(f"{filename}: {error}")
+        except Exception:
+            app.logger.exception("Violation notice import failed for %s", filename)
+            failed.append(f"{filename}: could not be read as a violation notice.")
+    if not imported:
+        return jsonify({"error": "No violation notices could be imported.", "failed": failed}), 400
+    return jsonify({"imported": imported, "failed": failed}), 201
+
+
 @app.post("/api/violations")
 def submit_violation() -> tuple[Response, int] | Response:
     try:
@@ -1807,29 +1955,7 @@ def submit_violation() -> tuple[Response, int] | Response:
         if not isinstance(payload, dict):
             raise ValueError("The violation notice data is invalid.")
         record = validate_violation(payload)
-        record_id = secrets.token_hex(16)
-        created_at = datetime.now(timezone.utc).isoformat()
-        with database() as connection:
-            cursor = connection.cursor()
-            cursor.execute(sql("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM violation_notices"))
-            seq = cursor.fetchone()["next_seq"]
-            violation_no = f"VIOLATION-{seq:03d}"
-            values = [
-                record_id, seq, violation_no, record["project_name"], record["violation_date"], record["employee_name"],
-                record["employee_id"], record["company_contractor"], record["job_title"], record["violation_location"],
-                record["violation_type"], record["violation_description"], json.dumps(record["actions"]),
-                record["deduction_amount"], record["photos_attached"], record["documents_attached"],
-                record["issued_by_name"], record["issued_by_position"], json.dumps(record["photos"]), created_at,
-            ]
-            columns = (
-                "id, seq, violation_no, project_name, violation_date, employee_name, "
-                "employee_id, company_contractor, job_title, violation_location, "
-                "violation_type, violation_description, actions, "
-                "deduction_amount, photos_attached, documents_attached, "
-                "issued_by_name, issued_by_position, photos, created_at"
-            )
-            placeholders = ",".join("?" for _ in values)
-            cursor.execute(sql(f"INSERT INTO violation_notices ({columns}) VALUES ({placeholders})"), values)
+        record_id, violation_no = insert_violation_notice(record)
         send_notification_email(
             f"Violation notice issued: {violation_no}",
             "A new violation notice was submitted.\n\n"

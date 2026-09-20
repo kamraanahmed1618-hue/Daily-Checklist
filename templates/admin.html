@@ -234,6 +234,13 @@
         <button class="button secondary" type="submit">Import</button>
         <span id="training-import-status" class="field-note"></span>
     </form>
+    {% elif view == 'violations' %}
+    <form class="training-import" method="post" action="{{ url_for('import_violations') }}" enctype="multipart/form-data" id="violation-import-form">
+        <label class="text-link" for="violation-import-files">Import violation notices from Word files (.docx)</label>
+        <input type="file" name="files" id="violation-import-files" accept=".docx" multiple>
+        <button class="button secondary" type="submit">Import</button>
+        <span id="violation-import-status" class="field-note"></span>
+    </form>
     {% endif %}
 
     <div class="table-wrap">
@@ -372,4 +379,4 @@
 {% endif %}
 
 {% endblock %}
-{% block scripts %}<script src="{{ url_for('static', filename='training_import.js') }}" defer></script>{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='training_import.js') }}" defer></script><script src="{{ url_for('static', filename='violation_import.js') }}" defer></script>{% endblock %}
