@@ -942,6 +942,9 @@ def validate_near_miss(payload: dict[str, Any]) -> dict[str, Any]:
 
 def validate_violation(payload: dict[str, Any]) -> dict[str, Any]:
     record = {
+        # Optional: blank on creation (the number is auto-generated there) — only
+        # editing an existing notice can set it, to correct a genuine numbering mistake.
+        "violation_no": re.sub(r"\s+", " ", clean_text(payload.get("violationNo"), "Violation number", 80, False)),
         "project_name": clean_text(payload.get("projectName"), "Project name"),
         "violation_date": clean_text(payload.get("violationDate"), "Date", 10),
         "employee_name": clean_text(payload.get("employeeName"), "Employee name"),
@@ -2369,9 +2372,9 @@ def violation_detail(record_id: str) -> str | tuple[str, int]:
 
 
 VIOLATION_FORM_FIELDS = {
-    "projectName": "project_name", "violationDate": "violation_date", "employeeName": "employee_name",
-    "employeeId": "employee_id", "companyContractor": "company_contractor", "jobTitle": "job_title",
-    "violationLocation": "violation_location", "violationType": "violation_type",
+    "violationNo": "violation_no", "projectName": "project_name", "violationDate": "violation_date",
+    "employeeName": "employee_name", "employeeId": "employee_id", "companyContractor": "company_contractor",
+    "jobTitle": "job_title", "violationLocation": "violation_location", "violationType": "violation_type",
     "violationDescription": "violation_description", "deductionAmount": "deduction_amount",
     "issuedByName": "issued_by_name", "issuedByPosition": "issued_by_position",
 }
@@ -2395,15 +2398,20 @@ def violation_edit(record_id: str) -> str | tuple[str, int] | Response:
         form_payload["actions"] = request.form.getlist("actions")
         try:
             updated = validate_violation(form_payload)
+            if not updated["violation_no"]:
+                raise ValueError("Violation number is required.")
             with database() as connection:
                 cursor = connection.cursor()
+                cursor.execute(sql("SELECT 1 FROM violation_notices WHERE UPPER(violation_no) = UPPER(?) AND id != ?"), [updated["violation_no"], record_id])
+                if cursor.fetchone():
+                    raise ValueError(f'Violation number "{updated["violation_no"]}" is already in use — choose a different number.')
                 cursor.execute(sql(
-                    "UPDATE violation_notices SET project_name=?, violation_date=?, employee_name=?, employee_id=?, "
+                    "UPDATE violation_notices SET violation_no=?, project_name=?, violation_date=?, employee_name=?, employee_id=?, "
                     "company_contractor=?, job_title=?, violation_location=?, violation_type=?, "
                     "violation_description=?, deduction_amount=?, actions=?, issued_by_name=?, issued_by_position=? "
                     "WHERE id=?"
                 ), [
-                    updated["project_name"], updated["violation_date"], updated["employee_name"], updated["employee_id"],
+                    updated["violation_no"], updated["project_name"], updated["violation_date"], updated["employee_name"], updated["employee_id"],
                     updated["company_contractor"], updated["job_title"], updated["violation_location"],
                     updated["violation_type"], updated["violation_description"], updated["deduction_amount"],
                     json.dumps(updated["actions"]), updated["issued_by_name"], updated["issued_by_position"],
