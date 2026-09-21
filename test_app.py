@@ -1819,6 +1819,22 @@ class ChecklistApplicationTests(unittest.TestCase):
             row = cursor.fetchone()
         self.assertIn("aaaaaaaaaaaaaaaaaaaa.jpg", row["photos"])
 
+    def test_violation_numbering_skips_a_manually_renumbered_collision(self):
+        first_id = self.client.post("/api/violations", json=self.violation_payload()).json["id"]
+        self.login()
+        edit_payload = self.violation_payload()
+        self.client.post(f"/admin/violations/{first_id}/edit", data={
+            "violationNo": "VIOLATION-002", "projectName": edit_payload["projectName"], "violationDate": edit_payload["violationDate"],
+            "employeeName": edit_payload["employeeName"], "companyContractor": edit_payload["companyContractor"],
+            "violationLocation": edit_payload["violationLocation"], "violationType": edit_payload["violationType"],
+            "violationDescription": edit_payload["violationDescription"], "issuedByName": edit_payload["issuedByName"],
+        })
+        # The next sequential candidate (seq 2, "VIOLATION-002") is now taken by the
+        # renumbered record above, even though its own seq column is still 1.
+        response = self.client.post("/api/violations", json=self.violation_payload())
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json["violationNo"], "VIOLATION-003")
+
     def test_violation_import_requires_login(self):
         response = self.client.post(
             "/admin/violations/import",
