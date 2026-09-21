@@ -1826,7 +1826,16 @@ def insert_violation_notice(record: dict[str, Any]) -> tuple[str, str]:
         cursor = connection.cursor()
         cursor.execute(sql("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM violation_notices"))
         seq = cursor.fetchone()["next_seq"]
-        violation_no = f"VIOLATION-{seq:03d}"
+        # seq and violation_no can drift apart once a notice is manually renumbered via
+        # the edit form (the edit only touches violation_no, never seq) — so the next
+        # sequential candidate can collide with an earlier hand-picked number. Skip
+        # forward past any such collisions instead of failing the whole submission.
+        while True:
+            violation_no = f"VIOLATION-{seq:03d}"
+            cursor.execute(sql("SELECT 1 FROM violation_notices WHERE UPPER(violation_no) = UPPER(?)"), [violation_no])
+            if not cursor.fetchone():
+                break
+            seq += 1
         values = [
             record_id, seq, violation_no, record["project_name"], record["violation_date"], record["employee_name"],
             record["employee_id"], record["company_contractor"], record["job_title"], record["violation_location"],
