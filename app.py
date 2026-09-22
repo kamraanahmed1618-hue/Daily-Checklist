@@ -1092,10 +1092,6 @@ def validate_hse_violation(payload: dict[str, Any]) -> dict[str, Any]:
     if not re.fullmatch(rf"\d{{{id_digits}}}", employee_id):
         raise ValueError(f"Enter a valid {id_label} ({id_digits} digits).")
 
-    number_of_violation = clean_text(payload.get("numberOfViolation"), "Number of violation", 20)
-    if number_of_violation not in HSE_NUMBERS_OF_VIOLATION:
-        raise ValueError("Choose a valid violation number (First/Second/Third/Fourth).")
-
     rel_department = clean_text(payload.get("relDepartment"), "Responsible department", 200)
     if rel_department not in HSE_DEPARTMENTS:
         raise ValueError("Choose a valid responsible department.")
@@ -1136,7 +1132,8 @@ def validate_hse_violation(payload: dict[str, Any]) -> dict[str, Any]:
         "documents_attached": 1 if payload.get("documentsAttached") is True else 0,
         "photos": photos,
         "violator_role": violator_role,
-        "number_of_violation": number_of_violation,
+        # Computed automatically at insert time from this ID's prior violation count —
+        # not something the submitter chooses, same as violation_no itself.
         "rel_department": rel_department,
         "penalty": penalty,
         "subcontractor_discount_value": subcontractor_discount_value,
@@ -1820,7 +1817,6 @@ def violation_form() -> str:
         role_company_names=HSE_ROLE_COMPANY_NAMES,
         sub_types=HSE_SUB_TYPES,
         descriptions=HSE_VIOLATION_DESCRIPTIONS,
-        numbers_of_violation=HSE_NUMBERS_OF_VIOLATION,
         departments=HSE_DEPARTMENTS,
         default_department=HSE_DEFAULT_DEPARTMENT,
         penalties=HSE_PENALTIES,
@@ -2020,6 +2016,14 @@ def insert_violation_notice(record: dict[str, Any]) -> tuple[str, str]:
             if not cursor.fetchone():
                 break
             seq += 1
+        number_of_violation = ""
+        if record.get("violator_role"):
+            # Automatic, like violation_no itself — the submitter never picks this.
+            # Counts this ID's prior notices (any role/company) and moves one level up
+            # each time, capping at "Fourth" rather than erroring past the fourth offense.
+            cursor.execute(sql("SELECT COUNT(*) AS total FROM violation_notices WHERE employee_id = ?"), [record["employee_id"]])
+            prior_count = cursor.fetchone()["total"]
+            number_of_violation = HSE_NUMBERS_OF_VIOLATION[min(prior_count, len(HSE_NUMBERS_OF_VIOLATION) - 1)]
         values = [
             record_id, seq, violation_no, record["project_name"], record["violation_date"], record["employee_name"],
             record["employee_id"], record["company_contractor"], record["job_title"], record["violation_location"],
@@ -2029,7 +2033,7 @@ def insert_violation_notice(record: dict[str, Any]) -> tuple[str, str]:
             # Only the newer, Aconex-compliant submission path (validate_hse_violation)
             # populates these — legacy free-text submissions and the bulk .docx import
             # leave them blank, which is fine since those pre-date the approved-list scheme.
-            record.get("violator_role", ""), record.get("number_of_violation", ""),
+            record.get("violator_role", ""), number_of_violation,
             record.get("rel_department", ""), record.get("penalty", ""),
             record.get("subcontractor_discount_value", ""),
         ]
@@ -2260,21 +2264,6 @@ def interpret_violation() -> tuple[Response, int] | Response:
     except Exception:
         app.logger.exception("Violation description matching failed")
         return jsonify({"error": "The description matcher is temporarily unavailable — pick from the dropdowns instead."}), 502
-
-
-@app.get("/api/violations/next-level")
-def violation_next_level() -> Response:
-    """Looks up how many prior violations this ID number already has, to suggest the
-    next Number of Violation level — always overridable by the person submitting."""
-    employee_id = re.sub(r"\D", "", request.args.get("employeeId", ""))
-    if not employee_id:
-        return jsonify({"count": 0, "suggested": HSE_NUMBERS_OF_VIOLATION[0]})
-    with database() as connection:
-        cursor = connection.cursor()
-        cursor.execute(sql("SELECT COUNT(*) AS total FROM violation_notices WHERE employee_id = ?"), [employee_id])
-        count = cursor.fetchone()["total"]
-    index = min(count, len(HSE_NUMBERS_OF_VIOLATION) - 1)
-    return jsonify({"count": count, "suggested": HSE_NUMBERS_OF_VIOLATION[index]})
 
 
 @app.post("/api/violations")
