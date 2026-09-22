@@ -40,42 +40,92 @@
   <section class="card">
     <div class="section-heading"><div><span class="step-number">02</span><h2>Violating employee details</h2></div></div>
     <div class="field-grid">
+      <label><span>Who is this against? <b>*</b></span>
+        <select name="violatorRole" id="violator-role" required>
+          <option value="" disabled selected>Select…</option>
+          {% for role in violator_roles %}<option value="{{ role }}">{{ role }}</option>{% endfor %}
+        </select>
+      </label>
+      <label><span>Company name <b>*</b></span><input name="companyContractor" id="company-name" required maxlength="200"></label>
+      <label><span id="id-field-label">ID Number <b>*</b></span><input name="employeeId" id="employee-id" required maxlength="40" inputmode="numeric" pattern="[0-9]+" placeholder="Numbers only"></label>
       <label><span>Name <b>*</b></span><input name="employeeName" required maxlength="200"></label>
-      <label><span>Employee ID / Iqama No.</span><input name="employeeId" maxlength="80"></label>
-      <label><span>Company / Contractor <b>*</b></span><input name="companyContractor" required maxlength="200"></label>
       <label><span>Job title</span><input name="jobTitle" maxlength="200"></label>
     </div>
   </section>
 
   <section class="card">
     <div class="section-heading"><div><span class="step-number">03</span><h2>Violation details</h2></div></div>
-    <div class="field-grid">
-      <label><span>Violation location <b>*</b></span><input name="violationLocation" required maxlength="200"></label>
-      <label><span>Type of violation <b>*</b></span><input name="violationType" required maxlength="200"></label>
-    </div>
     <div class="field-grid one-col">
-      <label><span>Description of violation <b>*</b></span><textarea name="violationDescription" rows="3" maxlength="3000" required></textarea></label>
+      <label><span>Violation location <b>*</b></span><input name="violationLocation" required maxlength="200"></label>
+    </div>
+
+    <div class="field-grid one-col">
+      <label><span>Describe what happened, in your own words</span>
+        <textarea id="free-text-description" rows="3" maxlength="3000" placeholder="e.g. supervisor made workers use a red-tagged scaffold that was closed"></textarea>
+      </label>
+    </div>
+    <div class="submit-bar interpret-bar">
+      <div><strong>Match to the approved list</strong><span>Aconex only accepts an exact Sub-Type + Description from BEC's approved list</span></div>
+      <button class="button secondary" id="interpret-button" type="button">Find matching category</button>
+    </div>
+    <div id="interpret-status" class="field-note"></div>
+    <div id="multi-category-warning" class="notice warning hidden"></div>
+    <div id="suggestions" class="checkbox-grid hidden"></div>
+
+    <div class="field-grid one-col">
+      <label><span>Sub-Type <b>*</b></span>
+        <select name="subType" id="sub-type-select" required>
+          <option value="" disabled selected>Select or use a suggestion above…</option>
+          {% for sub_type in sub_types %}<option value="{{ sub_type }}">{{ sub_type }}</option>{% endfor %}
+        </select>
+      </label>
+      <label><span>Violation description <b>*</b></span>
+        <select name="violationDescription" id="description-select" required disabled>
+          <option value="" disabled selected>Choose a Sub-Type first…</option>
+        </select>
+      </label>
     </div>
   </section>
 
   <section class="card">
-    <div class="section-heading"><div><span class="step-number">04</span><h2>Action taken</h2></div></div>
-    <div class="checkbox-grid">
-      {% for action in actions %}
-      <label class="checkbox-tile"><input type="checkbox" name="actions" value="{{ action }}"><span>{{ action }}</span></label>
-      {% endfor %}
-    </div>
+    <div class="section-heading"><div><span class="step-number">04</span><h2>Violation number &amp; department</h2></div></div>
     <div class="field-grid">
-      <label><span>Deduction amount (if any)</span><input name="deductionAmount" maxlength="80" placeholder="e.g. SAR 200"></label>
+      <label><span>Number of violation <b>*</b></span>
+        <select name="numberOfViolation" id="number-of-violation" required>
+          <option value="" disabled selected>Select…</option>
+          {% for number in numbers_of_violation %}<option value="{{ number }}">{{ number }}</option>{% endfor %}
+        </select>
+      </label>
+      <label><span>Responsible department <b>*</b></span>
+        <select name="relDepartment" required>
+          <option value="" disabled selected>Select…</option>
+          {% for department in departments %}<option value="{{ department }}">{{ department }}</option>{% endfor %}
+        </select>
+      </label>
     </div>
+    <p class="field-note" id="history-note"></p>
   </section>
 
   <section class="card">
-    <div class="section-heading"><div><span class="step-number">05</span><h2>Attachments</h2></div></div>
+    <div class="section-heading"><div><span class="step-number">05</span><h2>Penalty</h2></div></div>
+    <div class="field-grid">
+      <label><span>Penalty <b>*</b></span>
+        <select name="penalty" id="penalty-select" required>
+          <option value="" disabled selected>Select…</option>
+          {% for penalty in penalties %}<option value="{{ penalty }}">{{ penalty }}</option>{% endfor %}
+        </select>
+      </label>
+      <label id="subcontractor-amount-field" class="hidden"><span>Exact SAR amount <b>*</b></span><input name="subcontractorDiscountValue" id="subcontractor-amount" maxlength="40" inputmode="decimal" placeholder="e.g. 5000"></label>
+    </div>
+    <p class="field-note">Deduction amounts are implied by the selected penalty — no amount is entered separately, except this one ambiguous penalty, which needs the exact SAR figure.</p>
+  </section>
+
+  <section class="card">
+    <div class="section-heading"><div><span class="step-number">06</span><h2>Attachments</h2></div></div>
     <div class="photo-upload" id="violation-photo-upload">
       <input type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
       <button class="button secondary photo-add-button" type="button">+ Add photos</button>
-      <span class="field-note">JPEG, PNG, or WEBP · up to 8 photos · 8 MB each</span>
+      <span class="field-note">JPEG, PNG, or WEBP · up to 8 photos · 8 MB each · <strong>at least one photo is required</strong></span>
       <div class="photo-grid"></div>
     </div>
     <div class="checkbox-grid">
@@ -85,7 +135,7 @@
   </section>
 
   <section class="card signoff-card">
-    <div class="section-heading"><div><span class="step-number">06</span><h2>Issued by</h2></div></div>
+    <div class="section-heading"><div><span class="step-number">07</span><h2>Issued by</h2></div></div>
     <div class="field-grid">
       <label><span>Name <b>*</b></span><input name="issuedByName" required maxlength="200" placeholder="Full name"></label>
       <label><span>Position</span><input name="issuedByPosition" maxlength="200"></label>
@@ -94,10 +144,14 @@
 
   <div id="form-error" class="form-error hidden" role="alert"></div>
   <div class="submit-bar">
-    <div><strong>Violation notice</strong><span>Submit to add it to the records dashboard</span></div>
+    <div><strong>Violation notice</strong><span>Submits immediately — one violation per notice, no batching</span></div>
     <button class="button primary submit-button" type="submit">Submit notice</button>
   </div>
 </form>
+
+<script type="application/json" id="hse-descriptions-data">{{ descriptions | tojson }}</script>
+<script type="application/json" id="hse-role-company-data">{{ role_company_names | tojson }}</script>
+<script type="application/json" id="hse-ambiguous-penalty-data">{{ ambiguous_penalty | tojson }}</script>
 {% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='photo_upload.js') }}" defer></script>

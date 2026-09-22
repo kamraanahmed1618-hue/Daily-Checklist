@@ -44,11 +44,23 @@
     <thead><tr><th>Field</th><th>Details</th></tr></thead>
     <tbody>
       <tr><td>Violation Location</td><td>{{ record.violation_location }}</td></tr>
-      <tr><td>Type of Violation</td><td>{{ record.violation_type }}</td></tr>
+      <tr><td>Sub-Type</td><td>{{ record.violation_type }}</td></tr>
       <tr><td>Description of Violation</td><td>{{ record.violation_description }}</td></tr>
+      {% if record.number_of_violation %}<tr><td>Number of Violation</td><td>{{ record.number_of_violation }}</td></tr>{% endif %}
+      {% if record.rel_department %}<tr><td>Responsible Department</td><td>{{ record.rel_department }}</td></tr>{% endif %}
     </tbody>
   </table>
 
+  {% if record.penalty %}
+  <p class="doc-heading">Penalty</p>
+  <table class="doc-field-table">
+    <thead><tr><th>Field</th><th>Details</th></tr></thead>
+    <tbody>
+      <tr><td>Penalty</td><td>{{ record.penalty }}</td></tr>
+      {% if record.subcontractor_discount_value %}<tr><td>Subcontractor Discount Value (SAR)</td><td>{{ record.subcontractor_discount_value }}</td></tr>{% endif %}
+    </tbody>
+  </table>
+  {% else %}
   <p class="doc-heading">Action Taken</p>
   <table class="doc-actions-table">
     <tr>
@@ -61,6 +73,7 @@
       <td colspan="3">{{ record.deduction_amount or '—' }}</td>
     </tr>
   </table>
+  {% endif %}
 
   <p class="doc-heading">Attachment</p>
   <p class="doc-attachment-row">
