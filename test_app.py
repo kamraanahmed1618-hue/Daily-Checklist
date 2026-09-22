@@ -19,7 +19,10 @@ os.environ["ADMIN_PASSWORD"] = "test-admin-password"
 os.environ["SECRET_KEY"] = "test-secret-key-that-is-only-used-by-the-automated-suite"
 os.environ["EXPORT_TOKEN"] = "test-export-token"
 
-from app import CHECKLIST, CHECKLIST_ITEMS, app, database  # noqa: E402
+from app import (  # noqa: E402
+    CHECKLIST, CHECKLIST_ITEMS, app, database,
+    HSE_AMBIGUOUS_PENALTY, HSE_DEPARTMENTS, HSE_NUMBERS_OF_VIOLATION, HSE_PENALTIES, HSE_VIOLATION_DESCRIPTIONS,
+)
 
 
 class ChecklistApplicationTests(unittest.TestCase):
@@ -1834,6 +1837,171 @@ class ChecklistApplicationTests(unittest.TestCase):
         response = self.client.post("/api/violations", json=self.violation_payload())
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.json["violationNo"], "VIOLATION-003")
+
+    def hse_violation_payload(self, **overrides):
+        entry = HSE_VIOLATION_DESCRIPTIONS[0]
+        payload = {
+            "projectName": "1 Hotel Diriyah",
+            "violationDate": "2026-09-22",
+            "violatorRole": "Subcontractor Employee",
+            "companyContractor": "ACME Scaffolding Co",
+            "employeeId": "2233445566",
+            "employeeName": "Test Worker",
+            "jobTitle": "Rigger",
+            "violationLocation": "Zone 2",
+            "subType": entry["sub_type"],
+            "violationDescription": entry["description"],
+            "numberOfViolation": "First",
+            "relDepartment": HSE_DEPARTMENTS[0],
+            "penalty": HSE_PENALTIES[0],
+            "photoKeys": ["uploads/tok12345/aaaaaaaaaaaaaaaaaaaa.jpg"],
+            "issuedByName": "Site HSE Officer",
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_hse_violation_submission_creates_record_with_approved_values(self):
+        entry = HSE_VIOLATION_DESCRIPTIONS[3]
+        response = self.client.post("/api/violations", json=self.hse_violation_payload(
+            subType=entry["sub_type"], violationDescription=entry["description"],
+        ))
+        self.assertEqual(response.status_code, 201)
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT * FROM violation_notices WHERE id = ?", [response.json["id"]])
+            row = dict(cursor.fetchone())
+        self.assertEqual(row["violation_type"], entry["sub_type"])
+        self.assertEqual(row["violation_description"], entry["description"])
+        self.assertEqual(row["company_contractor"], "ACME Scaffolding Co")
+        self.assertEqual(row["number_of_violation"], "First")
+        self.assertEqual(row["rel_department"], HSE_DEPARTMENTS[0])
+        self.assertEqual(row["penalty"], HSE_PENALTIES[0])
+        self.assertEqual(row["subcontractor_discount_value"], "")
+
+    def test_hse_violation_rejects_description_not_on_approved_list(self):
+        response = self.client.post("/api/violations", json=self.hse_violation_payload(
+            violationDescription="Something made up that isn't on the list",
+        ))
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("approved list", response.json["error"])
+
+    def test_hse_violation_rejects_mismatched_sub_type_and_description(self):
+        other_entry = next(e for e in HSE_VIOLATION_DESCRIPTIONS if e["sub_type"] != HSE_VIOLATION_DESCRIPTIONS[0]["sub_type"])
+        response = self.client.post("/api/violations", json=self.hse_violation_payload(
+            subType=HSE_VIOLATION_DESCRIPTIONS[0]["sub_type"], violationDescription=other_entry["description"],
+        ))
+        self.assertEqual(response.status_code, 400)
+
+    def test_hse_violation_requires_photo(self):
+        response = self.client.post("/api/violations", json=self.hse_violation_payload(photoKeys=[]))
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("photo", response.json["error"].lower())
+
+    def test_hse_violation_bec_staff_locks_company_name_and_uses_employee_id_label(self):
+        response = self.client.post("/api/violations", json=self.hse_violation_payload(
+            violatorRole="BEC Staff", companyContractor="something the user typed", employeeId="778899",
+        ))
+        self.assertEqual(response.status_code, 201)
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT company_contractor, violator_role FROM violation_notices WHERE id = ?", [response.json["id"]])
+            row = dict(cursor.fetchone())
+        self.assertEqual(row["company_contractor"], "BEC ARABIA")
+        self.assertEqual(row["violator_role"], "BEC Staff")
+
+    def test_hse_violation_rental_worker_locks_company_name(self):
+        response = self.client.post("/api/violations", json=self.hse_violation_payload(
+            violatorRole="Rental Worker", employeeId="778899",
+        ))
+        self.assertEqual(response.status_code, 201)
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT company_contractor FROM violation_notices WHERE id = ?", [response.json["id"]])
+            row = dict(cursor.fetchone())
+        self.assertEqual(row["company_contractor"], "BEC - Rental")
+
+    def test_hse_violation_requires_numeric_id(self):
+        response = self.client.post("/api/violations", json=self.hse_violation_payload(employeeId="ABC123"))
+        self.assertEqual(response.status_code, 400)
+
+    def test_hse_violation_ambiguous_penalty_requires_sar_amount(self):
+        response = self.client.post("/api/violations", json=self.hse_violation_payload(penalty=HSE_AMBIGUOUS_PENALTY))
+        self.assertEqual(response.status_code, 400)
+
+        response2 = self.client.post("/api/violations", json=self.hse_violation_payload(
+            penalty=HSE_AMBIGUOUS_PENALTY, subcontractorDiscountValue="not-a-number",
+        ))
+        self.assertEqual(response2.status_code, 400)
+
+        response3 = self.client.post("/api/violations", json=self.hse_violation_payload(
+            penalty=HSE_AMBIGUOUS_PENALTY, subcontractorDiscountValue="6000",
+        ))
+        self.assertEqual(response3.status_code, 201)
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT subcontractor_discount_value FROM violation_notices WHERE id = ?", [response3.json["id"]])
+            row = dict(cursor.fetchone())
+        self.assertEqual(row["subcontractor_discount_value"], "6000")
+
+    def test_hse_violation_next_level_suggests_based_on_prior_count(self):
+        response = self.client.get("/api/violations/next-level?employeeId=3216549870")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json, {"count": 0, "suggested": "First"})
+
+        self.client.post("/api/violations", json=self.hse_violation_payload(employeeId="3216549870"))
+        self.client.post("/api/violations", json=self.hse_violation_payload(employeeId="3216549870"))
+
+        response2 = self.client.get("/api/violations/next-level?employeeId=3216549870")
+        self.assertEqual(response2.json, {"count": 2, "suggested": "Third"})
+
+    def test_interpret_violation_requires_text(self):
+        response = self.client.post("/api/violations/interpret", json={"text": ""})
+        self.assertEqual(response.status_code, 400)
+
+    def test_interpret_violation_without_api_key_returns_service_unavailable(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("ANTHROPIC_API_KEY", None)
+            response = self.client.post("/api/violations/interpret", json={"text": "worker not wearing a hard hat"})
+        self.assertEqual(response.status_code, 503)
+
+    def test_interpret_violation_returns_matches_from_mocked_claude(self):
+        entry = HSE_VIOLATION_DESCRIPTIONS[4]
+        entry_number = HSE_VIOLATION_DESCRIPTIONS.index(entry) + 1
+        fake_block = MagicMock()
+        fake_block.type = "tool_use"
+        fake_block.input = {
+            "matches": [{"entry_number": entry_number, "confidence": "high", "reason": "Close match."}],
+            "multi_category": False,
+            "multi_category_note": "",
+        }
+        fake_response = MagicMock()
+        fake_response.content = [fake_block]
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
+            with patch("app.anthropic.Anthropic") as mock_client_class:
+                mock_client_class.return_value.messages.create.return_value = fake_response
+                response = self.client.post("/api/violations/interpret", json={"text": "worker ignored a closed scaffold tag"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json["matches"], [{
+            "subType": entry["sub_type"], "description": entry["description"],
+            "confidence": "high", "reason": "Close match.",
+        }])
+        self.assertFalse(response.json["multiCategory"])
+
+    def test_export_hse_violation_log_xlsx_matches_reference_columns(self):
+        self.client.post("/api/violations", json=self.hse_violation_payload())
+        self.login()
+        response = self.client.get("/admin/export/violations/hse-log.xlsx")
+        self.assertEqual(response.status_code, 200)
+        workbook = openpyxl.load_workbook(io.BytesIO(response.data))
+        sheet = workbook.active
+        headers = next(sheet.iter_rows(max_row=1, values_only=True))
+        self.assertEqual(headers, (
+            "No", "Date", "Company Name", "Location", "Sub - Type", "Violation Des", "Emp. Number",
+            "Number of Violation", "Violation Value", "Rel - Department", "Penalty", "Subcontractor discount value",
+        ))
+        data_row = next(sheet.iter_rows(min_row=2, max_row=2, values_only=True))
+        self.assertEqual(data_row[6], "2233445566")
+        self.assertEqual(data_row[7], "First")
 
     def test_violation_import_requires_login(self):
         response = self.client.post(

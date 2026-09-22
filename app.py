@@ -13,6 +13,7 @@ import secrets
 import smtplib
 import sqlite3
 import traceback
+import warnings
 import zipfile
 from contextlib import contextmanager
 from email.message import EmailMessage
@@ -50,6 +51,11 @@ except ImportError:  # Photo upload is unavailable until boto3 is installed.
     boto3 = None
     BotoConfig = None
 
+try:
+    import anthropic
+except ImportError:  # Free-text violation matching is unavailable until anthropic is installed.
+    anthropic = None
+
 
 BASE_DIR = Path(__file__).resolve().parent
 CHECKLIST_SOURCE = BASE_DIR / "checklist_source.ts"
@@ -83,6 +89,74 @@ CHECKLIST_ITEMS = [
     for item in section["items"]
 ]
 CHECKLIST_IDS = {item["id"] for item in CHECKLIST_ITEMS}
+
+HSE_REFERENCE_SOURCE = BASE_DIR / "hse_violation_reference.xlsx"
+
+
+def _hse_clean(value: Any) -> str:
+    # The Reference sheet's Sub-Type column has inconsistent spacing around the
+    # English/Arabic separator ("Excavation / ..." vs "Excavation/..."), which would
+    # otherwise produce duplicate categories that are really the same one.
+    text = str(value).strip() if value is not None else ""
+    return re.sub(r"\s*/\s*", " / ", text)
+
+
+def load_hse_reference() -> dict[str, Any]:
+    with warnings.catch_warnings():
+        # The source workbook's dropdown data-validation lists aren't something this
+        # loader reads (it reads cell values directly) — openpyxl warns about dropping
+        # that extension on every load, which is expected and not worth the log noise.
+        warnings.filterwarnings("ignore", message="Data Validation extension is not supported")
+        workbook = load_workbook(HSE_REFERENCE_SOURCE, data_only=True)
+    sheet = workbook["Reference"]
+    sub_types: list[str] = []
+    descriptions: list[dict[str, str]] = []
+    numbers_of_violation: list[str] = []
+    departments: list[str] = []
+    penalties: list[str] = []
+    for row in sheet.iter_rows(min_row=2, values_only=True):
+        _, raw_sub_type, raw_description, raw_description_ar, raw_number, raw_department, raw_penalty = row
+        sub_type = _hse_clean(raw_sub_type)
+        if sub_type and sub_type not in sub_types:
+            sub_types.append(sub_type)
+        if raw_description:
+            descriptions.append({
+                "sub_type": sub_type,
+                "description": str(raw_description).strip(),
+                "description_ar": str(raw_description_ar).strip() if raw_description_ar else "",
+            })
+        number = str(raw_number).strip() if raw_number else ""
+        if number and number not in numbers_of_violation:
+            numbers_of_violation.append(number)
+        department = str(raw_department).strip() if raw_department else ""
+        if department and department not in departments:
+            departments.append(department)
+        penalty = str(raw_penalty).strip() if raw_penalty else ""
+        if penalty and penalty not in penalties:
+            penalties.append(penalty)
+    # Sub-type count isn't asserted here — unlike the other four lists, it's not a
+    # figure this app depends on being exact, just whatever categories the sheet defines.
+    if len(descriptions) != 57 or len(numbers_of_violation) != 4 or len(departments) != 21 or len(penalties) != 10:
+        raise RuntimeError("The HSE violation reference file could not be loaded safely.")
+    return {
+        "sub_types": sub_types,
+        "descriptions": descriptions,
+        "numbers_of_violation": numbers_of_violation,
+        "departments": departments,
+        "penalties": penalties,
+    }
+
+
+HSE_REFERENCE = load_hse_reference()
+HSE_SUB_TYPES = HSE_REFERENCE["sub_types"]
+HSE_VIOLATION_DESCRIPTIONS = HSE_REFERENCE["descriptions"]
+HSE_NUMBERS_OF_VIOLATION = HSE_REFERENCE["numbers_of_violation"]
+HSE_DEPARTMENTS = HSE_REFERENCE["departments"]
+HSE_PENALTIES = HSE_REFERENCE["penalties"]
+HSE_AMBIGUOUS_PENALTY = "Deduction from subcontractor extract"
+HSE_DESCRIPTION_BY_KEY = {(entry["sub_type"], entry["description"]): entry for entry in HSE_VIOLATION_DESCRIPTIONS}
+HSE_VIOLATOR_ROLES = ["BEC Staff", "Subcontractor Employee", "Rental Worker"]
+HSE_ROLE_COMPANY_NAMES = {"BEC Staff": "BEC ARABIA", "Rental Worker": "BEC - Rental"}
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
@@ -348,17 +422,29 @@ def near_miss_pdf_bytes(record: dict[str, Any], photo_cache: "PhotoCache | None"
 
 
 def violation_pdf_bytes(record: dict[str, Any], photo_cache: "PhotoCache | None" = None) -> bytes:
+    info_rows = [
+        ("Violation No.", record["violation_no"]), ("Date", record["violation_date"]),
+        ("Employee Name", record["employee_name"]), ("Company / Contractor", record["company_contractor"]),
+        ("Location", record["violation_location"]), ("Type / Sub-Type", record["violation_type"]),
+        ("Description", record["violation_description"]),
+    ]
+    # Only populated for notices submitted through the Aconex-compliant approved-list
+    # flow — older free-text notices (and bulk .docx imports) leave these blank.
+    if record.get("number_of_violation"):
+        info_rows.append(("Number of Violation", record["number_of_violation"]))
+    if record.get("rel_department"):
+        info_rows.append(("Responsible Department", record["rel_department"]))
+    if record.get("penalty"):
+        info_rows.append(("Penalty", record["penalty"]))
+    if record.get("subcontractor_discount_value"):
+        info_rows.append(("Subcontractor Discount Value (SAR)", record["subcontractor_discount_value"]))
+    if record.get("actions"):
+        info_rows.append(("Action Taken", "; ".join(safe_json_list(record["actions"])) or "—"))
+    info_rows.append(("Issued By", record["issued_by_name"]))
     return render_pdf(record_pdf_html(
         title="Occupational Health & Safety Violation Notice",
         band_title="Violation Details",
-        info_rows=[
-            ("Violation No.", record["violation_no"]), ("Date", record["violation_date"]),
-            ("Employee Name", record["employee_name"]), ("Company / Contractor", record["company_contractor"]),
-            ("Location", record["violation_location"]), ("Type", record["violation_type"]),
-            ("Description", record["violation_description"]),
-            ("Action Taken", "; ".join(safe_json_list(record["actions"])) or "—"),
-            ("Issued By", record["issued_by_name"]),
-        ],
+        info_rows=info_rows,
         summary="", bullets=[],
         photo_sections=[("Evidence", record_photos(safe_json_list(record["photos"]), photo_cache))],
         doc_number="BECCO-COR-OHS-ADD-VNC-000002-R01",
@@ -669,6 +755,11 @@ def init_db() -> None:
         ensure_column("training_logs", "objective", "TEXT NOT NULL DEFAULT ''")
         ensure_column("training_logs", "summary", "TEXT NOT NULL DEFAULT ''")
         ensure_column("training_logs", "key_lessons", "TEXT NOT NULL DEFAULT '[]'")
+        ensure_column("violation_notices", "violator_role", "TEXT NOT NULL DEFAULT ''")
+        ensure_column("violation_notices", "number_of_violation", "TEXT NOT NULL DEFAULT ''")
+        ensure_column("violation_notices", "rel_department", "TEXT NOT NULL DEFAULT ''")
+        ensure_column("violation_notices", "penalty", "TEXT NOT NULL DEFAULT ''")
+        ensure_column("violation_notices", "subcontractor_discount_value", "TEXT NOT NULL DEFAULT ''")
         # Backfill sequential numbers for any pre-existing records in submission order.
         for table in ("inspections", "near_miss_reports", "violation_notices", "ptw_logs", "training_logs", "good_practices"):
             cursor.execute(sql(f"SELECT COALESCE(MAX(seq), 0) AS next_seq FROM {table}"))
@@ -968,6 +1059,80 @@ def validate_violation(payload: dict[str, Any]) -> dict[str, Any]:
         "photos_attached": 1 if photos else 0,
         "documents_attached": 1 if payload.get("documentsAttached") is True else 0,
         "photos": photos,
+    }
+
+
+def validate_hse_violation(payload: dict[str, Any]) -> dict[str, Any]:
+    """The Aconex-compliant submission path: every classification field must come from
+    the approved Reference sheet — no free text — so notices never get bounced back for
+    not matching BEC Arabia's approved dropdown lists."""
+    sub_type = clean_text(payload.get("subType"), "Sub-Type", 200)
+    description = clean_text(payload.get("violationDescription"), "Violation description", 500)
+    if (sub_type, description) not in HSE_DESCRIPTION_BY_KEY:
+        raise ValueError("Choose a violation description from the approved list.")
+
+    violator_role = clean_text(payload.get("violatorRole"), "Who the violation is against", 40)
+    if violator_role not in HSE_VIOLATOR_ROLES:
+        raise ValueError("Choose who the violation is against.")
+    if violator_role in HSE_ROLE_COMPANY_NAMES:
+        company_contractor = HSE_ROLE_COMPANY_NAMES[violator_role]
+        id_label = "Employee ID Number" if violator_role == "BEC Staff" else "Iqama Number"
+    else:
+        company_contractor = clean_text(payload.get("companyContractor"), "Subcontractor company name", 200)
+        id_label = "Iqama Number"
+
+    employee_id = clean_text(payload.get("employeeId"), id_label, 40)
+    if not re.fullmatch(r"\d+", employee_id):
+        raise ValueError(f"Enter a valid, numeric {id_label}.")
+
+    number_of_violation = clean_text(payload.get("numberOfViolation"), "Number of violation", 20)
+    if number_of_violation not in HSE_NUMBERS_OF_VIOLATION:
+        raise ValueError("Choose a valid violation number (First/Second/Third/Fourth).")
+
+    rel_department = clean_text(payload.get("relDepartment"), "Responsible department", 200)
+    if rel_department not in HSE_DEPARTMENTS:
+        raise ValueError("Choose a valid responsible department.")
+
+    penalty = clean_text(payload.get("penalty"), "Penalty", 200)
+    if penalty not in HSE_PENALTIES:
+        raise ValueError("Choose a valid penalty.")
+    subcontractor_discount_value = ""
+    if penalty == HSE_AMBIGUOUS_PENALTY:
+        subcontractor_discount_value = clean_text(payload.get("subcontractorDiscountValue"), "Exact SAR amount", 40)
+        if not re.fullmatch(r"\d+(\.\d+)?", subcontractor_discount_value):
+            raise ValueError("Enter the exact SAR amount to deduct from the subcontractor's extract.")
+
+    photos = clean_photo_keys(payload.get("photoKeys"))
+    if not photos:
+        raise ValueError("Attach at least one photo — photographs are the primary evidence and are required.")
+
+    violation_date = clean_text(payload.get("violationDate"), "Date", 10)
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", violation_date):
+        raise ValueError("Enter a valid date.")
+
+    return {
+        "violation_no": "",
+        "project_name": clean_text(payload.get("projectName"), "Project name"),
+        "violation_date": violation_date,
+        "employee_name": clean_text(payload.get("employeeName"), "Employee name"),
+        "employee_id": employee_id,
+        "company_contractor": company_contractor,
+        "job_title": clean_text(payload.get("jobTitle"), "Job title", 200, False),
+        "violation_location": clean_text(payload.get("violationLocation"), "Violation location"),
+        "violation_type": sub_type,
+        "violation_description": description,
+        "actions": [],
+        "deduction_amount": "",
+        "issued_by_name": clean_text(payload.get("issuedByName"), "Issued by (name)"),
+        "issued_by_position": clean_text(payload.get("issuedByPosition"), "Issued by (position)", 200, False),
+        "photos_attached": 1,
+        "documents_attached": 1 if payload.get("documentsAttached") is True else 0,
+        "photos": photos,
+        "violator_role": violator_role,
+        "number_of_violation": number_of_violation,
+        "rel_department": rel_department,
+        "penalty": penalty,
+        "subcontractor_discount_value": subcontractor_discount_value,
     }
 
 
@@ -1641,7 +1806,18 @@ def near_miss_form() -> str:
 
 @app.get("/violation")
 def violation_form() -> str:
-    return render_template("violation.html", actions=VIOLATION_ACTIONS)
+    return render_template(
+        "violation.html",
+        actions=VIOLATION_ACTIONS,
+        violator_roles=HSE_VIOLATOR_ROLES,
+        role_company_names=HSE_ROLE_COMPANY_NAMES,
+        sub_types=HSE_SUB_TYPES,
+        descriptions=HSE_VIOLATION_DESCRIPTIONS,
+        numbers_of_violation=HSE_NUMBERS_OF_VIOLATION,
+        departments=HSE_DEPARTMENTS,
+        penalties=HSE_PENALTIES,
+        ambiguous_penalty=HSE_AMBIGUOUS_PENALTY,
+    )
 
 
 @app.get("/good-practice")
@@ -1842,13 +2018,20 @@ def insert_violation_notice(record: dict[str, Any]) -> tuple[str, str]:
             record["violation_type"], record["violation_description"], json.dumps(record["actions"]),
             record["deduction_amount"], record["photos_attached"], record["documents_attached"],
             record["issued_by_name"], record["issued_by_position"], json.dumps(record["photos"]), created_at,
+            # Only the newer, Aconex-compliant submission path (validate_hse_violation)
+            # populates these — legacy free-text submissions and the bulk .docx import
+            # leave them blank, which is fine since those pre-date the approved-list scheme.
+            record.get("violator_role", ""), record.get("number_of_violation", ""),
+            record.get("rel_department", ""), record.get("penalty", ""),
+            record.get("subcontractor_discount_value", ""),
         ]
         columns = (
             "id, seq, violation_no, project_name, violation_date, employee_name, "
             "employee_id, company_contractor, job_title, violation_location, "
             "violation_type, violation_description, actions, "
             "deduction_amount, photos_attached, documents_attached, "
-            "issued_by_name, issued_by_position, photos, created_at"
+            "issued_by_name, issued_by_position, photos, created_at, "
+            "violator_role, number_of_violation, rel_department, penalty, subcontractor_discount_value"
         )
         placeholders = ",".join("?" for _ in values)
         cursor.execute(sql(f"INSERT INTO violation_notices ({columns}) VALUES ({placeholders})"), values)
@@ -1959,13 +2142,143 @@ def import_violations() -> tuple[Response, int] | Response:
     return jsonify({"imported": imported, "failed": failed}), 201
 
 
+HSE_MATCH_MODEL = "claude-haiku-4-5"
+HSE_MATCH_MAX_CHARS = 3000
+
+
+def _hse_reference_prompt_block() -> str:
+    return "\n".join(f"{i}. [{entry['sub_type']}] {entry['description']}" for i, entry in enumerate(HSE_VIOLATION_DESCRIPTIONS, start=1))
+
+
+HSE_REFERENCE_PROMPT_BLOCK = _hse_reference_prompt_block()
+
+HSE_MATCH_TOOL = {
+    "name": "suggest_matches",
+    "description": "Report the best-matching approved violation entries for the free-text description.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "matches": {
+                "type": "array",
+                "maxItems": 3,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "entry_number": {"type": "integer", "description": "The numbered entry from the approved list."},
+                        "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
+                        "reason": {"type": "string", "description": "One short sentence on why this matches."},
+                    },
+                    "required": ["entry_number", "confidence", "reason"],
+                    "additionalProperties": False,
+                },
+            },
+            "multi_category": {
+                "type": "boolean",
+                "description": "True only if the free text clearly describes multiple unrelated violations that should be split into separate submissions.",
+            },
+            "multi_category_note": {
+                "type": "string",
+                "description": "If multi_category is true, a short note on how to split it. Empty string otherwise.",
+            },
+        },
+        "required": ["matches", "multi_category", "multi_category_note"],
+        "additionalProperties": False,
+    },
+    "strict": True,
+}
+
+
+def interpret_violation_description(free_text: str) -> dict[str, Any]:
+    """Matches free-text against BEC Arabia's approved HSE violation list via Claude —
+    this is what lets the submission page accept a free-text description and resolve it
+    to an exact approved Sub-Type + Description pair instead of forcing users to already
+    know the right dropdown wording. Raises RuntimeError if unavailable."""
+    if not anthropic:
+        raise RuntimeError("The description matcher is not installed on this server.")
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise RuntimeError("The description matcher is not configured yet — pick from the dropdowns instead.")
+    client = anthropic.Anthropic(api_key=api_key)
+    system_prompt = (
+        "You match a free-text HSE violation description to BEC Arabia Contracting's approved list of "
+        "violation descriptions for the 1 Hotel Diriyah project. Only ever refer to entries from the "
+        "numbered list below by their number — never invent a description or Sub-Type that isn't listed.\n\n"
+        f"Approved list:\n{HSE_REFERENCE_PROMPT_BLOCK}"
+    )
+    response = client.messages.create(
+        model=HSE_MATCH_MODEL,
+        max_tokens=1024,
+        system=system_prompt,
+        tools=[HSE_MATCH_TOOL],
+        tool_choice={"type": "tool", "name": "suggest_matches"},
+        messages=[{"role": "user", "content": free_text}],
+    )
+    tool_use = next((block for block in response.content if block.type == "tool_use"), None)
+    if not tool_use:
+        raise RuntimeError("The description matcher did not return a usable result.")
+    result = tool_use.input
+    matches = []
+    for match in (result.get("matches") or [])[:3]:
+        index = match.get("entry_number")
+        if not isinstance(index, int) or index < 1 or index > len(HSE_VIOLATION_DESCRIPTIONS):
+            continue
+        entry = HSE_VIOLATION_DESCRIPTIONS[index - 1]
+        confidence = match.get("confidence")
+        matches.append({
+            "subType": entry["sub_type"],
+            "description": entry["description"],
+            "confidence": confidence if confidence in ("high", "medium", "low") else "low",
+            "reason": str(match.get("reason") or "")[:300],
+        })
+    return {
+        "matches": matches,
+        "multiCategory": bool(result.get("multi_category")),
+        "multiCategoryNote": str(result.get("multi_category_note") or "")[:500],
+    }
+
+
+@app.post("/api/violations/interpret")
+def interpret_violation() -> tuple[Response, int] | Response:
+    payload = request.get_json(force=True, silent=True) or {}
+    text = str(payload.get("text") or "").strip()
+    if not text:
+        return jsonify({"error": "Enter a description first."}), 400
+    if len(text) > HSE_MATCH_MAX_CHARS:
+        return jsonify({"error": "That description is too long."}), 400
+    try:
+        return jsonify(interpret_violation_description(text)), 200
+    except RuntimeError as error:
+        return jsonify({"error": str(error)}), 503
+    except Exception:
+        app.logger.exception("Violation description matching failed")
+        return jsonify({"error": "The description matcher is temporarily unavailable — pick from the dropdowns instead."}), 502
+
+
+@app.get("/api/violations/next-level")
+def violation_next_level() -> Response:
+    """Looks up how many prior violations this ID number already has, to suggest the
+    next Number of Violation level — always overridable by the person submitting."""
+    employee_id = re.sub(r"\D", "", request.args.get("employeeId", ""))
+    if not employee_id:
+        return jsonify({"count": 0, "suggested": HSE_NUMBERS_OF_VIOLATION[0]})
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT COUNT(*) AS total FROM violation_notices WHERE employee_id = ?"), [employee_id])
+        count = cursor.fetchone()["total"]
+    index = min(count, len(HSE_NUMBERS_OF_VIOLATION) - 1)
+    return jsonify({"count": count, "suggested": HSE_NUMBERS_OF_VIOLATION[index]})
+
+
 @app.post("/api/violations")
 def submit_violation() -> tuple[Response, int] | Response:
     try:
         payload = request.get_json(force=True, silent=False)
         if not isinstance(payload, dict):
             raise ValueError("The violation notice data is invalid.")
-        record = validate_violation(payload)
+        # subType is only ever sent by the revised, Aconex-compliant submission page —
+        # the bulk .docx importer and any other legacy caller never send it, so they
+        # keep going through the older free-text validator untouched.
+        record = validate_hse_violation(payload) if payload.get("subType") else validate_violation(payload)
         record_id, violation_no = insert_violation_notice(record)
         send_notification_email(
             f"Violation notice issued: {violation_no}",
@@ -2978,6 +3291,52 @@ PTW_XLSX_HEADERS = [
 PTW_XLSX_COLUMN_WIDTHS = [7, 16, 18, 20, 14, 42, 18, 16, 9, 20, 20, 22, 10, 12, 26]
 PTW_XLSX_OPEN_FILL = PatternFill("solid", fgColor="FFFF00")
 
+# Matches the "Violation " sheet in hse_violation_reference.xlsx column-for-column, so
+# this export can be dropped straight into the same log BEC Arabia already maintains.
+HSE_LOG_XLSX_HEADERS = [
+    "No", "Date", "Company Name", "Location", "Sub - Type", "Violation Des", "Emp. Number",
+    "Number of Violation", "Violation Value", "Rel - Department", "Penalty", "Subcontractor discount value",
+]
+HSE_LOG_XLSX_COLUMN_WIDTHS = [6, 12, 22, 20, 40, 42, 14, 16, 16, 24, 40, 20]
+
+
+def hse_violation_log_xlsx(records: list[dict[str, Any]]) -> bytes:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Violation"
+
+    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="0A1F8F")
+    header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    for col, title in enumerate(HSE_LOG_XLSX_HEADERS, start=1):
+        cell = sheet.cell(row=1, column=col, value=title)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_align
+    sheet.row_dimensions[1].height = 30
+    sheet.freeze_panes = "A2"
+
+    for col, width in enumerate(HSE_LOG_XLSX_COLUMN_WIDTHS, start=1):
+        sheet.column_dimensions[get_column_letter(col)].width = width
+
+    for row_index, record in enumerate(records, start=2):
+        # Violation Value has no numeric equivalent — the Penalty labels state a day
+        # count or percentage, not a SAR figure this system tracks (no payroll data),
+        # except the ambiguous "subcontractor extract" penalty, which is the SAR figure
+        # already captured separately in subcontractor_discount_value.
+        values = [
+            record["seq"], record["violation_date"], record["company_contractor"], record["violation_location"],
+            record["violation_type"], record["violation_description"], record["employee_id"],
+            record["number_of_violation"], "", record["rel_department"], record["penalty"],
+            record["subcontractor_discount_value"],
+        ]
+        for col, value in enumerate(values, start=1):
+            sheet.cell(row=row_index, column=col, value=value)
+
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
 
 def ptw_xlsx(records: list[dict[str, Any]]) -> bytes:
     workbook = Workbook()
@@ -3221,6 +3580,18 @@ def export_violations_bundle() -> Response:
     zip_bytes = violation_bundle_zip_bytes()
     filename = f'diriyah-violations-bundle-{datetime.now(timezone.utc).date().isoformat()}.zip'
     return Response(zip_bytes, mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@app.get("/admin/export/violations/hse-log.xlsx")
+@admin_required
+def export_hse_violation_log() -> Response:
+    workbook_bytes = hse_violation_log_xlsx(filtered_violations(limit=5000))
+    filename = f'hse-violation-log-{datetime.now(timezone.utc).date().isoformat()}.xlsx'
+    return Response(
+        workbook_bytes,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.get("/admin/export/ptw")

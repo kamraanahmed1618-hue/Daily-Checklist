@@ -128,6 +128,12 @@ input:focus, select:focus, textarea:focus { border-color: var(--navy-2); box-sha
 .submit-bar { position: sticky; z-index: 9; bottom: 16px; margin: 22px 0 50px; padding: 15px 18px 15px 22px; display: flex; align-items: center; justify-content: space-between; gap: 20px; color: white; background: var(--navy); border: 1px solid rgba(255,255,255,.08); border-radius: 15px; box-shadow: 0 12px 40px rgba(10,31,143,.28); }
 .submit-bar strong, .submit-bar span { display: block; }
 .submit-bar span { color: rgba(255,255,255,.6); font-size: 11px; }
+.submit-bar.interpret-bar { position: static; margin: 0 0 12px; box-shadow: none; background: var(--sand); color: var(--ink); border-color: var(--line); }
+.submit-bar.interpret-bar span { color: var(--muted); }
+.submit-bar.interpret-bar .button.secondary { color: var(--navy); background: white; }
+#suggestions.checkbox-grid { grid-template-columns: 1fr; margin-bottom: 12px; }
+#suggestions .checkbox-tile { align-items: flex-start; }
+#suggestions .checkbox-tile small { color: var(--muted); font-weight: 500; }
 .button { min-height: 42px; padding: 10px 16px; border: 1px solid transparent; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; font-size: 13px; font-weight: 800; text-decoration: none; cursor: pointer; }
 .button.primary { color: white; background: var(--navy-2); }
 .submit-bar .button.primary { color: var(--navy); background: white; }
