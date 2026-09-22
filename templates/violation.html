@@ -98,8 +98,7 @@
       </label>
       <label><span>Responsible department <b>*</b></span>
         <select name="relDepartment" required>
-          <option value="" disabled selected>Select…</option>
-          {% for department in departments %}<option value="{{ department }}">{{ department }}</option>{% endfor %}
+          {% for department in departments %}<option value="{{ department }}" {{ 'selected' if department == default_department }}>{{ department }}</option>{% endfor %}
         </select>
       </label>
     </div>

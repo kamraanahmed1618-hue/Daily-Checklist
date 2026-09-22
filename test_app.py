@@ -1899,7 +1899,7 @@ class ChecklistApplicationTests(unittest.TestCase):
 
     def test_hse_violation_bec_staff_locks_company_name_and_uses_employee_id_label(self):
         response = self.client.post("/api/violations", json=self.hse_violation_payload(
-            violatorRole="BEC Staff", companyContractor="something the user typed", employeeId="778899",
+            violatorRole="BEC Staff", companyContractor="something the user typed", employeeId="77889",
         ))
         self.assertEqual(response.status_code, 201)
         with database() as connection:
@@ -1911,7 +1911,7 @@ class ChecklistApplicationTests(unittest.TestCase):
 
     def test_hse_violation_rental_worker_locks_company_name(self):
         response = self.client.post("/api/violations", json=self.hse_violation_payload(
-            violatorRole="Rental Worker", employeeId="778899",
+            violatorRole="Rental Worker", employeeId="7788990011",
         ))
         self.assertEqual(response.status_code, 201)
         with database() as connection:
@@ -1923,6 +1923,28 @@ class ChecklistApplicationTests(unittest.TestCase):
     def test_hse_violation_requires_numeric_id(self):
         response = self.client.post("/api/violations", json=self.hse_violation_payload(employeeId="ABC123"))
         self.assertEqual(response.status_code, 400)
+
+    def test_hse_violation_bec_staff_id_must_be_exactly_5_digits(self):
+        too_short = self.client.post("/api/violations", json=self.hse_violation_payload(violatorRole="BEC Staff", employeeId="1234"))
+        too_long = self.client.post("/api/violations", json=self.hse_violation_payload(violatorRole="BEC Staff", employeeId="123456"))
+        correct = self.client.post("/api/violations", json=self.hse_violation_payload(violatorRole="BEC Staff", employeeId="12345"))
+        self.assertEqual(too_short.status_code, 400)
+        self.assertEqual(too_long.status_code, 400)
+        self.assertEqual(correct.status_code, 201)
+
+    def test_hse_violation_iqama_number_must_be_exactly_10_digits(self):
+        too_short = self.client.post("/api/violations", json=self.hse_violation_payload(employeeId="123456789"))
+        too_long = self.client.post("/api/violations", json=self.hse_violation_payload(employeeId="12345678901"))
+        correct = self.client.post("/api/violations", json=self.hse_violation_payload(employeeId="1234567890"))
+        self.assertEqual(too_short.status_code, 400)
+        self.assertEqual(too_long.status_code, 400)
+        self.assertEqual(correct.status_code, 201)
+
+    def test_hse_violation_default_department_is_health_and_safety(self):
+        response = self.client.get("/violation")
+        self.assertEqual(response.status_code, 200)
+        body = response.data.decode()
+        self.assertIn('value="Health &amp; Safety" selected', body)
 
     def test_hse_violation_ambiguous_penalty_requires_sar_amount(self):
         response = self.client.post("/api/violations", json=self.hse_violation_payload(penalty=HSE_AMBIGUOUS_PENALTY))
