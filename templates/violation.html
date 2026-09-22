@@ -88,21 +88,15 @@
   </section>
 
   <section class="card">
-    <div class="section-heading"><div><span class="step-number">04</span><h2>Violation number &amp; department</h2></div></div>
+    <div class="section-heading"><div><span class="step-number">04</span><h2>Department</h2></div></div>
     <div class="field-grid">
-      <label><span>Number of violation <b>*</b></span>
-        <select name="numberOfViolation" id="number-of-violation" required>
-          <option value="" disabled selected>Select…</option>
-          {% for number in numbers_of_violation %}<option value="{{ number }}">{{ number }}</option>{% endfor %}
-        </select>
-      </label>
       <label><span>Responsible department <b>*</b></span>
         <select name="relDepartment" required>
           {% for department in departments %}<option value="{{ department }}" {{ 'selected' if department == default_department }}>{{ department }}</option>{% endfor %}
         </select>
       </label>
     </div>
-    <p class="field-note" id="history-note"></p>
+    <p class="field-note">Number of violation (First/Second/Third/Fourth) is assigned automatically from this ID's prior violation history — no need to pick it here.</p>
   </section>
 
   <section class="card">

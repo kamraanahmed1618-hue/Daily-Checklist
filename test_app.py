@@ -21,7 +21,7 @@ os.environ["EXPORT_TOKEN"] = "test-export-token"
 
 from app import (  # noqa: E402
     CHECKLIST, CHECKLIST_ITEMS, app, database,
-    HSE_AMBIGUOUS_PENALTY, HSE_DEPARTMENTS, HSE_NUMBERS_OF_VIOLATION, HSE_PENALTIES, HSE_VIOLATION_DESCRIPTIONS,
+    HSE_AMBIGUOUS_PENALTY, HSE_DEPARTMENTS, HSE_PENALTIES, HSE_VIOLATION_DESCRIPTIONS,
 )
 
 
@@ -1851,7 +1851,6 @@ class ChecklistApplicationTests(unittest.TestCase):
             "violationLocation": "Zone 2",
             "subType": entry["sub_type"],
             "violationDescription": entry["description"],
-            "numberOfViolation": "First",
             "relDepartment": HSE_DEPARTMENTS[0],
             "penalty": HSE_PENALTIES[0],
             "photoKeys": ["uploads/tok12345/aaaaaaaaaaaaaaaaaaaa.jpg"],
@@ -1965,16 +1964,21 @@ class ChecklistApplicationTests(unittest.TestCase):
             row = dict(cursor.fetchone())
         self.assertEqual(row["subcontractor_discount_value"], "6000")
 
-    def test_hse_violation_next_level_suggests_based_on_prior_count(self):
-        response = self.client.get("/api/violations/next-level?employeeId=3216549870")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json, {"count": 0, "suggested": "First"})
-
-        self.client.post("/api/violations", json=self.hse_violation_payload(employeeId="3216549870"))
-        self.client.post("/api/violations", json=self.hse_violation_payload(employeeId="3216549870"))
-
-        response2 = self.client.get("/api/violations/next-level?employeeId=3216549870")
-        self.assertEqual(response2.json, {"count": 2, "suggested": "Third"})
+    def test_hse_violation_number_of_violation_is_automatic_not_submitted(self):
+        # Never chosen by the submitter — computed from this ID's prior violation count,
+        # the same way violation_no itself is auto-assigned rather than typed in.
+        levels = []
+        for _ in range(5):
+            response = self.client.post("/api/violations", json=self.hse_violation_payload(
+                employeeId="3216549870", numberOfViolation="ignored, should have no effect",
+            ))
+            self.assertEqual(response.status_code, 201)
+            with database() as connection:
+                cursor = connection.cursor()
+                cursor.execute("SELECT number_of_violation FROM violation_notices WHERE id = ?", [response.json["id"]])
+                levels.append(dict(cursor.fetchone())["number_of_violation"])
+        # First, Second, Third, Fourth, then capped at Fourth rather than erroring.
+        self.assertEqual(levels, ["First", "Second", "Third", "Fourth", "Fourth"])
 
     def test_interpret_violation_requires_text(self):
         response = self.client.post("/api/violations/interpret", json={"text": ""})

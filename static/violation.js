@@ -21,8 +21,6 @@ const multiCategoryWarning = document.getElementById("multi-category-warning");
 const suggestionsBox = document.getElementById("suggestions");
 const subTypeSelect = document.getElementById("sub-type-select");
 const descriptionSelect = document.getElementById("description-select");
-const numberOfViolationSelect = document.getElementById("number-of-violation");
-const historyNote = document.getElementById("history-note");
 const penaltySelect = document.getElementById("penalty-select");
 const subcontractorAmountField = document.getElementById("subcontractor-amount-field");
 const subcontractorAmountInput = document.getElementById("subcontractor-amount");
@@ -57,31 +55,6 @@ roleSelect.addEventListener("change", () => {
   idField.setAttribute("maxlength", String(digits));
   idField.setAttribute("minlength", String(digits));
   idField.value = "";
-});
-
-let numberOfViolationTouched = false;
-numberOfViolationSelect.addEventListener("change", () => {
-  numberOfViolationTouched = true;
-});
-
-idField.addEventListener("blur", async () => {
-  const employeeId = idField.value.replace(/\D/g, "");
-  if (!employeeId) return;
-  try {
-    const response = await fetch(`/api/violations/next-level?employeeId=${encodeURIComponent(employeeId)}`);
-    if (!response.ok) return;
-    const result = await response.json();
-    if (result.count > 0) {
-      historyNote.textContent = `This ID has ${result.count} prior violation${result.count === 1 ? "" : "s"} on record.`;
-    } else {
-      historyNote.textContent = "";
-    }
-    if (!numberOfViolationTouched) {
-      numberOfViolationSelect.value = result.suggested;
-    }
-  } catch (error) {
-    // Best-effort only — never blocks submission.
-  }
 });
 
 // --- Sub-Type -> Description cascade ----------------------------------------
@@ -208,7 +181,6 @@ async function submitNotice(event) {
     violationLocation: field("violationLocation").value,
     subType: field("subType").value,
     violationDescription: field("violationDescription").value,
-    numberOfViolation: field("numberOfViolation").value,
     relDepartment: field("relDepartment").value,
     penalty: field("penalty").value,
     subcontractorDiscountValue: field("subcontractorDiscountValue") ? field("subcontractorDiscountValue").value : "",
