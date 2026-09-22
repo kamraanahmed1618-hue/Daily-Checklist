@@ -49,9 +49,14 @@ roleSelect.addEventListener("change", () => {
     companyNameField.value = "";
     companyNameField.readOnly = false;
   }
+  const digits = role === "BEC Staff" ? 5 : 10;
   idLabel.innerHTML = role === "BEC Staff"
-    ? "Employee ID Number <b>*</b>"
-    : "Iqama Number <b>*</b>";
+    ? `Employee ID Number (${digits} digits) <b>*</b>`
+    : `Iqama Number (${digits} digits) <b>*</b>`;
+  idField.setAttribute("pattern", `[0-9]{${digits}}`);
+  idField.setAttribute("maxlength", String(digits));
+  idField.setAttribute("minlength", String(digits));
+  idField.value = "";
 });
 
 let numberOfViolationTouched = false;

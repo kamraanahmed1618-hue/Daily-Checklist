@@ -157,6 +157,10 @@ HSE_AMBIGUOUS_PENALTY = "Deduction from subcontractor extract"
 HSE_DESCRIPTION_BY_KEY = {(entry["sub_type"], entry["description"]): entry for entry in HSE_VIOLATION_DESCRIPTIONS}
 HSE_VIOLATOR_ROLES = ["BEC Staff", "Subcontractor Employee", "Rental Worker"]
 HSE_ROLE_COMPANY_NAMES = {"BEC Staff": "BEC ARABIA", "Rental Worker": "BEC - Rental"}
+# Every notice submitted through this system is an HSE/OHS violation, so the
+# Responsible Department pre-selects "Health & Safety" instead of making the
+# submitter pick it every time — still an ordinary dropdown, so it can be changed.
+HSE_DEFAULT_DEPARTMENT = "Health & Safety" if "Health & Safety" in HSE_DEPARTMENTS else ""
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
@@ -1074,16 +1078,19 @@ def validate_hse_violation(payload: dict[str, Any]) -> dict[str, Any]:
     violator_role = clean_text(payload.get("violatorRole"), "Who the violation is against", 40)
     if violator_role not in HSE_VIOLATOR_ROLES:
         raise ValueError("Choose who the violation is against.")
-    if violator_role in HSE_ROLE_COMPANY_NAMES:
+    if violator_role == "BEC Staff":
         company_contractor = HSE_ROLE_COMPANY_NAMES[violator_role]
-        id_label = "Employee ID Number" if violator_role == "BEC Staff" else "Iqama Number"
+        id_label, id_digits = "Employee ID Number", 5
+    elif violator_role == "Rental Worker":
+        company_contractor = HSE_ROLE_COMPANY_NAMES[violator_role]
+        id_label, id_digits = "Iqama Number", 10
     else:
         company_contractor = clean_text(payload.get("companyContractor"), "Subcontractor company name", 200)
-        id_label = "Iqama Number"
+        id_label, id_digits = "Iqama Number", 10
 
     employee_id = clean_text(payload.get("employeeId"), id_label, 40)
-    if not re.fullmatch(r"\d+", employee_id):
-        raise ValueError(f"Enter a valid, numeric {id_label}.")
+    if not re.fullmatch(rf"\d{{{id_digits}}}", employee_id):
+        raise ValueError(f"Enter a valid {id_label} ({id_digits} digits).")
 
     number_of_violation = clean_text(payload.get("numberOfViolation"), "Number of violation", 20)
     if number_of_violation not in HSE_NUMBERS_OF_VIOLATION:
@@ -1815,6 +1822,7 @@ def violation_form() -> str:
         descriptions=HSE_VIOLATION_DESCRIPTIONS,
         numbers_of_violation=HSE_NUMBERS_OF_VIOLATION,
         departments=HSE_DEPARTMENTS,
+        default_department=HSE_DEFAULT_DEPARTMENT,
         penalties=HSE_PENALTIES,
         ambiguous_penalty=HSE_AMBIGUOUS_PENALTY,
     )
