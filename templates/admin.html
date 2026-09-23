@@ -258,7 +258,7 @@
                     <td>{{ record.inspected_by }}</td>
                     <td><span class="score-pill {% if record.score|float < 70 %}low{% elif record.score|float < 90 %}medium{% endif %}">{{ record.score }}%</span></td>
                     <td>{{ record.non_compliant }}</td>
-                    <td><a class="row-link" href="{{ url_for('record_detail', record_id=record.id) }}">View record</a></td>
+                    <td><a class="row-link" href="{{ url_for('record_detail', record_id=record.id, back=request.query_string.decode()) }}">View record</a></td>
                 </tr>
             {% else %}
                 <tr><td colspan="8" class="empty-state">No inspection records found.</td></tr>
@@ -277,7 +277,7 @@
                     <td>{{ record.reported_by }}</td>
                     <td>{{ record.near_miss_types|from_json|join(', ') }}</td>
                     <td>{{ record.status or '—' }}</td>
-                    <td><a class="row-link" href="{{ url_for('near_miss_detail', record_id=record.id) }}">View record</a></td>
+                    <td><a class="row-link" href="{{ url_for('near_miss_detail', record_id=record.id, back=request.query_string.decode()) }}">View record</a></td>
                 </tr>
             {% else %}
                 <tr><td colspan="7" class="empty-state">No near-miss reports found.</td></tr>
@@ -296,7 +296,7 @@
                     <td>{{ record.company_contractor }}</td>
                     <td>{{ record.violation_type }}</td>
                     <td>{{ record.actions|from_json|join(', ') or '—' }}</td>
-                    <td><a class="row-link" href="{{ url_for('violation_detail', record_id=record.id) }}">View notice</a></td>
+                    <td><a class="row-link" href="{{ url_for('violation_detail', record_id=record.id, back=request.query_string.decode()) }}">View notice</a></td>
                 </tr>
             {% else %}
                 <tr><td colspan="7" class="empty-state">No violation notices found.</td></tr>
@@ -316,7 +316,7 @@
                     <td>{{ record.start_date }} {{ record.start_time }}</td>
                     <td>{{ record.end_date }} {{ record.end_time }}</td>
                     <td><span class="score-pill {{ 'medium' if record.status == 'open' else '' }}">{{ record.status }}</span></td>
-                    <td><a class="row-link" href="{{ url_for('ptw_detail', record_id=record.id) }}">Open</a></td>
+                    <td><a class="row-link" href="{{ url_for('ptw_detail', record_id=record.id, back=request.query_string.decode()) }}">Open</a></td>
                 </tr>
             {% else %}
                 <tr><td colspan="8" class="empty-state">No PTW log entries found.</td></tr>
@@ -334,7 +334,7 @@
                     <td>{{ record.session_date }}</td>
                     <td>{{ record.trainer or '—' }}</td>
                     <td>{{ record.attendees_count if record.attendees_count is not none else '—' }}</td>
-                    <td><a class="row-link" href="{{ url_for('training_detail', record_id=record.id) }}">View record</a></td>
+                    <td><a class="row-link" href="{{ url_for('training_detail', record_id=record.id, back=request.query_string.decode()) }}">View record</a></td>
                 </tr>
             {% else %}
                 <tr><td colspan="6" class="empty-state">No training log entries found.</td></tr>
@@ -352,7 +352,7 @@
                     <td>{{ record.location }}</td>
                     <td>{{ record.observed_by }}</td>
                     <td>{{ record.category }}</td>
-                    <td><a class="row-link" href="{{ url_for('good_practice_detail', record_id=record.id) }}">View record</a></td>
+                    <td><a class="row-link" href="{{ url_for('good_practice_detail', record_id=record.id, back=request.query_string.decode()) }}">View record</a></td>
                 </tr>
             {% else %}
                 <tr><td colspan="6" class="empty-state">No good practice entries found.</td></tr>

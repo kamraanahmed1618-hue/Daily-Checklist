@@ -2589,7 +2589,7 @@ def record_detail(record_id: str) -> str | tuple[str, int]:
     record = dict(row)
     record["responses"] = json.loads(record["responses"])
     record["response_notes"] = json.loads(record["response_notes"])
-    return render_template("record.html", record=record, sections=CHECKLIST)
+    return render_template("record.html", record=record, sections=CHECKLIST, back=request.args.get("back", ""))
 
 
 INSPECTION_HEADER_FIELDS = {
@@ -2679,7 +2679,9 @@ def near_miss_detail(record_id: str) -> str | tuple[str, int]:
     record = dict(row)
     for field in ("near_miss_types", "root_causes", "corrective_actions", "preventive_measures", "photos"):
         record[field] = safe_json_list(record[field])
-    return render_template("near_miss_record.html", record=record, photo_urls=photo_urls(record["photos"]))
+    return render_template(
+        "near_miss_record.html", record=record, photo_urls=photo_urls(record["photos"]), back=request.args.get("back", ""),
+    )
 
 
 NEAR_MISS_FORM_FIELDS = {
@@ -2815,7 +2817,9 @@ def violation_detail(record_id: str) -> str | tuple[str, int]:
     record = dict(row)
     record["actions"] = safe_json_list(record["actions"])
     record["photos"] = safe_json_list(record["photos"])
-    return render_template("violation_record.html", record=record, photo_urls=photo_urls(record["photos"]))
+    return render_template(
+        "violation_record.html", record=record, photo_urls=photo_urls(record["photos"]), back=request.args.get("back", ""),
+    )
 
 
 VIOLATION_FORM_FIELDS = {
@@ -2969,7 +2973,10 @@ def ptw_detail(record_id: str) -> str | tuple[str, int] | Response:
                 record = {**record, **{db_key: form_payload[form_key] for form_key, db_key in PTW_FORM_FIELDS.items()}}
             else:
                 raise
-    return render_template("ptw_edit.html", record=record, ptw_types=PTW_TYPES, shifts=PTW_SHIFTS, statuses=PTW_STATUSES, error=error)
+    return render_template(
+        "ptw_edit.html", record=record, ptw_types=PTW_TYPES, shifts=PTW_SHIFTS, statuses=PTW_STATUSES, error=error,
+        back=request.args.get("back", ""),
+    )
 
 
 @app.post("/admin/ptw/<record_id>/delete")
@@ -3004,6 +3011,7 @@ def training_detail(record_id: str) -> str | tuple[str, int]:
         photo_urls=photo_urls(record["photos"]),
         attendance_photo_urls=photo_urls(record["attendance_photos"]),
         training_type_labels=TRAINING_TYPE_LABELS,
+        back=request.args.get("back", ""),
     )
 
 
@@ -3122,7 +3130,9 @@ def good_practice_detail(record_id: str) -> str | tuple[str, int]:
         return "Record not found", 404
     record = dict(row)
     record["photos"] = safe_json_list(record["photos"])
-    return render_template("good_practice_record.html", record=record, photo_urls=photo_urls(record["photos"]))
+    return render_template(
+        "good_practice_record.html", record=record, photo_urls=photo_urls(record["photos"]), back=request.args.get("back", ""),
+    )
 
 
 GOOD_PRACTICE_FORM_FIELDS = {
