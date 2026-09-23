@@ -3,7 +3,7 @@
 {% block body_class %}form-page{% endblock %}
 {% block content %}
 <section class="record-toolbar no-print">
-  <a class="text-link" href="{{ url_for('admin', view='ptw') }}">← Back to records</a>
+  <a class="text-link" href="{{ (url_for('admin') + '?' + back) if back else url_for('admin', view='ptw') }}">← Back to records</a>
   <form class="delete-form" method="post" action="{{ url_for('delete_ptw', record_id=record.id) }}">
     <button class="button ghost danger" type="submit">Delete entry</button>
   </form>

@@ -2329,6 +2329,43 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertFalse(any(name.endswith(".jpg") for name in names))
         self.assertTrue(any(name.endswith(".pdf") for name in names))
 
+    def test_admin_list_view_record_link_carries_current_filters(self):
+        record_id = self.client.post("/api/inspections", json=self.payload()).json["id"]
+        self.login()
+        response = self.client.get("/admin?q=Zone+3&date_from=2026-08-01&date_to=2026-08-31")
+        body = response.data.decode()
+        self.assertIn(f'/admin/records/{record_id}?back=q%3DZone%2B3%26date_from%3D2026-08-01%26date_to%3D2026-08-31', body)
+
+    def test_record_detail_back_link_restores_the_filters_it_was_opened_with(self):
+        record_id = self.client.post("/api/inspections", json=self.payload()).json["id"]
+        self.login()
+        response = self.client.get(f"/admin/records/{record_id}?back=q%3DZone%2B3%26date_from%3D2026-08-01%26date_to%3D2026-08-31")
+        body = response.data.decode()
+        self.assertIn('href="/admin?q=Zone+3&amp;date_from=2026-08-01&amp;date_to=2026-08-31">← Back to records', body)
+
+    def test_record_detail_back_link_falls_back_to_plain_view_without_a_back_param(self):
+        record_id = self.client.post("/api/inspections", json=self.payload()).json["id"]
+        self.login()
+        response = self.client.get(f"/admin/records/{record_id}")
+        body = response.data.decode()
+        self.assertIn('href="/admin">← Back to records', body)
+
+    def test_violation_detail_back_link_preserves_the_violations_tab_and_filters(self):
+        entry = HSE_VIOLATION_DESCRIPTIONS[0]
+        record_id = self.client.post("/api/violations", json=self.hse_violation_payload(
+            subType=entry["sub_type"], violationDescription=entry["description"],
+        )).json["id"]
+        self.login()
+        list_response = self.client.get("/admin?view=violations&q=Test")
+        list_body = list_response.data.decode()
+        self.assertIn(f'/admin/violations/{record_id}?back=view%3Dviolations%26q%3DTest', list_body)
+
+        detail_response = self.client.get(f"/admin/violations/{record_id}?back=view%3Dviolations%26q%3DTest")
+        detail_body = detail_response.data.decode()
+        self.assertIn('href="/admin?view=violations&amp;q=Test">← Back to records', detail_body)
+        # Not duplicated — the base "view=violations" link isn't tacked on alongside the back querystring.
+        self.assertNotIn("view=violations&amp;view=violations", detail_body)
+
 
 if __name__ == "__main__":
     unittest.main()
