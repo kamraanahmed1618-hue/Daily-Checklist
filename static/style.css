@@ -217,6 +217,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--navy-2); box-sha
 .home-card.ptw { --accent: #1baf7a; }
 .home-card.training { --accent: #7c3aed; }
 .home-card.good-practice { --accent: #0e9488; }
+.home-card.weekly-tasks { --accent: #c026d3; }
 .home-card.records { --accent: var(--navy); }
 .records-card { padding: 0; overflow: hidden; }
 .filter-bar { padding: 22px; background: #f4f6fb; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: minmax(240px, 1fr) 160px 160px auto auto; align-items: end; gap: 12px; }
