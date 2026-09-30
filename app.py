@@ -1266,10 +1266,13 @@ def week_start_for(value: date) -> date:
     return value - timedelta(days=days_since_saturday)
 
 
+UNASSIGNED_TASK_LABEL = "Unassigned / Team-wide"
+
+
 def validate_weekly_task(payload: dict[str, Any]) -> dict[str, Any]:
-    department = clean_text(payload.get("department"), "Department", 200)
-    if department not in HSE_DEPARTMENTS:
-        raise ValueError("Choose a valid department.")
+    # assigned_to and area are both optional free text, not restricted to a fixed list —
+    # real site task lists are organized around whichever names/areas are relevant that
+    # week (foremen, trades, "All Team"), not a corporate department directory.
     raw_week_start = clean_text(payload.get("weekStart"), "Week", 10)
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw_week_start):
         raise ValueError("Enter a valid week.")
@@ -1279,8 +1282,8 @@ def validate_weekly_task(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Enter a valid due date.")
     return {
         "week_start": week_start,
-        "department": department,
-        "assigned_to": clean_text(payload.get("assignedTo"), "Assigned to"),
+        "department": clean_text(payload.get("department"), "Area", 200, False),
+        "assigned_to": clean_text(payload.get("assignedTo"), "Assigned to", 200, False),
         "task_description": clean_text(payload.get("taskDescription"), "Task", 1000),
         "due_date": due_date,
     }
@@ -2499,7 +2502,7 @@ def admin() -> str | Response:
     trends: list[dict[str, Any]] = []
     daily_kpi_rows: list[dict[str, Any]] = []
     daily_kpi_from = daily_kpi_to = ""
-    weekly_tasks_by_department: dict[str, list[dict[str, Any]]] = {}
+    weekly_tasks_by_assignee: dict[str, list[dict[str, Any]]] = {}
     weekly_tasks_week = ""
     ptw_stats: dict[str, Any] = {}
     flagged_ptw_duplicates: list[dict[str, Any]] = []
@@ -2526,8 +2529,7 @@ def admin() -> str | Response:
             weekly_tasks_week = week_start_for(date.fromisoformat(raw_week)).isoformat()
         else:
             weekly_tasks_week = this_week_start
-        for task in weekly_tasks_for(weekly_tasks_week):
-            weekly_tasks_by_department.setdefault(task["department"], []).append(task)
+        weekly_tasks_by_assignee = group_tasks_by_assignee(weekly_tasks_for(weekly_tasks_week))
     elif view == "daily-kpis":
         raw_from = request.args.get("date_from", "").strip()
         raw_to = request.args.get("date_to", "").strip()
@@ -2580,9 +2582,9 @@ def admin() -> str | Response:
         daily_kpi_rows=daily_kpi_rows,
         daily_kpi_from=daily_kpi_from,
         daily_kpi_to=daily_kpi_to,
-        weekly_tasks_by_department=weekly_tasks_by_department,
+        weekly_tasks_by_assignee=weekly_tasks_by_assignee,
         weekly_tasks_week=weekly_tasks_week,
-        weekly_task_departments=HSE_DEPARTMENTS,
+        weekly_task_areas=HSE_DEPARTMENTS,
         inspections_count=counts["inspections"],
         near_miss_count=counts["near_miss"],
         violations_count=counts["violations"],
@@ -3290,17 +3292,24 @@ def weekly_tasks_for(week_start: str) -> list[dict[str, Any]]:
     with database() as connection:
         cursor = connection.cursor()
         cursor.execute(
-            sql("SELECT * FROM weekly_tasks WHERE week_start = ? ORDER BY department ASC, seq ASC"),
+            sql("SELECT * FROM weekly_tasks WHERE week_start = ? ORDER BY assigned_to ASC, seq ASC"),
             [week_start],
         )
         return [dict(row) for row in cursor.fetchall()]
 
 
+def group_tasks_by_assignee(tasks: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for task in tasks:
+        grouped.setdefault(task["assigned_to"] or UNASSIGNED_TASK_LABEL, []).append(task)
+    return grouped
+
+
 @app.get("/tasks")
 def weekly_tasks_page() -> str:
     """Public, no login — the whole point is that anyone with the link can check what's
-    assigned to their department for the week, the same self-serve pattern as the rest
-    of this app's public forms."""
+    assigned to them for the week, the same self-serve pattern as the rest of this
+    app's public forms."""
     this_week_start, _ = current_work_week_range()
     raw_week = request.args.get("week", "").strip()
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw_week):
@@ -3311,15 +3320,11 @@ def weekly_tasks_page() -> str:
     prev_week = (date.fromisoformat(week_start) - timedelta(days=7)).isoformat()
     next_week = (date.fromisoformat(week_start) + timedelta(days=7)).isoformat()
 
-    tasks_by_department: dict[str, list[dict[str, Any]]] = {}
-    for task in weekly_tasks_for(week_start):
-        tasks_by_department.setdefault(task["department"], []).append(task)
-
     return render_template(
         "tasks.html",
         week_start=week_start, week_end=week_end, prev_week=prev_week, next_week=next_week,
         is_current_week=(week_start == this_week_start),
-        tasks_by_department=tasks_by_department,
+        tasks_by_assignee=group_tasks_by_assignee(weekly_tasks_for(week_start)),
     )
 
 
@@ -3356,6 +3361,103 @@ def create_weekly_task() -> Response:
     except ValueError:
         pass  # The form has no separate error state today — a bad task is simply not added.
     return redirect(url_for("admin", view="weekly-tasks", week=week))
+
+
+WEEKLY_TASK_BULK_MODEL = "claude-haiku-4-5"
+WEEKLY_TASK_BULK_TOOL = {
+    "name": "extract_tasks",
+    "description": "Extract individual tasks and their assignee (if any) from a pasted list of site task notes, one item per line.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "tasks": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "task": {"type": "string", "description": "The task text, with any person's name removed."},
+                        "assigned_to": {"type": "string", "description": "The name(s) this line is assigned to, joined with ' & ' if more than one; empty string if none is mentioned."},
+                    },
+                    "required": ["task", "assigned_to"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": ["tasks"],
+        "additionalProperties": False,
+    },
+    "strict": True,
+}
+
+
+def parse_weekly_task_lines(raw_text: str) -> list[dict[str, str]]:
+    """Splits a pasted block of site task notes into (task, assigned_to) pairs. In
+    practice a name can appear before or after the task, with or without a dash,
+    with multiple names, or not at all — too inconsistent for a fixed regex to get
+    right (it would misread which side of a dash is the name), so this asks Claude
+    when available and falls back to a plain per-line split otherwise."""
+    lines = [line.strip(" -\t") for line in raw_text.splitlines() if line.strip()]
+    if not lines:
+        return []
+    if anthropic and os.environ.get("ANTHROPIC_API_KEY"):
+        try:
+            client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+            response = client.messages.create(
+                model=WEEKLY_TASK_BULK_MODEL,
+                max_tokens=2048,
+                system=(
+                    "Each line below is one site task, sometimes with the assigned person's name at "
+                    "the start or end (with or without a dash), sometimes with more than one name, "
+                    "sometimes with no name. Extract every line as one task, with any name(s) removed "
+                    "from the task text and placed in assigned_to instead."
+                ),
+                tools=[WEEKLY_TASK_BULK_TOOL],
+                tool_choice={"type": "tool", "name": "extract_tasks"},
+                messages=[{"role": "user", "content": "\n".join(lines)}],
+            )
+            tool_use = next((block for block in response.content if block.type == "tool_use"), None)
+            if tool_use:
+                parsed = [
+                    {"task": str(item.get("task") or "").strip(), "assigned_to": str(item.get("assigned_to") or "").strip()}
+                    for item in (tool_use.input.get("tasks") or [])
+                ]
+                parsed = [item for item in parsed if item["task"]]
+                if parsed:
+                    return parsed
+        except Exception:
+            app.logger.exception("Bulk task parsing via Claude failed; falling back to a plain per-line split")
+    results = []
+    for line in lines:
+        if " - " in line:
+            task_part, _, name_part = line.rpartition(" - ")
+            if task_part and len(name_part.split()) <= 4:
+                results.append({"task": task_part.strip(), "assigned_to": name_part.strip()})
+                continue
+        results.append({"task": line, "assigned_to": ""})
+    return results
+
+
+@app.post("/admin/tasks/bulk")
+@admin_required
+def create_weekly_tasks_bulk() -> Response:
+    raw_week = request.form.get("weekStart", "").strip()
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw_week):
+        week_start = week_start_for(date.fromisoformat(raw_week)).isoformat()
+    else:
+        week_start = current_work_week_range()[0]
+    added = 0
+    for item in parse_weekly_task_lines(request.form.get("rawList", "")):
+        try:
+            record = validate_weekly_task({
+                "weekStart": week_start, "assignedTo": item["assigned_to"],
+                "taskDescription": item["task"], "department": "", "dueDate": "",
+            })
+            insert_weekly_task(record)
+            added += 1
+        except ValueError:
+            continue
+    log_audit("bulk_created", "weekly_task", f"{added} tasks")
+    return redirect(url_for("admin", view="weekly-tasks", week=week_start))
 
 
 @app.post("/admin/tasks/<task_id>/delete")
