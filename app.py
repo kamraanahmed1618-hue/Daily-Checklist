@@ -728,6 +728,20 @@ def init_db() -> None:
         )""",
         "CREATE INDEX IF NOT EXISTS good_practices_date_idx ON good_practices (practice_date)",
         "CREATE INDEX IF NOT EXISTS good_practices_created_idx ON good_practices (created_at)",
+        """CREATE TABLE IF NOT EXISTS weekly_tasks (
+            id TEXT PRIMARY KEY,
+            seq INTEGER,
+            week_start TEXT NOT NULL,
+            department TEXT NOT NULL,
+            assigned_to TEXT NOT NULL,
+            task_description TEXT NOT NULL,
+            due_date TEXT NOT NULL DEFAULT '',
+            completed INTEGER NOT NULL DEFAULT 0,
+            completed_at TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL
+        )""",
+        "CREATE INDEX IF NOT EXISTS weekly_tasks_week_idx ON weekly_tasks (week_start)",
+        "CREATE INDEX IF NOT EXISTS weekly_tasks_department_idx ON weekly_tasks (department)",
         """CREATE TABLE IF NOT EXISTS audit_log (
             id TEXT PRIMARY KEY,
             occurred_at TEXT NOT NULL,
@@ -765,7 +779,7 @@ def init_db() -> None:
         ensure_column("violation_notices", "penalty", "TEXT NOT NULL DEFAULT ''")
         ensure_column("violation_notices", "subcontractor_discount_value", "TEXT NOT NULL DEFAULT ''")
         # Backfill sequential numbers for any pre-existing records in submission order.
-        for table in ("inspections", "near_miss_reports", "violation_notices", "ptw_logs", "training_logs", "good_practices"):
+        for table in ("inspections", "near_miss_reports", "violation_notices", "ptw_logs", "training_logs", "good_practices", "weekly_tasks"):
             cursor.execute(sql(f"SELECT COALESCE(MAX(seq), 0) AS next_seq FROM {table}"))
             next_seq = cursor.fetchone()["next_seq"] or 0
             cursor.execute(sql(f"SELECT id FROM {table} WHERE seq IS NULL ORDER BY created_at ASC"))
@@ -1243,6 +1257,33 @@ def validate_good_practice(payload: dict[str, Any]) -> dict[str, Any]:
     if record["category"] not in GOOD_PRACTICE_CATEGORIES:
         raise ValueError("Select a valid category.")
     return {**record, "photos": clean_photo_keys(payload.get("photoKeys"))}
+
+
+def week_start_for(value: date) -> date:
+    """Snaps any date to the Saturday that starts its on-site work week, so tasks
+    entered against any day of a week still group under one consistent week_start."""
+    days_since_saturday = (value.weekday() - 5) % 7
+    return value - timedelta(days=days_since_saturday)
+
+
+def validate_weekly_task(payload: dict[str, Any]) -> dict[str, Any]:
+    department = clean_text(payload.get("department"), "Department", 200)
+    if department not in HSE_DEPARTMENTS:
+        raise ValueError("Choose a valid department.")
+    raw_week_start = clean_text(payload.get("weekStart"), "Week", 10)
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw_week_start):
+        raise ValueError("Enter a valid week.")
+    week_start = week_start_for(date.fromisoformat(raw_week_start)).isoformat()
+    due_date = clean_text(payload.get("dueDate"), "Due date", 10, False)
+    if due_date and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", due_date):
+        raise ValueError("Enter a valid due date.")
+    return {
+        "week_start": week_start,
+        "department": department,
+        "assigned_to": clean_text(payload.get("assignedTo"), "Assigned to"),
+        "task_description": clean_text(payload.get("taskDescription"), "Task", 1000),
+        "due_date": due_date,
+    }
 
 
 def admin_required(view: Any) -> Any:
@@ -2439,7 +2480,7 @@ def admin() -> str | Response:
         return render_template("login.html", error=error, configured=configured)
 
     view = request.args.get("view", "inspections")
-    if view not in {"inspections", "near-miss", "violations", "ptw", "training", "good-practices", "daily-kpis", "trends"}:
+    if view not in {"inspections", "near-miss", "violations", "ptw", "training", "good-practices", "weekly-tasks", "daily-kpis", "trends"}:
         view = "inspections"
 
     counts = record_counts()
@@ -2458,6 +2499,8 @@ def admin() -> str | Response:
     trends: list[dict[str, Any]] = []
     daily_kpi_rows: list[dict[str, Any]] = []
     daily_kpi_from = daily_kpi_to = ""
+    weekly_tasks_by_department: dict[str, list[dict[str, Any]]] = {}
+    weekly_tasks_week = ""
     ptw_stats: dict[str, Any] = {}
     flagged_ptw_duplicates: list[dict[str, Any]] = []
     total = average = non_compliant = 0
@@ -2477,6 +2520,14 @@ def admin() -> str | Response:
         training_logs, page, total_pages, total_count = paginated_training()
     elif view == "good-practices":
         good_practice_records, page, total_pages, total_count = paginated_good_practices()
+    elif view == "weekly-tasks":
+        raw_week = request.args.get("week", "").strip()
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw_week):
+            weekly_tasks_week = week_start_for(date.fromisoformat(raw_week)).isoformat()
+        else:
+            weekly_tasks_week = this_week_start
+        for task in weekly_tasks_for(weekly_tasks_week):
+            weekly_tasks_by_department.setdefault(task["department"], []).append(task)
     elif view == "daily-kpis":
         raw_from = request.args.get("date_from", "").strip()
         raw_to = request.args.get("date_to", "").strip()
@@ -2529,6 +2580,9 @@ def admin() -> str | Response:
         daily_kpi_rows=daily_kpi_rows,
         daily_kpi_from=daily_kpi_from,
         daily_kpi_to=daily_kpi_to,
+        weekly_tasks_by_department=weekly_tasks_by_department,
+        weekly_tasks_week=weekly_tasks_week,
+        weekly_task_departments=HSE_DEPARTMENTS,
         inspections_count=counts["inspections"],
         near_miss_count=counts["near_miss"],
         violations_count=counts["violations"],
@@ -3213,6 +3267,109 @@ def good_practice_pdf(record_id: str) -> Response | tuple[Response, int]:
     record = dict(row)
     pdf_bytes = good_practice_pdf_bytes(record)
     return Response(pdf_bytes, mimetype="application/pdf", headers={"Content-Disposition": f'attachment; filename="{record["report_no"]}.pdf"'})
+
+
+def insert_weekly_task(record: dict[str, Any]) -> str:
+    record_id = secrets.token_hex(16)
+    created_at = datetime.now(timezone.utc).isoformat()
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM weekly_tasks"))
+        seq = cursor.fetchone()["next_seq"]
+        cursor.execute(sql(
+            "INSERT INTO weekly_tasks (id, seq, week_start, department, assigned_to, task_description, due_date, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        ), [
+            record_id, seq, record["week_start"], record["department"], record["assigned_to"],
+            record["task_description"], record["due_date"], created_at,
+        ])
+    return record_id
+
+
+def weekly_tasks_for(week_start: str) -> list[dict[str, Any]]:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(
+            sql("SELECT * FROM weekly_tasks WHERE week_start = ? ORDER BY department ASC, seq ASC"),
+            [week_start],
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
+@app.get("/tasks")
+def weekly_tasks_page() -> str:
+    """Public, no login — the whole point is that anyone with the link can check what's
+    assigned to their department for the week, the same self-serve pattern as the rest
+    of this app's public forms."""
+    this_week_start, _ = current_work_week_range()
+    raw_week = request.args.get("week", "").strip()
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw_week):
+        week_start = week_start_for(date.fromisoformat(raw_week)).isoformat()
+    else:
+        week_start = this_week_start
+    week_end = (date.fromisoformat(week_start) + timedelta(days=5)).isoformat()
+    prev_week = (date.fromisoformat(week_start) - timedelta(days=7)).isoformat()
+    next_week = (date.fromisoformat(week_start) + timedelta(days=7)).isoformat()
+
+    tasks_by_department: dict[str, list[dict[str, Any]]] = {}
+    for task in weekly_tasks_for(week_start):
+        tasks_by_department.setdefault(task["department"], []).append(task)
+
+    return render_template(
+        "tasks.html",
+        week_start=week_start, week_end=week_end, prev_week=prev_week, next_week=next_week,
+        is_current_week=(week_start == this_week_start),
+        tasks_by_department=tasks_by_department,
+    )
+
+
+@app.post("/api/tasks/<task_id>/toggle")
+def toggle_weekly_task(task_id: str) -> tuple[Response, int] | Response:
+    """Public, no login — whoever the task is assigned to ticks it off themselves.
+    There's no per-person auth in this app, so this trusts the same way every other
+    public form here does; the audit log still records every toggle."""
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT completed FROM weekly_tasks WHERE id = ?"), [task_id])
+        row = cursor.fetchone()
+        if not row:
+            return jsonify({"error": "Task not found."}), 404
+        completed = 0 if row["completed"] else 1
+        completed_at = datetime.now(timezone.utc).isoformat() if completed else ""
+        cursor.execute(
+            sql("UPDATE weekly_tasks SET completed = ?, completed_at = ? WHERE id = ?"),
+            [completed, completed_at, task_id],
+        )
+    log_audit("completed" if completed else "reopened", "weekly_task", task_id)
+    return jsonify({"completed": bool(completed)}), 200
+
+
+@app.post("/admin/tasks")
+@admin_required
+def create_weekly_task() -> Response:
+    week = request.form.get("weekStart", "")
+    try:
+        record = validate_weekly_task(request.form.to_dict())
+        insert_weekly_task(record)
+        log_audit("created", "weekly_task", record["task_description"][:80])
+        week = record["week_start"]
+    except ValueError:
+        pass  # The form has no separate error state today — a bad task is simply not added.
+    return redirect(url_for("admin", view="weekly-tasks", week=week))
+
+
+@app.post("/admin/tasks/<task_id>/delete")
+@admin_required
+def delete_weekly_task(task_id: str) -> Response:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT week_start, task_description FROM weekly_tasks WHERE id = ?"), [task_id])
+        row = cursor.fetchone()
+        cursor.execute(sql("DELETE FROM weekly_tasks WHERE id = ?"), [task_id])
+    week = row["week_start"] if row else ""
+    if row:
+        log_audit("deleted", "weekly_task", row["task_description"][:80])
+    return redirect(url_for("admin", view="weekly-tasks", week=week))
 
 
 def inspections_csv(records: list[dict[str, Any]], detailed: bool) -> str:

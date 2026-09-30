@@ -22,6 +22,7 @@ os.environ["EXPORT_TOKEN"] = "test-export-token"
 from app import (  # noqa: E402
     CHECKLIST, CHECKLIST_ITEMS, app, database,
     HSE_AMBIGUOUS_PENALTY, HSE_DEPARTMENTS, HSE_PENALTIES, HSE_VIOLATION_DESCRIPTIONS,
+    insert_weekly_task, validate_weekly_task,
 )
 
 
@@ -36,6 +37,7 @@ class ChecklistApplicationTests(unittest.TestCase):
             connection.execute("DELETE FROM ptw_logs")
             connection.execute("DELETE FROM training_logs")
             connection.execute("DELETE FROM good_practices")
+            connection.execute("DELETE FROM weekly_tasks")
             connection.execute("DELETE FROM audit_log")
 
     def payload(self):
@@ -2365,6 +2367,106 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertIn('href="/admin?view=violations&amp;q=Test">← Back to records', detail_body)
         # Not duplicated — the base "view=violations" link isn't tacked on alongside the back querystring.
         self.assertNotIn("view=violations&amp;view=violations", detail_body)
+
+    def weekly_task_payload(self, **overrides):
+        payload = {
+            "weekStart": "2026-09-26",  # a Saturday
+            "department": HSE_DEPARTMENTS[5],
+            "assignedTo": "Faisal Raza",
+            "taskDescription": "Inspect scaffolding on Zone 4",
+            "dueDate": "2026-10-01",
+        }
+        payload.update(overrides)
+        return payload
+
+    def create_weekly_task(self, **overrides):
+        self.login()
+        return self.client.post("/admin/tasks", data=self.weekly_task_payload(**overrides))
+
+    def test_create_weekly_task_requires_login(self):
+        response = self.client.post("/admin/tasks", data=self.weekly_task_payload())
+        self.assertEqual(response.status_code, 302)
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT COUNT(*) AS c FROM weekly_tasks")
+            self.assertEqual(dict(cursor.fetchone())["c"], 0)
+
+    def test_weekly_task_appears_on_public_page_grouped_by_department(self):
+        self.create_weekly_task()
+        response = self.client.get("/tasks?week=2026-09-26")
+        self.assertEqual(response.status_code, 200)
+        body = response.data.decode()
+        self.assertIn(HSE_DEPARTMENTS[5], body)
+        self.assertIn("Faisal Raza", body)
+        self.assertIn("Inspect scaffolding on Zone 4", body)
+        self.assertIn("task-checkbox", body)
+
+    def test_weekly_tasks_page_requires_no_login(self):
+        # No self.login() call — this is the whole point, anyone with the link can view it.
+        response = self.client.get("/tasks")
+        self.assertEqual(response.status_code, 200)
+
+    def test_weekly_task_week_start_snaps_to_the_saturday_of_that_week(self):
+        # Tuesday 2026-09-29 falls in the work week starting Saturday 2026-09-26.
+        self.create_weekly_task(weekStart="2026-09-29")
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT week_start FROM weekly_tasks")
+            self.assertEqual(dict(cursor.fetchone())["week_start"], "2026-09-26")
+
+    def test_weekly_task_rejects_invalid_department(self):
+        response = self.create_weekly_task(department="Not A Real Department")
+        self.assertEqual(response.status_code, 302)
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT COUNT(*) AS c FROM weekly_tasks")
+            self.assertEqual(dict(cursor.fetchone())["c"], 0)
+
+    def test_toggle_weekly_task_flips_completed_state(self):
+        self.create_weekly_task()
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT id FROM weekly_tasks")
+            task_id = dict(cursor.fetchone())["id"]
+
+        first = self.client.post(f"/api/tasks/{task_id}/toggle")
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.json, {"completed": True})
+
+        second = self.client.post(f"/api/tasks/{task_id}/toggle")
+        self.assertEqual(second.json, {"completed": False})
+
+    def test_toggle_nonexistent_weekly_task_returns_404(self):
+        response = self.client.post("/api/tasks/doesnotexist/toggle")
+        self.assertEqual(response.status_code, 404)
+
+    def test_delete_weekly_task_requires_login(self):
+        # Inserted directly (not via the authenticated HTTP form) so the test client
+        # itself stays logged out for the first delete attempt below.
+        task_id = insert_weekly_task(validate_weekly_task(self.weekly_task_payload()))
+
+        response = self.client.post(f"/admin/tasks/{task_id}/delete")
+        self.assertEqual(response.status_code, 302)
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT COUNT(*) AS c FROM weekly_tasks")
+            self.assertEqual(dict(cursor.fetchone())["c"], 1)  # still there — not logged in
+
+        self.login()
+        delete_response = self.client.post(f"/admin/tasks/{task_id}/delete")
+        self.assertEqual(delete_response.status_code, 302)
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT COUNT(*) AS c FROM weekly_tasks")
+            self.assertEqual(dict(cursor.fetchone())["c"], 0)
+
+    def test_admin_weekly_tasks_view_lists_the_created_task(self):
+        self.create_weekly_task()
+        response = self.client.get("/admin?view=weekly-tasks&week=2026-09-26")
+        self.assertEqual(response.status_code, 200)
+        body = response.data.decode()
+        self.assertIn("Faisal Raza", body)
+        self.assertIn("Inspect scaffolding on Zone 4", body)
 
 
 if __name__ == "__main__":
