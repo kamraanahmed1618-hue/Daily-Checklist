@@ -2447,6 +2447,53 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertEqual(rows[1], {"assigned_to": "", "task_description": "Guardrails must cover the edge"})
         self.assertEqual(rows[2], {"assigned_to": "Mohsin", "task_description": "Electrical"})
 
+    def test_bulk_create_weekly_tasks_fallback_handles_names_without_a_clean_spaced_dash(self):
+        # The fallback used to only catch "Task - Name"; real site notes also attach the
+        # name with no space before the dash, or with no dash at all (trailing Title Case
+        # word(s) after otherwise ALL-CAPS text) — and a hyphenated word in that same ALL
+        # CAPS style ("COLOR-CODED") must NOT be mistaken for a name.
+        raw_list = "\n".join([
+            "ACCESS ISSUES NEEDS RECTIFICATIONS-Hasnat",
+            "FOREMAN MUST BE PRESENT ON SITE Abbas",
+            "SAFETY GLASSES FOR WORKERS All Team",
+            "DOMESTIC SOCKETS AND PLUGS Mohsin & Abid",
+            "TOOLS MUST BE COLOR-CODED",
+        ])
+        self.login()
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("ANTHROPIC_API_KEY", None)
+            self.client.post("/admin/tasks/bulk", data={"weekStart": "2026-09-26", "rawList": raw_list})
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT assigned_to, task_description FROM weekly_tasks ORDER BY seq ASC")
+            rows = [dict(row) for row in cursor.fetchall()]
+        self.assertEqual(rows[0], {"assigned_to": "Hasnat", "task_description": "ACCESS ISSUES NEEDS RECTIFICATIONS"})
+        self.assertEqual(rows[1], {"assigned_to": "Abbas", "task_description": "FOREMAN MUST BE PRESENT ON SITE"})
+        self.assertEqual(rows[2], {"assigned_to": "All Team", "task_description": "SAFETY GLASSES FOR WORKERS"})
+        self.assertEqual(rows[3], {"assigned_to": "Mohsin & Abid", "task_description": "DOMESTIC SOCKETS AND PLUGS"})
+        self.assertEqual(rows[4], {"assigned_to": "", "task_description": "TOOLS MUST BE COLOR-CODED"})
+
+    def test_delete_all_weekly_tasks_for_a_week_requires_login(self):
+        insert_weekly_task(validate_weekly_task(self.weekly_task_payload()))
+        response = self.client.post("/admin/tasks/delete-week", data={"weekStart": "2026-09-26"})
+        self.assertEqual(response.status_code, 302)
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT COUNT(*) AS c FROM weekly_tasks")
+            self.assertEqual(dict(cursor.fetchone())["c"], 1)
+
+    def test_delete_all_weekly_tasks_only_clears_the_specified_week(self):
+        insert_weekly_task(validate_weekly_task(self.weekly_task_payload(weekStart="2026-09-26")))
+        insert_weekly_task(validate_weekly_task(self.weekly_task_payload(weekStart="2026-10-03")))
+        self.login()
+        response = self.client.post("/admin/tasks/delete-week", data={"weekStart": "2026-09-26"})
+        self.assertEqual(response.status_code, 302)
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT week_start FROM weekly_tasks")
+            remaining = [dict(row)["week_start"] for row in cursor.fetchall()]
+        self.assertEqual(remaining, ["2026-10-03"])
+
     def test_bulk_create_weekly_tasks_uses_claude_when_configured(self):
         fake_block = MagicMock()
         fake_block.type = "tool_use"
