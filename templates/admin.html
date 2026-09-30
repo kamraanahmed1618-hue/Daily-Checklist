@@ -133,12 +133,18 @@
 
     <div class="records-actions">
         <p>Week of {{ weekly_tasks_week }} — anyone with the shared link above can find their name below and mark their own tasks done, no login needed.</p>
+        {% if weekly_tasks_by_assignee %}
+        <form method="post" action="{{ url_for('delete_weekly_tasks_for_week') }}" id="delete-all-tasks-form">
+            <input type="hidden" name="weekStart" value="{{ weekly_tasks_week }}">
+            <button class="button ghost danger" type="submit">Delete all tasks this week</button>
+        </form>
+        {% endif %}
     </div>
 
     <form class="training-import" method="post" action="{{ url_for('create_weekly_task') }}" id="add-task-form">
         <input type="hidden" name="weekStart" value="{{ weekly_tasks_week }}">
         <div class="field-grid">
-            <label><span>Assigned to</span><input name="assignedTo" maxlength="200" placeholder="Name, or leave blank for a team-wide task"></label>
+            <label><span>Assigned to</span><input name="assignedTo" maxlength="200" placeholder="Name (blank = team-wide)"></label>
             <label><span>Area (optional)</span><input name="department" list="weekly-task-areas" maxlength="200" placeholder="e.g. Electrical, Scaffolding"></label>
             <label><span>Due date</span><input type="date" name="dueDate"></label>
         </div>
@@ -452,4 +458,4 @@
 {% endif %}
 
 {% endblock %}
-{% block scripts %}<script src="{{ url_for('static', filename='training_import.js') }}" defer></script><script src="{{ url_for('static', filename='violation_import.js') }}" defer></script>{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='training_import.js') }}" defer></script><script src="{{ url_for('static', filename='violation_import.js') }}" defer></script><script src="{{ url_for('static', filename='weekly_tasks_admin.js') }}" defer></script>{% endblock %}

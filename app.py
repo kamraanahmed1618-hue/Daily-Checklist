@@ -3426,15 +3426,58 @@ def parse_weekly_task_lines(raw_text: str) -> list[dict[str, str]]:
                     return parsed
         except Exception:
             app.logger.exception("Bulk task parsing via Claude failed; falling back to a plain per-line split")
-    results = []
-    for line in lines:
-        if " - " in line:
-            task_part, _, name_part = line.rpartition(" - ")
-            if task_part and len(name_part.split()) <= 4:
-                results.append({"task": task_part.strip(), "assigned_to": name_part.strip()})
-                continue
-        results.append({"task": line, "assigned_to": ""})
-    return results
+    return [dict(zip(("task", "assigned_to"), _split_trailing_name(line))) for line in lines]
+
+
+_NAME_CONNECTOR_TOKENS = {"&"}
+
+
+def _looks_like_name_token(word: str) -> bool:
+    """True for a Title-Case word ("Mohsin", "Abid") or a short connector ("&") — the
+    style real names/groups show up in, as opposed to the ALL-CAPS task text around
+    them ("MOHSIN" the task word "STRUCTURES", etc.)."""
+    core = word.strip(",.")
+    if core in _NAME_CONNECTOR_TOKENS:
+        return True
+    return bool(core) and core[0].isupper() and core[1:].islower()
+
+
+def _split_trailing_name(line: str) -> tuple[str, str]:
+    """Best-effort, conservative split of one pasted task line into (task, assigned_to)
+    without an LLM. Only trusts a name it's fairly sure about; anything ambiguous
+    (most commonly a name written BEFORE the task, e.g. "Abid Sahab - Good practices
+    folder...") is left as assigned_to="" rather than guessed at."""
+    # " - Name" with a space before the dash — the name may be written in the same
+    # ALL CAPS style as the task itself ("SOR WALKTHROUGHS - MOHSIN"), so any case is
+    # trusted here, up to 4 words, since the spaced dash is itself a clear separator.
+    match = re.search(r"\s+-\s*([A-Za-z][A-Za-z &]*?)\s*$", line)
+    if match:
+        name = re.sub(r"^(by)\s+", "", match.group(1).strip(), flags=re.IGNORECASE)
+        task = line[: match.start()].strip()
+        if task and 0 < len(name.split()) <= 4:
+            return task, name
+
+    # "-Name" with NO space before the dash — a name directly attached to the task
+    # text ("RECTIFICATIONS-Hasnat"). Only trusted when what follows is distinctly
+    # Title Case, so a genuine hyphenated word in the same ALL-CAPS style as the task
+    # ("COLOR-CODED") isn't mistaken for one.
+    match = re.search(r"(?<=\S)-([A-Z][a-z]+)\s*$", line)
+    if match:
+        task = line[: match.start()].strip()
+        if task:
+            return task, match.group(1)
+
+    # No usable dash — a trailing run of Title-Case/connector tokens after otherwise
+    # ALL-CAPS task text ("FOREMAN MUST BE PRESENT ON SITE Abbas", "... All Team",
+    # "... Mohsin & Abid").
+    tokens = line.split()
+    end = len(tokens)
+    while end > 0 and _looks_like_name_token(tokens[end - 1]):
+        end -= 1
+    if 0 < end < len(tokens):
+        return " ".join(tokens[:end]).strip(" -"), " ".join(tokens[end:]).strip()
+
+    return line, ""
 
 
 @app.post("/admin/tasks/bulk")
@@ -3472,6 +3515,24 @@ def delete_weekly_task(task_id: str) -> Response:
     if row:
         log_audit("deleted", "weekly_task", row["task_description"][:80])
     return redirect(url_for("admin", view="weekly-tasks", week=week))
+
+
+@app.post("/admin/tasks/delete-week")
+@admin_required
+def delete_weekly_tasks_for_week() -> Response:
+    raw_week = request.form.get("weekStart", "").strip()
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw_week):
+        week_start = week_start_for(date.fromisoformat(raw_week)).isoformat()
+    else:
+        week_start = current_work_week_range()[0]
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT COUNT(*) AS c FROM weekly_tasks WHERE week_start = ?"), [week_start])
+        count = cursor.fetchone()["c"]
+        cursor.execute(sql("DELETE FROM weekly_tasks WHERE week_start = ?"), [week_start])
+    if count:
+        log_audit("bulk_deleted", "weekly_task", f"{count} tasks for week {week_start}")
+    return redirect(url_for("admin", view="weekly-tasks", week=week_start))
 
 
 def inspections_csv(records: list[dict[str, Any]], detailed: bool) -> str:
