@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Weekly Tasks · 1 Hotel Diriyah OHS{% endblock %}
+{% block body_class %}form-page{% endblock %}
+{% block content %}
+<section class="hero">
+  <div>
+    <div class="partner-logos">
+      <img src="{{ url_for('static', filename='egis.png') }}" alt="Egis">
+      <img src="{{ url_for('static', filename='dewan.png') }}" alt="Dewan">
+      <img src="{{ url_for('static', filename='bec-ashoka.png') }}" alt="BEC Ashoka">
+    </div>
+    <span class="eyebrow">Week of {{ week_start }} – {{ week_end }}</span>
+    <h1>Weekly Tasks</h1>
+    <p>Find your department below and check off what you've completed. No login needed.</p>
+  </div>
+</section>
+
+<section class="card">
+  <div class="submit-bar interpret-bar">
+    <div>
+      <strong>{{ 'This week' if is_current_week else 'Viewing week of ' + week_start }}</strong>
+      <span>Tasks are grouped by department</span>
+    </div>
+    <div>
+      <a class="button secondary" href="{{ url_for('weekly_tasks_page', week=prev_week) }}">← Previous week</a>
+      <a class="button secondary" href="{{ url_for('weekly_tasks_page', week=next_week) }}">Next week →</a>
+    </div>
+  </div>
+</section>
+
+{% for department, tasks in tasks_by_department.items() %}
+<section class="card">
+  <div class="section-heading"><div><h2>{{ department }}</h2></div></div>
+  <div class="checkbox-grid task-list">
+    {% for task in tasks %}
+    <label class="checkbox-tile task-tile {{ 'done' if task.completed }}">
+      <input type="checkbox" class="task-checkbox" data-task-id="{{ task.id }}" {{ 'checked' if task.completed }}>
+      <span>
+        <strong>{{ task.assigned_to }}</strong>
+        {{ task.task_description }}
+        {% if task.due_date %}<small>Due {{ task.due_date }}</small>{% endif %}
+      </span>
+    </label>
+    {% endfor %}
+  </div>
+</section>
+{% else %}
+<section class="card">
+  <p class="empty-state">No tasks assigned for this week.</p>
+</section>
+{% endfor %}
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='tasks.js') }}" defer></script>{% endblock %}
