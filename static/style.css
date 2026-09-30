@@ -248,6 +248,14 @@ td small { margin-top: 3px; color: var(--muted); }
 .result-na { color: #56625d; background: #e5e9e6; }
 .row-link { color: var(--navy-2); font-weight: 800; text-decoration: none; white-space: nowrap; }
 .empty-state { padding: 50px; color: var(--muted); text-align: center; }
+.tasks-table { table-layout: fixed; }
+.tasks-table th:nth-child(1), .tasks-table td:nth-child(1) { width: 46%; word-break: break-word; }
+.tasks-table th:nth-child(2), .tasks-table td:nth-child(2) { width: 16%; }
+.tasks-table th:nth-child(3), .tasks-table td:nth-child(3) { width: 12%; }
+.tasks-table th:nth-child(4), .tasks-table td:nth-child(4) { width: 14%; }
+.tasks-table th:nth-child(5), .tasks-table td:nth-child(5) { width: 12%; text-align: right; }
+.table-wrap h3 { margin: 22px 0 0; padding: 0 14px 10px; font-size: 14px; color: var(--ink); border-bottom: 1px solid var(--line); }
+.table-wrap h3:first-of-type { margin-top: 6px; }
 
 .record-toolbar { padding: 30px 0 14px; display: flex; align-items: center; justify-content: space-between; }
 .record-toolbar-actions { display: flex; align-items: center; gap: 10px; }
