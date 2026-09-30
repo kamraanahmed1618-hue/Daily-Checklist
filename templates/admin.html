@@ -145,7 +145,7 @@
         <input type="hidden" name="weekStart" value="{{ weekly_tasks_week }}">
         <div class="field-grid">
             <label><span>Assigned to</span><input name="assignedTo" maxlength="200" placeholder="Name (blank = team-wide)"></label>
-            <label><span>Area (optional)</span><input name="department" list="weekly-task-areas" maxlength="200" placeholder="e.g. Electrical, Scaffolding"></label>
+            <label><span>Area (optional)</span><input name="department" list="weekly-task-areas" maxlength="200" placeholder="e.g. Electrical"></label>
             <label><span>Due date</span><input type="date" name="dueDate"></label>
         </div>
         <datalist id="weekly-task-areas">
@@ -170,7 +170,7 @@
     <div class="table-wrap">
         {% for assignee, tasks in weekly_tasks_by_assignee.items() %}
         <h3>{{ assignee }}</h3>
-        <table>
+        <table class="tasks-table">
             <thead><tr><th>Task</th><th>Area</th><th>Due</th><th>Status</th><th></th></tr></thead>
             <tbody>
             {% for task in tasks %}
