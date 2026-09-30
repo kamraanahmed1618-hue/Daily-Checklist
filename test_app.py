@@ -2523,6 +2523,15 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertEqual(rows[1], {"assigned_to": "Mohsin & Abid", "task_description": "Domestic sockets and plugs"})
         self.assertEqual(rows[2], {"assigned_to": "", "task_description": "Tools must be color-coded"})
 
+        # Claude is otherwise free to interpret ambiguous names, but it must be told not
+        # to rewrite the task's own wording (e.g. "GUARDRAILS MUST COVER THE EDGE" into
+        # a full sentence like "Ensure Guardrails Cover All Exposed Edges") — guard the
+        # instruction itself so a future prompt edit can't silently drop it.
+        call_kwargs = mock_client_class.return_value.messages.create.call_args.kwargs
+        self.assertIn("exactly as written", call_kwargs["system"])
+        tool_task_description = call_kwargs["tools"][0]["input_schema"]["properties"]["tasks"]["items"]["properties"]["task"]["description"]
+        self.assertIn("verbatim", tool_task_description)
+
     def test_bulk_create_weekly_tasks_requires_login(self):
         response = self.client.post("/admin/tasks/bulk", data={"weekStart": "2026-09-26", "rawList": "A task - Someone"})
         self.assertEqual(response.status_code, 302)
