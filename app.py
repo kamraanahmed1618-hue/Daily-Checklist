@@ -3375,7 +3375,7 @@ WEEKLY_TASK_BULK_TOOL = {
                 "items": {
                     "type": "object",
                     "properties": {
-                        "task": {"type": "string", "description": "The task text, with any person's name removed."},
+                        "task": {"type": "string", "description": "The original line's exact wording, verbatim, with only the person's name (and any dash/connector used solely to attach it) removed — do not rephrase, reword, expand, or otherwise change any other wording, spelling, or capitalization."},
                         "assigned_to": {"type": "string", "description": "The name(s) this line is assigned to, joined with ' & ' if more than one; empty string if none is mentioned."},
                     },
                     "required": ["task", "assigned_to"],
@@ -3409,7 +3409,9 @@ def parse_weekly_task_lines(raw_text: str) -> list[dict[str, str]]:
                     "Each line below is one site task, sometimes with the assigned person's name at "
                     "the start or end (with or without a dash), sometimes with more than one name, "
                     "sometimes with no name. Extract every line as one task, with any name(s) removed "
-                    "from the task text and placed in assigned_to instead."
+                    "from the task text and placed in assigned_to instead. Keep the task text exactly "
+                    "as written otherwise — same words, same order, same capitalization — do not "
+                    "rephrase it, expand it into a full sentence, or correct/polish it in any way."
                 ),
                 tools=[WEEKLY_TASK_BULK_TOOL],
                 tool_choice={"type": "tool", "name": "extract_tasks"},
