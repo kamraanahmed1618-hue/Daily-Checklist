@@ -2414,8 +2414,70 @@ class ChecklistApplicationTests(unittest.TestCase):
             cursor.execute("SELECT week_start FROM weekly_tasks")
             self.assertEqual(dict(cursor.fetchone())["week_start"], "2026-09-26")
 
-    def test_weekly_task_rejects_invalid_department(self):
-        response = self.create_weekly_task(department="Not A Real Department")
+    def test_weekly_task_area_is_free_text_not_a_restricted_list(self):
+        # Real site task lists aren't organized around the corporate department
+        # directory, so any area text is accepted rather than validated against a list.
+        response = self.create_weekly_task(department="Scaffolding")
+        self.assertEqual(response.status_code, 302)
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT department FROM weekly_tasks")
+            self.assertEqual(dict(cursor.fetchone())["department"], "Scaffolding")
+
+    def test_weekly_task_assigned_to_is_optional_and_groups_as_unassigned(self):
+        self.create_weekly_task(assignedTo="")
+        response = self.client.get("/tasks?week=2026-09-26")
+        body = response.data.decode()
+        self.assertIn("Unassigned / Team-wide", body)
+        self.assertIn("Inspect scaffolding on Zone 4", body)
+
+    def test_bulk_create_weekly_tasks_falls_back_to_plain_split_without_api_key(self):
+        raw_list = "SOR Walkthroughs - Mohsin\nGuardrails must cover the edge\nElectrical - Mohsin"
+        self.login()
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("ANTHROPIC_API_KEY", None)
+            response = self.client.post("/admin/tasks/bulk", data={"weekStart": "2026-09-26", "rawList": raw_list})
+        self.assertEqual(response.status_code, 302)
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT assigned_to, task_description FROM weekly_tasks ORDER BY seq ASC")
+            rows = [dict(row) for row in cursor.fetchall()]
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(rows[0], {"assigned_to": "Mohsin", "task_description": "SOR Walkthroughs"})
+        self.assertEqual(rows[1], {"assigned_to": "", "task_description": "Guardrails must cover the edge"})
+        self.assertEqual(rows[2], {"assigned_to": "Mohsin", "task_description": "Electrical"})
+
+    def test_bulk_create_weekly_tasks_uses_claude_when_configured(self):
+        fake_block = MagicMock()
+        fake_block.type = "tool_use"
+        fake_block.input = {
+            "tasks": [
+                {"task": "Good Practices folder and daily site visit", "assigned_to": "Abid Sahab"},
+                {"task": "Domestic sockets and plugs", "assigned_to": "Mohsin & Abid"},
+                {"task": "Tools must be color-coded", "assigned_to": ""},
+            ],
+        }
+        fake_response = MagicMock()
+        fake_response.content = [fake_block]
+        self.login()
+        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):
+            with patch("app.anthropic.Anthropic") as mock_client_class:
+                mock_client_class.return_value.messages.create.return_value = fake_response
+                response = self.client.post("/admin/tasks/bulk", data={
+                    "weekStart": "2026-09-26",
+                    "rawList": "Abid Sahab - Good Practices folder and daily site visit\nDomestic sockets and plugs Mohsin & Abid\nTools must be color-coded",
+                })
+        self.assertEqual(response.status_code, 302)
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT assigned_to, task_description FROM weekly_tasks ORDER BY seq ASC")
+            rows = [dict(row) for row in cursor.fetchall()]
+        self.assertEqual(rows[0], {"assigned_to": "Abid Sahab", "task_description": "Good Practices folder and daily site visit"})
+        self.assertEqual(rows[1], {"assigned_to": "Mohsin & Abid", "task_description": "Domestic sockets and plugs"})
+        self.assertEqual(rows[2], {"assigned_to": "", "task_description": "Tools must be color-coded"})
+
+    def test_bulk_create_weekly_tasks_requires_login(self):
+        response = self.client.post("/admin/tasks/bulk", data={"weekStart": "2026-09-26", "rawList": "A task - Someone"})
         self.assertEqual(response.status_code, 302)
         with database() as connection:
             cursor = connection.cursor()

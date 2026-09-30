@@ -228,6 +228,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--navy-2); box-sha
 .records-actions > div { display: flex; gap: 8px; }
 .training-import { padding: 14px 22px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
 .training-import label { font-size: 13px; font-weight: 650; }
+.bulk-task-import { padding: 14px 22px; border-bottom: 1px solid var(--line); }
+.bulk-task-import summary { font-size: 13px; font-weight: 650; color: var(--navy); cursor: pointer; }
+.bulk-task-import form { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.bulk-task-import textarea { width: 100%; min-height: 140px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; font-family: inherit; font-size: 13px; resize: vertical; box-sizing: border-box; }
 .table-wrap { overflow-x: auto; }
 .pagination { padding: 16px 22px; display: flex; align-items: center; justify-content: space-between; gap: 18px; }
 .pagination span { color: var(--muted); font-size: 12px; font-weight: 650; }

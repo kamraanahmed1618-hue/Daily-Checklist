@@ -132,37 +132,45 @@
     </form>
 
     <div class="records-actions">
-        <p>Week of {{ weekly_tasks_week }} — anyone with the shared link above can check their department's tasks and mark their own done, no login needed.</p>
+        <p>Week of {{ weekly_tasks_week }} — anyone with the shared link above can find their name below and mark their own tasks done, no login needed.</p>
     </div>
 
     <form class="training-import" method="post" action="{{ url_for('create_weekly_task') }}" id="add-task-form">
         <input type="hidden" name="weekStart" value="{{ weekly_tasks_week }}">
         <div class="field-grid">
-            <label><span>Department</span>
-                <select name="department" required>
-                    <option value="" disabled selected>Select…</option>
-                    {% for department in weekly_task_departments %}<option value="{{ department }}">{{ department }}</option>{% endfor %}
-                </select>
-            </label>
-            <label><span>Assigned to</span><input name="assignedTo" required maxlength="200" placeholder="Name"></label>
+            <label><span>Assigned to</span><input name="assignedTo" maxlength="200" placeholder="Name, or leave blank for a team-wide task"></label>
+            <label><span>Area (optional)</span><input name="department" list="weekly-task-areas" maxlength="200" placeholder="e.g. Electrical, Scaffolding"></label>
             <label><span>Due date</span><input type="date" name="dueDate"></label>
         </div>
+        <datalist id="weekly-task-areas">
+            {% for area in weekly_task_areas %}<option value="{{ area }}">{% endfor %}
+        </datalist>
         <div class="field-grid one-col">
             <label><span>Task</span><textarea name="taskDescription" rows="2" maxlength="1000" required></textarea></label>
         </div>
         <button class="button primary" type="submit">Add task</button>
     </form>
 
+    <details class="bulk-task-import">
+        <summary>Paste a list instead</summary>
+        <form method="post" action="{{ url_for('create_weekly_tasks_bulk') }}" id="bulk-task-form">
+            <input type="hidden" name="weekStart" value="{{ weekly_tasks_week }}">
+            <p class="field-note">One task per line, e.g. "SOR Walkthroughs - Mohsin". A line with no name attaches to nobody in particular (shows under "{{ 'Unassigned / Team-wide' }}").</p>
+            <textarea name="rawList" rows="8" placeholder="SOR Walkthroughs - Mohsin&#10;Weekly Focus and Subcons Reports - Hasnat&#10;Guardrails must cover the edge"></textarea>
+            <button class="button secondary" type="submit">Add all lines</button>
+        </form>
+    </details>
+
     <div class="table-wrap">
-        {% for department, tasks in weekly_tasks_by_department.items() %}
-        <h3>{{ department }}</h3>
+        {% for assignee, tasks in weekly_tasks_by_assignee.items() %}
+        <h3>{{ assignee }}</h3>
         <table>
-            <thead><tr><th>Assigned to</th><th>Task</th><th>Due</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Task</th><th>Area</th><th>Due</th><th>Status</th><th></th></tr></thead>
             <tbody>
             {% for task in tasks %}
                 <tr>
-                    <td>{{ task.assigned_to }}</td>
                     <td>{{ task.task_description }}</td>
+                    <td>{{ task.department or '—' }}</td>
                     <td>{{ task.due_date or '—' }}</td>
                     <td><span class="score-pill {{ '' if task.completed else 'medium' }}">{{ 'Done' if task.completed else 'Pending' }}</span></td>
                     <td>
