@@ -424,8 +424,14 @@
             </tbody>
         </table>
         {% elif view == 'certificates' %}
+        {% if request.args.get('status') == 'attention' %}
+        <div class="notice warning" role="status">
+            Showing only certificates <strong>expired or expiring within 30 days</strong>, soonest first —
+            <a href="{{ url_for('admin', view='certificates') }}">view all certificates</a>
+        </div>
+        {% endif %}
         <table>
-            <thead><tr><th>Cert No.</th><th>Type</th><th>Equipment / Person</th><th>Certifying Body</th><th>Issue Date</th><th>Expiry Date</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Cert No.</th><th>Type</th><th>Equipment / Person</th><th>Certifying Body</th><th>Issue Date</th><th>Expiry Date</th><th>Status</th><th>Uploaded By</th><th></th></tr></thead>
             <tbody>
             {% for record in certificate_records %}
                 {% set status = certificate_expiry_status(record.expiry_date) %}
@@ -437,10 +443,11 @@
                     <td>{{ record.issue_date }}</td>
                     <td>{{ record.expiry_date }}</td>
                     <td><span class="score-pill {{ 'low' if status == 'expired' else 'medium' if status == 'expiring_soon' else '' }}">{{ {"expired": "Expired", "expiring_soon": "Expiring soon", "valid": "Valid"}[status] }}</span></td>
+                    <td>{{ record.uploaded_by }}</td>
                     <td><a class="row-link" href="{{ url_for('certificate_detail', record_id=record.id, back=request.query_string.decode()) }}">View record</a></td>
                 </tr>
             {% else %}
-                <tr><td colspan="8" class="empty-state">No certificates found.</td></tr>
+                <tr><td colspan="9" class="empty-state">No certificates found.</td></tr>
             {% endfor %}
             </tbody>
         </table>
