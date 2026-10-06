@@ -25,6 +25,7 @@
   <article><span>Trainings</span><strong>{{ counts.trainings }}</strong><small>{{ counts.trainings_attendees }} attendees</small></article>
   <article><span>TBTs</span><strong>{{ counts.tbts }}</strong><small>{{ counts.tbts_attendees }} attendees</small></article>
   <article><span>Good practices</span><strong>{{ counts.good_practices }}</strong></article>
+  <article><span>Certificates needing attention</span><strong>{{ counts.certificates_attention }}</strong></article>
 </section>
 
 <div class="home-grid">
@@ -57,6 +58,11 @@
     <h2>Good Practice</h2>
     <p>Recognize a good safety practice observed on site so it can be shared and repeated.</p>
     <span class="home-card-arrow">Log good practice →</span>
+  </a>
+  <a class="home-card certificates" href="{{ url_for('certificate_form') }}">
+    <h2>3rd Party Certificates</h2>
+    <p>Upload TÜV and other third-party equipment certificates so they're tracked before they expire.</p>
+    <span class="home-card-arrow">Upload certificate →</span>
   </a>
   <a class="home-card weekly-tasks" href="{{ url_for('weekly_tasks_page') }}">
     <h2>Weekly Tasks</h2>

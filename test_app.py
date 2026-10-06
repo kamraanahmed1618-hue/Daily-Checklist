@@ -37,6 +37,7 @@ class ChecklistApplicationTests(unittest.TestCase):
             connection.execute("DELETE FROM ptw_logs")
             connection.execute("DELETE FROM training_logs")
             connection.execute("DELETE FROM good_practices")
+            connection.execute("DELETE FROM certificates")
             connection.execute("DELETE FROM weekly_tasks")
             connection.execute("DELETE FROM audit_log")
 
@@ -167,6 +168,20 @@ class ChecklistApplicationTests(unittest.TestCase):
             "category": "Housekeeping",
             "description": "Materials neatly stacked and walkway kept clear.",
         }
+
+    def certificate_payload(self, **overrides):
+        payload = {
+            "assetName": "Mobile Crane CR-14",
+            "certifyingBody": "TÜV SÜD",
+            "certificateNumber": "TUV-2026-00123",
+            "uploadedBy": "Ali (Safety Officer)",
+            "issueDate": "2026-01-01",
+            "expiryDate": "2027-01-01",
+            "notes": "Annual lifting equipment certification.",
+            "fileKey": "uploads/tokcert1/aaaaaaaaaaaaaaaaaaaa.pdf",
+        }
+        payload.update(overrides)
+        return payload
 
     def test_homepage_links_to_all_systems(self):
         response = self.client.get("/")
@@ -735,6 +750,117 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertEqual(pdf_response.mimetype, "application/pdf")
         self.assertIn("GOOD-PRACTICE-001.pdf", pdf_response.headers["Content-Disposition"])
         self.assertTrue(pdf_response.data.startswith(b"%PDF"))
+
+    def test_certificate_form_page_loads(self):
+        self.assertEqual(self.client.get("/certificates").status_code, 200)
+
+    def test_certificate_requires_file_key(self):
+        payload = self.certificate_payload(fileKey="")
+        response = self.client.post("/api/certificates", json=payload)
+        self.assertEqual(response.status_code, 400)
+
+    def test_certificate_rejects_malformed_file_key(self):
+        payload = self.certificate_payload(fileKey="not-a-real-key.exe")
+        response = self.client.post("/api/certificates", json=payload)
+        self.assertEqual(response.status_code, 400)
+
+    def test_certificate_rejects_expiry_before_issue(self):
+        payload = self.certificate_payload(issueDate="2027-01-01", expiryDate="2026-01-01")
+        response = self.client.post("/api/certificates", json=payload)
+        self.assertEqual(response.status_code, 400)
+
+    def test_submit_review_and_export_certificate(self):
+        response = self.client.post("/api/certificates", json=self.certificate_payload())
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json["certNo"], "CERT-001")
+        record_id = response.json["id"]
+
+        self.login()
+        dashboard = self.client.get("/admin?view=certificates")
+        self.assertIn(b"CERT-001", dashboard.data)
+        detail = self.client.get(f"/admin/certificates/{record_id}")
+        self.assertEqual(detail.status_code, 200)
+        self.assertIn(b"3RD PARTY CERTIFICATE", detail.data)
+        self.assertIn(b"Mobile Crane CR-14", detail.data)
+
+        export = self.client.get("/admin/export/certificates")
+        self.assertEqual(export.status_code, 200)
+        self.assertIn("CERT-001", export.get_data(as_text=True))
+
+    def test_certificate_expiry_status_flagging(self):
+        from app import certificate_expiry_status
+        from datetime import date, timedelta
+        today = date.today()
+        self.assertEqual(certificate_expiry_status((today - timedelta(days=1)).isoformat()), "expired")
+        self.assertEqual(certificate_expiry_status((today + timedelta(days=10)).isoformat()), "expiring_soon")
+        self.assertEqual(certificate_expiry_status((today + timedelta(days=90)).isoformat()), "valid")
+
+    def test_certificate_list_flags_expiring_and_expired(self):
+        from datetime import date, timedelta
+        today = date.today()
+        self.client.post("/api/certificates", json=self.certificate_payload(
+            certificateNumber="EXPIRED-1", issueDate="2020-01-01", expiryDate=(today - timedelta(days=5)).isoformat(),
+        ))
+        self.client.post("/api/certificates", json=self.certificate_payload(
+            certificateNumber="SOON-1", issueDate="2026-01-01", expiryDate=(today + timedelta(days=5)).isoformat(),
+        ))
+        self.login()
+        dashboard = self.client.get("/admin?view=certificates")
+        self.assertIn(b"Expired", dashboard.data)
+        self.assertIn(b"Expiring soon", dashboard.data)
+
+    def test_delete_certificate(self):
+        record_id = self.client.post("/api/certificates", json=self.certificate_payload()).json["id"]
+        self.login()
+        response = self.client.post(f"/admin/certificates/{record_id}/delete")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(self.client.get(f"/admin/certificates/{record_id}").status_code, 404)
+
+    def test_delete_certificate_logs_audit_entry(self):
+        self.login()
+        response = self.client.post("/api/certificates", json=self.certificate_payload())
+        record_id = response.json["id"]
+        self.client.post(f"/admin/certificates/{record_id}/delete")
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT * FROM audit_log WHERE record_type = 'certificate'")
+            row = cursor.fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row["action"], "deleted")
+        self.assertEqual(row["record_type"], "certificate")
+
+    def test_certificate_edit_page_prefills_existing_values(self):
+        record_id = self.client.post("/api/certificates", json=self.certificate_payload()).json["id"]
+        self.login()
+        response = self.client.get(f"/admin/certificates/{record_id}/edit")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Mobile Crane CR-14", response.data)
+
+    def test_certificate_edit_saves_changes_and_logs_audit(self):
+        self.login()
+        response = self.client.post("/api/certificates", json=self.certificate_payload())
+        record_id = response.json["id"]
+        updated = self.certificate_payload(assetName="Tower Crane TC-07")
+        self.client.post(f"/admin/certificates/{record_id}/edit", data=updated)
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT * FROM certificates WHERE id = ?", [record_id])
+            row = cursor.fetchone()
+            cursor.execute("SELECT * FROM audit_log WHERE record_type = 'certificate' AND action = 'updated'")
+            audit_row = cursor.fetchone()
+        self.assertEqual(row["asset_name"], "Tower Crane TC-07")
+        self.assertIsNotNone(audit_row)
+
+    def test_certificate_edit_does_not_touch_file_key(self):
+        payload = self.certificate_payload()
+        record_id = self.client.post("/api/certificates", json=payload).json["id"]
+        self.login()
+        self.client.post(f"/admin/certificates/{record_id}/edit", data=self.certificate_payload(assetName="Renamed Asset"))
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT file_key FROM certificates WHERE id = ?", [record_id])
+            row = cursor.fetchone()
+        self.assertEqual(row["file_key"], payload["fileKey"])
 
     def test_violation_requires_employee_name(self):
         payload = self.violation_payload()
@@ -2248,7 +2374,7 @@ class ChecklistApplicationTests(unittest.TestCase):
         # can't time out or crash the whole backup.
         archive = zipfile.ZipFile(io.BytesIO(response.data))
         names = archive.namelist()
-        self.assertEqual(len(names), 7)
+        self.assertEqual(len(names), 8)
         self.assertTrue(any(name.startswith("inspections-summary-") for name in names))
         self.assertTrue(any(name.startswith("inspections-detailed-") for name in names))
         self.assertTrue(any(name.startswith("near-miss-") for name in names))
@@ -2256,6 +2382,7 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertTrue(any(name.startswith("ptw-log-") for name in names))
         self.assertTrue(any(name.startswith("training-log-") for name in names))
         self.assertTrue(any(name.startswith("good-practices-") for name in names))
+        self.assertTrue(any(name.startswith("certificates-") for name in names))
 
     def test_per_type_backup_endpoints_reject_missing_or_wrong_token(self):
         for path in ("/admin/backup/near-miss.zip", "/admin/backup/violations.zip", "/admin/backup/training.zip"):

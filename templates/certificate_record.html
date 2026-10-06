@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}{{ record.cert_no }} · Certificate Record{% endblock %}
+{% block body_class %}record-page{% endblock %}
+{% block content %}
+<section class="record-toolbar no-print">
+  <a class="text-link" href="{{ (url_for('admin') + '?' + back) if back else url_for('admin', view='certificates') }}">← Back to records</a>
+  <div class="record-toolbar-actions">
+    <form class="delete-form" method="post" action="{{ url_for('delete_certificate', record_id=record.id) }}">
+      <button class="button ghost danger" type="submit">Delete record</button>
+    </form>
+    <a class="button ghost" href="{{ url_for('certificate_edit', record_id=record.id) }}">Edit record</a>
+    {% if file_url %}<a class="button primary" href="{{ file_url }}" target="_blank" rel="noopener">View / download certificate</a>{% endif %}
+  </div>
+</section>
+
+<article class="doc-sheet">
+  <div class="doc-letterhead"><img src="{{ url_for('static', filename='bec-arabia-contracting.png') }}" alt="BEC Arabia Contracting"></div>
+  <div class="doc-band">3RD PARTY CERTIFICATE</div>
+
+  <table class="doc-info">
+    <tr>
+      <td class="info-label tan">Cert No:</td><td>{{ record.cert_no }}</td>
+      <td class="info-label tan">Status:</td>
+      <td>
+        <span class="score-pill {{ 'low' if expiry_status == 'expired' else 'medium' if expiry_status == 'expiring_soon' else '' }}">
+          {{ {"expired": "Expired", "expiring_soon": "Expiring soon", "valid": "Valid"}[expiry_status] }}
+        </span>
+      </td>
+    </tr>
+    <tr><td class="info-label tan">Equipment / Asset:</td><td>{{ record.asset_name }}</td><td class="info-label tan">Certifying Body:</td><td>{{ record.certifying_body }}</td></tr>
+    <tr><td class="info-label tan">Certificate Number:</td><td>{{ record.certificate_number }}</td><td class="info-label tan">Uploaded By:</td><td>{{ record.uploaded_by }}</td></tr>
+    <tr><td class="info-label tan">Issue Date:</td><td>{{ record.issue_date }}</td><td class="info-label tan">Expiry Date:</td><td>{{ record.expiry_date }}</td></tr>
+  </table>
+
+  {% if record.notes %}
+  <div class="doc-band">Notes</div>
+  <table class="doc-info stacked"><tr><td>{{ record.notes }}</td></tr></table>
+  {% endif %}
+
+  <div class="doc-band">Certificate File</div>
+  {% if file_url %}
+  <p class="no-print"><a class="text-link" href="{{ file_url }}" target="_blank" rel="noopener">Open certificate file →</a></p>
+  {% if record.file_key.endswith(('.jpg', '.png', '.webp')) %}
+  <div class="doc-evidence"><a href="{{ file_url }}" target="_blank" rel="noopener"><img src="{{ file_url }}" alt="Certificate file"></a></div>
+  {% endif %}
+  {% else %}
+  <p class="doc-note">No certificate file on record.</p>
+  {% endif %}
+
+  <div class="doc-classification">
+    <span>Classification: BEC Arabia - External - Unrestricted Use</span>
+  </div>
+</article>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='record.js') }}" defer></script>{% endblock %}

@@ -177,6 +177,9 @@ app.jinja_env.filters["from_json"] = json.loads
 B2_BUCKET = os.environ.get("B2_BUCKET_NAME")
 PHOTO_MAX_COUNT = 8
 PHOTO_KEY_PATTERN = re.compile(r"uploads/[a-zA-Z0-9_-]{8,64}/[0-9a-f]{20}\.(?:jpg|png|webp)")
+CERTIFICATE_FILE_MAX_BYTES = 15 * 1024 * 1024
+CERTIFICATE_FILE_KEY_PATTERN = re.compile(r"uploads/[a-zA-Z0-9_-]{8,64}/[0-9a-f]{20}\.(?:jpg|png|webp|pdf)")
+CERTIFICATE_EXPIRY_WARNING_DAYS = 30
 SITE_TZ = ZoneInfo("Asia/Riyadh")
 
 
@@ -543,6 +546,24 @@ def clean_photo_keys(value: Any) -> list[str]:
     return list(dict.fromkeys(keys))[:PHOTO_MAX_COUNT]
 
 
+def clean_certificate_file_key(value: Any) -> str:
+    return value if isinstance(value, str) and CERTIFICATE_FILE_KEY_PATTERN.fullmatch(value) else ""
+
+
+def certificate_expiry_status(expiry_date: str) -> str:
+    """One of "expired", "expiring_soon" (within CERTIFICATE_EXPIRY_WARNING_DAYS), or "valid"."""
+    try:
+        expiry = date.fromisoformat(expiry_date)
+    except (TypeError, ValueError):
+        return "valid"
+    today = datetime.now(SITE_TZ).date()
+    if expiry < today:
+        return "expired"
+    if (expiry - today).days <= CERTIFICATE_EXPIRY_WARNING_DAYS:
+        return "expiring_soon"
+    return "valid"
+
+
 def safe_json_list(value: Any) -> list[Any]:
     try:
         parsed = json.loads(value)
@@ -728,6 +749,22 @@ def init_db() -> None:
         )""",
         "CREATE INDEX IF NOT EXISTS good_practices_date_idx ON good_practices (practice_date)",
         "CREATE INDEX IF NOT EXISTS good_practices_created_idx ON good_practices (created_at)",
+        """CREATE TABLE IF NOT EXISTS certificates (
+            id TEXT PRIMARY KEY,
+            seq INTEGER,
+            cert_no TEXT NOT NULL UNIQUE,
+            asset_name TEXT NOT NULL,
+            certifying_body TEXT NOT NULL,
+            certificate_number TEXT NOT NULL,
+            issue_date TEXT NOT NULL,
+            expiry_date TEXT NOT NULL,
+            notes TEXT NOT NULL DEFAULT '',
+            file_key TEXT NOT NULL DEFAULT '',
+            uploaded_by TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )""",
+        "CREATE INDEX IF NOT EXISTS certificates_expiry_idx ON certificates (expiry_date)",
+        "CREATE INDEX IF NOT EXISTS certificates_created_idx ON certificates (created_at)",
         """CREATE TABLE IF NOT EXISTS weekly_tasks (
             id TEXT PRIMARY KEY,
             seq INTEGER,
@@ -779,7 +816,7 @@ def init_db() -> None:
         ensure_column("violation_notices", "penalty", "TEXT NOT NULL DEFAULT ''")
         ensure_column("violation_notices", "subcontractor_discount_value", "TEXT NOT NULL DEFAULT ''")
         # Backfill sequential numbers for any pre-existing records in submission order.
-        for table in ("inspections", "near_miss_reports", "violation_notices", "ptw_logs", "training_logs", "good_practices", "weekly_tasks"):
+        for table in ("inspections", "near_miss_reports", "violation_notices", "ptw_logs", "training_logs", "good_practices", "certificates", "weekly_tasks"):
             cursor.execute(sql(f"SELECT COALESCE(MAX(seq), 0) AS next_seq FROM {table}"))
             next_seq = cursor.fetchone()["next_seq"] or 0
             cursor.execute(sql(f"SELECT id FROM {table} WHERE seq IS NULL ORDER BY created_at ASC"))
@@ -979,6 +1016,7 @@ GOOD_PRACTICE_CATEGORIES = [
     "Barricading & Signage", "Emergency Preparedness", "Environmental Practice",
     "Teamwork & Communication", "Other",
 ]
+CERTIFYING_BODIES = ["TÜV SÜD", "TÜV Rheinland", "TÜV NORD", "Bureau Veritas", "SGS", "DNV", "Intertek"]
 
 
 def clean_choices(value: Any, field: str, allowed: list[str]) -> list[str]:
@@ -1259,6 +1297,26 @@ def validate_good_practice(payload: dict[str, Any]) -> dict[str, Any]:
     return {**record, "photos": clean_photo_keys(payload.get("photoKeys"))}
 
 
+def validate_certificate(payload: dict[str, Any]) -> dict[str, Any]:
+    issue_date = clean_date(payload.get("issueDate"), "Issue date")
+    expiry_date = clean_date(payload.get("expiryDate"), "Expiry date")
+    if expiry_date < issue_date:
+        raise ValueError("Expiry date can't be before the issue date.")
+    file_key = clean_certificate_file_key(payload.get("fileKey"))
+    if not file_key:
+        raise ValueError("Upload the certificate file.")
+    return {
+        "asset_name": clean_text(payload.get("assetName"), "Equipment / asset name"),
+        "certifying_body": clean_text(payload.get("certifyingBody"), "Certifying body", 200),
+        "certificate_number": clean_text(payload.get("certificateNumber"), "Certificate number", 120),
+        "issue_date": issue_date,
+        "expiry_date": expiry_date,
+        "uploaded_by": clean_text(payload.get("uploadedBy"), "Uploaded by"),
+        "notes": clean_text(payload.get("notes"), "Notes", 2000, False),
+        "file_key": file_key,
+    }
+
+
 def week_start_for(value: date) -> date:
     """Snaps any date to the Saturday that starts its on-site work week, so tasks
     entered against any day of a week still group under one consistent week_start."""
@@ -1499,6 +1557,17 @@ def paginated_good_practices() -> tuple[list[dict[str, Any]], int, int, int]:
     return filtered_rows_page("good_practices", ["report_no", "observed_by", "project_name", "location", "category"], "practice_date")
 
 
+CERTIFICATE_SEARCH_COLUMNS = ["cert_no", "asset_name", "certifying_body", "certificate_number", "uploaded_by"]
+
+
+def filtered_certificates(limit: int = 1000) -> list[dict[str, Any]]:
+    return filtered_rows("certificates", CERTIFICATE_SEARCH_COLUMNS, "issue_date", limit)
+
+
+def paginated_certificates() -> tuple[list[dict[str, Any]], int, int, int]:
+    return filtered_rows_page("certificates", CERTIFICATE_SEARCH_COLUMNS, "issue_date")
+
+
 def record_counts() -> dict[str, int]:
     auto_close_expired_ptw()
     with database() as connection:
@@ -1517,9 +1586,12 @@ def record_counts() -> dict[str, int]:
         training = cursor.fetchone()["c"]
         cursor.execute("SELECT COUNT(*) AS c FROM good_practices")
         good_practices = cursor.fetchone()["c"]
+        cursor.execute("SELECT COUNT(*) AS c FROM certificates")
+        certificates = cursor.fetchone()["c"]
     return {
         "inspections": inspections, "near_miss": near_miss, "violations": violations,
         "ptw": ptw, "ptw_open": ptw_open, "training": training, "good_practices": good_practices,
+        "certificates": certificates,
     }
 
 
@@ -1556,6 +1628,9 @@ def weekly_record_counts() -> dict[str, int]:
         training_by_type = {row["session_type"]: (row["c"], row["attendees"]) for row in cursor.fetchall()}
         cursor.execute(sql("SELECT COUNT(*) AS c FROM good_practices WHERE practice_date >= ? AND practice_date < ?"), [week_start, week_end])
         good_practices = cursor.fetchone()["c"]
+        warning_cutoff = (datetime.now(SITE_TZ).date() + timedelta(days=CERTIFICATE_EXPIRY_WARNING_DAYS)).isoformat()
+        cursor.execute(sql("SELECT COUNT(*) AS c FROM certificates WHERE expiry_date <= ?"), [warning_cutoff])
+        certificates_attention = cursor.fetchone()["c"]
     week_end_display = (date.fromisoformat(week_end) - timedelta(days=1)).isoformat()
     inductions, inductions_attendees = training_by_type.get("Induction", (0, 0))
     trainings, trainings_attendees = training_by_type.get("Specific Training", (0, 0))
@@ -1569,6 +1644,7 @@ def weekly_record_counts() -> dict[str, int]:
         "inductions_attendees": inductions_attendees, "trainings_attendees": trainings_attendees,
         "tbts_attendees": tbts_attendees,
         "good_practices": good_practices,
+        "certificates_attention": certificates_attention,
         "week_start": week_start, "week_end": week_end_display,
     }
 
@@ -1873,6 +1949,11 @@ def good_practice_form() -> str:
     return render_template("good_practice.html", categories=GOOD_PRACTICE_CATEGORIES)
 
 
+@app.get("/certificates")
+def certificate_form() -> str:
+    return render_template("certificate.html", certifying_bodies=CERTIFYING_BODIES)
+
+
 @app.get("/ptw")
 def ptw_form() -> str:
     return render_template("ptw.html", ptw_types=PTW_TYPES, shifts=PTW_SHIFTS, next_ptw_number=next_ptw_number())
@@ -1890,6 +1971,15 @@ def detect_image_type(data: bytes) -> str | None:
         return "png"
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return "webp"
+    return None
+
+
+def detect_document_type(data: bytes) -> str | None:
+    image_type = detect_image_type(data)
+    if image_type:
+        return image_type
+    if data[:5] == b"%PDF-":
+        return "pdf"
     return None
 
 
@@ -1921,6 +2011,36 @@ def upload_photo(token: str) -> tuple[Response, int] | Response:
         if session.get("admin"):
             # botocore's own message is often generic (e.g. ConnectionClosedError); the
             # underlying urllib3/socket error it wraps has the actually useful detail.
+            underlying = getattr(error, "kwargs", {}).get("error") if hasattr(error, "kwargs") else None
+            detail = f"{error!r} <- {underlying!r}" if underlying else repr(error)
+            message = f"{message} ({detail})"
+        return jsonify({"error": message}), 500
+    return jsonify({"key": key}), 201
+
+
+@app.post("/api/certificate-uploads/<token>")
+def upload_certificate_file(token: str) -> tuple[Response, int] | Response:
+    if not re.fullmatch(r"[a-zA-Z0-9_-]{8,64}", token):
+        return jsonify({"error": "Invalid upload session."}), 400
+    if not b2_configured():
+        return jsonify({"error": "File storage is not configured."}), 503
+    uploaded = request.files.get("file")
+    if not uploaded:
+        return jsonify({"error": "No file provided."}), 400
+    data = uploaded.read(CERTIFICATE_FILE_MAX_BYTES + 1)
+    if len(data) > CERTIFICATE_FILE_MAX_BYTES:
+        return jsonify({"error": "File is too large (max 15 MB)."}), 400
+    ext = detect_document_type(data)
+    if not ext:
+        return jsonify({"error": "Only PDF, JPEG, PNG, or WEBP files are supported."}), 400
+    content_type = "application/pdf" if ext == "pdf" else f"image/{ext}"
+    key = f"uploads/{token}/{secrets.token_hex(10)}.{ext}"
+    try:
+        b2_client().put_object(Bucket=B2_BUCKET, Key=key, Body=data, ContentType=content_type)
+    except Exception as error:
+        app.logger.exception("Certificate file upload failed")
+        message = "The file could not be uploaded."
+        if session.get("admin"):
             underlying = getattr(error, "kwargs", {}).get("error") if hasattr(error, "kwargs") else None
             detail = f"{error!r} <- {underlying!r}" if underlying else repr(error)
             message = f"{message} ({detail})"
@@ -2466,6 +2586,44 @@ def submit_good_practice() -> tuple[Response, int] | Response:
         return jsonify({"error": "The good practice entry could not be saved."}), 500
 
 
+@app.post("/api/certificates")
+def submit_certificate() -> tuple[Response, int] | Response:
+    try:
+        payload = request.get_json(force=True, silent=False)
+        if not isinstance(payload, dict):
+            raise ValueError("The certificate data is invalid.")
+        record = validate_certificate(payload)
+        record_id = secrets.token_hex(16)
+        created_at = datetime.now(timezone.utc).isoformat()
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute(sql("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM certificates"))
+            seq = cursor.fetchone()["next_seq"]
+            cert_no = f"CERT-{seq:03d}"
+            values = [
+                record_id, seq, cert_no, record["asset_name"], record["certifying_body"],
+                record["certificate_number"], record["issue_date"], record["expiry_date"],
+                record["notes"], record["file_key"], record["uploaded_by"], created_at,
+            ]
+            columns = (
+                "id, seq, cert_no, asset_name, certifying_body, certificate_number, "
+                "issue_date, expiry_date, notes, file_key, uploaded_by, created_at"
+            )
+            placeholders = ",".join("?" for _ in values)
+            cursor.execute(sql(f"INSERT INTO certificates ({columns}) VALUES ({placeholders})"), values)
+        return jsonify({"id": record_id, "certNo": cert_no}), 201
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+    except HTTPException:
+        raise
+    except Exception as error:
+        message = str(error)
+        if "unique" in message.lower():
+            return jsonify({"error": "That certificate number already exists."}), 409
+        app.logger.exception("Certificate submission failed")
+        return jsonify({"error": "The certificate could not be saved."}), 500
+
+
 @app.route("/admin", methods=["GET", "POST"])
 def admin() -> str | Response:
     error = ""
@@ -2483,7 +2641,7 @@ def admin() -> str | Response:
         return render_template("login.html", error=error, configured=configured)
 
     view = request.args.get("view", "inspections")
-    if view not in {"inspections", "near-miss", "violations", "ptw", "training", "good-practices", "weekly-tasks", "daily-kpis", "trends"}:
+    if view not in {"inspections", "near-miss", "violations", "ptw", "training", "good-practices", "certificates", "weekly-tasks", "daily-kpis", "trends"}:
         view = "inspections"
 
     counts = record_counts()
@@ -2499,6 +2657,7 @@ def admin() -> str | Response:
     ptw_logs: list[dict[str, Any]] = []
     training_logs: list[dict[str, Any]] = []
     good_practice_records: list[dict[str, Any]] = []
+    certificate_records: list[dict[str, Any]] = []
     trends: list[dict[str, Any]] = []
     daily_kpi_rows: list[dict[str, Any]] = []
     daily_kpi_from = daily_kpi_to = ""
@@ -2523,6 +2682,8 @@ def admin() -> str | Response:
         training_logs, page, total_pages, total_count = paginated_training()
     elif view == "good-practices":
         good_practice_records, page, total_pages, total_count = paginated_good_practices()
+    elif view == "certificates":
+        certificate_records, page, total_pages, total_count = paginated_certificates()
     elif view == "weekly-tasks":
         raw_week = request.args.get("week", "").strip()
         if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw_week):
@@ -2577,6 +2738,8 @@ def admin() -> str | Response:
         flagged_ptw_duplicates=flagged_ptw_duplicates,
         training_logs=training_logs,
         good_practice_records=good_practice_records,
+        certificate_records=certificate_records,
+        certificate_expiry_status=certificate_expiry_status,
         trends=trends,
         trend_charts=trend_charts,
         daily_kpi_rows=daily_kpi_rows,
@@ -2591,6 +2754,7 @@ def admin() -> str | Response:
         ptw_count=counts["ptw"],
         training_count=counts["training"],
         good_practices_count=counts["good_practices"],
+        certificates_count=counts["certificates"],
         training_type_labels=TRAINING_TYPE_LABELS,
         this_week_start=this_week_start, this_week_end=this_week_end,
         last_week_start=last_week_start, last_week_end=last_week_end,
@@ -3269,6 +3433,77 @@ def good_practice_pdf(record_id: str) -> Response | tuple[Response, int]:
     record = dict(row)
     pdf_bytes = good_practice_pdf_bytes(record)
     return Response(pdf_bytes, mimetype="application/pdf", headers={"Content-Disposition": f'attachment; filename="{record["report_no"]}.pdf"'})
+
+
+@app.get("/admin/certificates/<record_id>")
+@admin_required
+def certificate_detail(record_id: str) -> str | tuple[str, int]:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT * FROM certificates WHERE id = ?"), [record_id])
+        row = cursor.fetchone()
+    if not row:
+        return "Record not found", 404
+    record = dict(row)
+    file_urls = photo_urls([record["file_key"]]) if record["file_key"] else []
+    return render_template(
+        "certificate_record.html", record=record, file_url=(file_urls[0] if file_urls else None),
+        expiry_status=certificate_expiry_status(record["expiry_date"]), back=request.args.get("back", ""),
+    )
+
+
+CERTIFICATE_FORM_FIELDS = {
+    "assetName": "asset_name", "certifyingBody": "certifying_body", "certificateNumber": "certificate_number",
+    "issueDate": "issue_date", "expiryDate": "expiry_date", "uploadedBy": "uploaded_by", "notes": "notes",
+}
+
+
+@app.route("/admin/certificates/<record_id>/edit", methods=["GET", "POST"])
+@admin_required
+def certificate_edit(record_id: str) -> str | tuple[str, int] | Response:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT * FROM certificates WHERE id = ?"), [record_id])
+        row = cursor.fetchone()
+    if not row:
+        return "Record not found", 404
+    record = dict(row)
+    error = ""
+    if request.method == "POST":
+        form_payload = {form_key: request.form.get(form_key) for form_key in CERTIFICATE_FORM_FIELDS}
+        form_payload["fileKey"] = record["file_key"]
+        try:
+            updated = validate_certificate(form_payload)
+            with database() as connection:
+                cursor = connection.cursor()
+                cursor.execute(sql(
+                    "UPDATE certificates SET asset_name=?, certifying_body=?, certificate_number=?, "
+                    "issue_date=?, expiry_date=?, uploaded_by=?, notes=? WHERE id=?"
+                ), [
+                    updated["asset_name"], updated["certifying_body"], updated["certificate_number"],
+                    updated["issue_date"], updated["expiry_date"], updated["uploaded_by"], updated["notes"], record_id,
+                ])
+            log_audit("updated", "certificate", record["cert_no"])
+            return redirect(url_for("certificate_detail", record_id=record_id))
+        except ValueError as err:
+            error = str(err)
+            record = {**record, **{db_key: form_payload[form_key] for form_key, db_key in CERTIFICATE_FORM_FIELDS.items()}}
+    return render_template("certificate_edit.html", record=record, certifying_bodies=CERTIFYING_BODIES, error=error)
+
+
+@app.post("/admin/certificates/<record_id>/delete")
+@admin_required
+def delete_certificate(record_id: str) -> Response | tuple[str, int]:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT cert_no, file_key FROM certificates WHERE id = ?"), [record_id])
+        row = cursor.fetchone()
+        cursor.execute(sql("DELETE FROM certificates WHERE id = ?"), [record_id])
+    if row:
+        if row["file_key"]:
+            delete_photos([row["file_key"]])
+        log_audit("deleted", "certificate", row["cert_no"])
+    return redirect(url_for("admin", view="certificates"))
 
 
 def insert_weekly_task(record: dict[str, Any]) -> str:
@@ -4005,6 +4240,49 @@ def export_good_practices() -> Response:
     return Response("﻿" + csv_text, mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
+def certificates_csv(records: list[dict[str, Any]]) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Cert No.", "Equipment / Asset", "Certifying Body", "Certificate Number",
+        "Issue Date", "Expiry Date", "Status", "Uploaded By", "Notes", "Submitted At",
+    ])
+    for record in records:
+        writer.writerow([
+            record["cert_no"], record["asset_name"], record["certifying_body"], record["certificate_number"],
+            record["issue_date"], record["expiry_date"], certificate_expiry_status(record["expiry_date"]),
+            record["uploaded_by"], record["notes"], record["created_at"],
+        ])
+    return output.getvalue()
+
+
+@app.get("/admin/export/certificates")
+@admin_required
+def export_certificates() -> Response:
+    csv_text = certificates_csv(filtered_certificates(limit=5000))
+    filename = f'diriyah-certificates-{datetime.now(timezone.utc).date().isoformat()}.csv'
+    return Response("﻿" + csv_text, mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+def certificate_bundle_zip_bytes() -> bytes:
+    records = filtered_certificates(limit=5000)
+    photo_entries = [
+        (f"{safe_archive_folder(record['cert_no'])}/{record['cert_no']}", record["file_key"])
+        for record in records if record["file_key"]
+    ]
+    return build_bundle_zip(
+        "certificates.csv", certificates_csv(records), [], photo_entries if b2_configured() else [],
+    )
+
+
+@app.get("/admin/export/certificates/bundle.zip")
+@admin_required
+def export_certificate_bundle() -> Response:
+    zip_bytes = certificate_bundle_zip_bytes()
+    filename = f'diriyah-certificates-bundle-{datetime.now(timezone.utc).date().isoformat()}.zip'
+    return Response(zip_bytes, mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
 @app.get("/admin/export/daily-kpis")
 @admin_required
 def export_daily_kpis() -> Response:
@@ -4072,6 +4350,7 @@ def backup_all() -> Response | tuple[Response, int]:
         archive.writestr(f"ptw-log-{today}.csv", "\ufeff" + ptw_csv(filtered_ptw(limit=5000)))
         archive.writestr(f"training-log-{today}.csv", "\ufeff" + training_csv(filtered_training(limit=5000)))
         archive.writestr(f"good-practices-{today}.csv", "\ufeff" + good_practices_csv(filtered_good_practices(limit=5000)))
+        archive.writestr(f"certificates-{today}.csv", "\ufeff" + certificates_csv(filtered_certificates(limit=5000)))
     buffer.seek(0)
     filename = f"diriyah-ohs-backup-{today}.zip"
     return Response(buffer.getvalue(), mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
@@ -4110,6 +4389,15 @@ def backup_good_practices() -> Response | tuple[Response, int]:
         return jsonify({"error": "Unauthorized"}), 401
     zip_bytes = good_practice_bundle_zip_bytes()
     filename = f"diriyah-good-practices-backup-{datetime.now(timezone.utc).date().isoformat()}.zip"
+    return Response(zip_bytes, mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@app.get("/admin/backup/certificates.zip")
+def backup_certificates() -> Response | tuple[Response, int]:
+    if not export_token_valid():
+        return jsonify({"error": "Unauthorized"}), 401
+    zip_bytes = certificate_bundle_zip_bytes()
+    filename = f"diriyah-certificates-backup-{datetime.now(timezone.utc).date().isoformat()}.zip"
     return Response(zip_bytes, mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 

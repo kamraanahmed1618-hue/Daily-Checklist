@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}{{ record.cert_no }} · Edit Certificate{% endblock %}
+{% block body_class %}form-page{% endblock %}
+{% block content %}
+<section class="record-toolbar no-print">
+  <a class="text-link" href="{{ url_for('certificate_detail', record_id=record.id) }}">← Back to record</a>
+</section>
+
+<section class="hero">
+  <div>
+    <span class="eyebrow">3rd party certificate</span>
+    <h1>{{ record.cert_no }}</h1>
+    <p>Correct any details on this record. The certificate file isn't editable here — delete and resubmit if it needs replacing.</p>
+  </div>
+</section>
+
+{% if error %}<div class="form-error" role="alert">{{ error }}</div>{% endif %}
+
+<form method="post">
+  <section class="card">
+    <div class="section-heading">
+      <div><span class="step-number">01</span><h2>Certificate details</h2></div>
+      <p>Fields marked <span class="required">*</span> are required</p>
+    </div>
+    <div class="field-grid">
+      <label><span>Equipment / Asset name <b>*</b></span><input name="assetName" required maxlength="200" value="{{ record.asset_name }}"></label>
+      <label><span>Certifying body <b>*</b></span><input name="certifyingBody" list="certifying-bodies" required maxlength="200" value="{{ record.certifying_body }}"></label>
+      <label><span>Certificate number <b>*</b></span><input name="certificateNumber" required maxlength="120" value="{{ record.certificate_number }}"></label>
+      <label><span>Uploaded by <b>*</b></span><input name="uploadedBy" required maxlength="200" value="{{ record.uploaded_by }}"></label>
+      <label><span>Issue date <b>*</b></span><input name="issueDate" type="date" required value="{{ record.issue_date }}"></label>
+      <label><span>Expiry date <b>*</b></span><input name="expiryDate" type="date" required value="{{ record.expiry_date }}"></label>
+    </div>
+    <datalist id="certifying-bodies">
+      {% for body in certifying_bodies %}<option value="{{ body }}">{% endfor %}
+    </datalist>
+  </section>
+
+  <section class="card">
+    <div class="section-heading"><div><span class="step-number">02</span><h2>Notes</h2></div></div>
+    <div class="field-grid one-col">
+      <label><span>Notes</span><textarea name="notes" rows="3" maxlength="2000">{{ record.notes }}</textarea></label>
+    </div>
+  </section>
+
+  <div class="submit-bar">
+    <div><strong>{{ record.cert_no }}</strong></div>
+    <button class="button primary submit-button" type="submit">Save changes</button>
+  </div>
+</form>
+{% endblock %}
