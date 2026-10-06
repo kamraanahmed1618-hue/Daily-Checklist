@@ -819,35 +819,6 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertIn(b"Expired", dashboard.data)
         self.assertIn(b"Expiring soon", dashboard.data)
 
-    def test_homepage_certificates_tile_links_to_attention_filter(self):
-        response = self.client.get("/")
-        self.assertIn(b"view=certificates", response.data)
-        self.assertIn(b"status=attention", response.data)
-
-    def test_certificates_attention_filter_shows_only_flagged(self):
-        from datetime import date, timedelta
-        today = date.today()
-        self.client.post("/api/certificates", json=self.certificate_payload(
-            certificateNumber="EXPIRED-2", uploadedBy="Flagged Uploader",
-            issueDate="2020-01-01", expiryDate=(today - timedelta(days=5)).isoformat(),
-        ))
-        self.client.post("/api/certificates", json=self.certificate_payload(
-            certificateNumber="VALID-2", uploadedBy="Not Flagged Uploader",
-            issueDate="2026-01-01", expiryDate=(today + timedelta(days=365)).isoformat(),
-        ))
-        self.login()
-        response = self.client.get("/admin?view=certificates&status=attention")
-        self.assertIn(b"EXPIRED-2", response.data)
-        self.assertIn(b"Flagged Uploader", response.data)
-        self.assertNotIn(b"VALID-2", response.data)
-        self.assertNotIn(b"Not Flagged Uploader", response.data)
-
-    def test_certificates_list_shows_uploaded_by_column(self):
-        self.client.post("/api/certificates", json=self.certificate_payload(uploadedBy="Ali Uploader"))
-        self.login()
-        response = self.client.get("/admin?view=certificates")
-        self.assertIn(b"Ali Uploader", response.data)
-
     def test_delete_certificate(self):
         record_id = self.client.post("/api/certificates", json=self.certificate_payload()).json["id"]
         self.login()

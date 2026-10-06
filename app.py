@@ -1630,30 +1630,6 @@ def paginated_certificates() -> tuple[list[dict[str, Any]], int, int, int]:
     return filtered_rows_page("certificates", CERTIFICATE_SEARCH_COLUMNS, "issue_date")
 
 
-def paginated_certificates_needing_attention(page_size: int = PAGE_SIZE) -> tuple[list[dict[str, Any]], int, int, int]:
-    """Like paginated_certificates, but scoped to expired/expiring-soon certs and
-    sorted most-urgent-first — what the homepage's "needing attention" tile links to."""
-    where, params = _filter_clause(CERTIFICATE_SEARCH_COLUMNS, "issue_date")
-    cutoff = (datetime.now(SITE_TZ).date() + timedelta(days=CERTIFICATE_EXPIRY_WARNING_DAYS)).isoformat()
-    where = f"{where} AND expiry_date <= ?" if where else " WHERE expiry_date <= ?"
-    params = [*params, cutoff]
-    with database() as connection:
-        cursor = connection.cursor()
-        cursor.execute(sql(f"SELECT COUNT(*) AS c FROM certificates{where}"), params)
-        total_count = cursor.fetchone()["c"]
-        total_pages = max(1, math.ceil(total_count / page_size))
-        page_arg = request.args.get("page", "1")
-        page = int(page_arg) if page_arg.isdigit() else 1
-        page = min(max(1, page), total_pages)
-        offset = (page - 1) * page_size
-        cursor.execute(
-            sql(f"SELECT * FROM certificates{where} ORDER BY expiry_date ASC, created_at DESC LIMIT ? OFFSET ?"),
-            [*params, page_size, offset],
-        )
-        rows = cursor.fetchall()
-    return [dict(row) for row in rows], page, total_pages, total_count
-
-
 def record_counts() -> dict[str, int]:
     auto_close_expired_ptw()
     with database() as connection:
@@ -2772,10 +2748,7 @@ def admin() -> str | Response:
     elif view == "good-practices":
         good_practice_records, page, total_pages, total_count = paginated_good_practices()
     elif view == "certificates":
-        if request.args.get("status") == "attention":
-            certificate_records, page, total_pages, total_count = paginated_certificates_needing_attention()
-        else:
-            certificate_records, page, total_pages, total_count = paginated_certificates()
+        certificate_records, page, total_pages, total_count = paginated_certificates()
     elif view == "weekly-tasks":
         raw_week = request.args.get("week", "").strip()
         if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw_week):
