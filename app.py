@@ -1020,7 +1020,49 @@ GOOD_PRACTICE_CATEGORIES = [
     "Barricading & Signage", "Emergency Preparedness", "Environmental Practice",
     "Teamwork & Communication", "Other",
 ]
-CERTIFYING_BODIES = ["TÜV SÜD", "TÜV Rheinland", "TÜV NORD", "Bureau Veritas", "SGS", "DNV", "Intertek"]
+# SASO's official "Accepted Conformity Assessment Bodies for Inspection Activity" list
+# (saso.gov.sa, Inspection-and-Examination-EN.pdf), filtered to the active (non-cancelled)
+# bodies whose accredited scope covers site equipment — Lifting Equipment, Scaffolding,
+# Mobile Machinery and Heavy Duty Equipment, Electrical Lifts, Escalators, or Cableway
+# Installations. Names are kept exactly as registered (Arabic where the document prints
+# no English name) rather than guessed-at translations. This is a suggestions list, not a
+# validated enum — the field still accepts free text for a body not on it. SASO does not
+# accredit personnel-safety training providers (Flagman, Fire Warden, etc.) at all, so this
+# list is only meaningful for equipment-type certificates.
+CERTIFYING_BODIES = [
+    "الشركة الوطنية للفحص والاختبار الفني",
+    "TÜV Rheinland Arabia Ltd.",
+    "Saudi Industrial Inspection Services (QI)",
+    "شركة استرون العربية المحدودة",
+    "TÜV SÜD – Branch for Safety Engineering",
+    "شركة الفنيون المتخصصون لفحص المعدات TEST",
+    "شركة آيبلس العربية",
+    "مؤسسة المعاينة المتطورة للفحص",
+    "شركة تقنية الجودة للاعتماد (Quality Techno Certification LLC)",
+    "شركة دقة لخدمات الأعمال",
+    "الشركة العربية للفحص والمعاينة",
+    "شركة معيار العربية للفحص",
+    "شركة الزامل للمعاينة والمقاولات (Zamil Inspection and Contracting Co.)",
+    "شركة الميزان التقني للتحقق",
+    "مؤسسة أدوات التداول للفحص",
+    "شركة مصادقة لحلول الأعمال",
+    "شركة مساندة الأعمار للفحص (ESICO)",
+    "مؤسسة جبال هيمالايا للفحص (JH Inspection)",
+    "ALLIANCE INFINITE INSPECTION",
+    "Atlas Support and Services Co. Ltd",
+    "Times United Co. Ltd.",
+    "شركة الإختبار والتفتيش الفني للفحص",
+    "مؤسسة بوادر النجاح التجارية",
+    "Inspectify & Engineering Services L.L.C",
+    "JAWDA Conformity and Verification Company",
+    "Engineering Zone Company LTD",
+    "Apave Arabia for Business Services",
+    "Inspection & Technical Survey Co",
+    "TÜV Austria (Shanghai Co. Ltd, KSA Branch)",
+    "Unified Inspection Company Ltd",
+    "Qiraat Arabiya Company Commercial",
+    "United Team for Inspection and Certification Services",
+]
 CERTIFICATE_TYPES = {"equipment": "Equipment / Asset", "personnel": "Personnel"}
 PERSONNEL_CERTIFICATE_ROLES = [
     "Flagman", "Fire Warden", "Banksman", "Scaffolder", "Rigger", "Lifting Supervisor",
