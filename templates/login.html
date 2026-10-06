@@ -11,7 +11,6 @@
     {% if not configured %}<div class="notice danger">ADMIN_PASSWORD has not been configured on this service.</div>{% endif %}
     {% if error %}<div class="notice danger" role="alert">{{ error }}</div>{% endif %}
     <form method="post">
-      <input type="hidden" name="next" value="{{ next }}">
       <label><span>Admin password</span><input name="password" type="password" autocomplete="current-password" required autofocus></label>
       <button class="button primary full" type="submit" {% if not configured %}disabled{% endif %}>Open records dashboard</button>
     </form>

@@ -17,145 +17,16 @@
 
 <p class="stats-period">This week ({{ counts.week_start }} to {{ counts.week_end }})</p>
 <section class="stats-grid cols-8">
-  <button type="button" class="stat-tile-trigger" data-dialog="preview-inspections"><article><span>Inspections logged</span><strong>{{ counts.inspections }}</strong></article></button>
-  <button type="button" class="stat-tile-trigger" data-dialog="preview-near-miss"><article><span>Near-miss reports</span><strong>{{ counts.near_miss }}</strong></article></button>
-  <button type="button" class="stat-tile-trigger" data-dialog="preview-violations"><article><span>Violation notices</span><strong>{{ counts.violations }}</strong></article></button>
-  <button type="button" class="stat-tile-trigger" data-dialog="preview-ptw"><article><span>Open PTW permits</span><strong>{{ counts.ptw_open }}</strong></article></button>
-  <button type="button" class="stat-tile-trigger" data-dialog="preview-inductions"><article><span>Inductions</span><strong>{{ counts.inductions }}</strong><small>{{ counts.inductions_attendees }} attendees</small></article></button>
-  <button type="button" class="stat-tile-trigger" data-dialog="preview-trainings"><article><span>Trainings</span><strong>{{ counts.trainings }}</strong><small>{{ counts.trainings_attendees }} attendees</small></article></button>
-  <button type="button" class="stat-tile-trigger" data-dialog="preview-tbts"><article><span>TBTs</span><strong>{{ counts.tbts }}</strong><small>{{ counts.tbts_attendees }} attendees</small></article></button>
-  <button type="button" class="stat-tile-trigger" data-dialog="preview-good-practices"><article><span>Good practices</span><strong>{{ counts.good_practices }}</strong></article></button>
+  <article><span>Inspections logged</span><strong>{{ counts.inspections }}</strong></article>
+  <article><span>Near-miss reports</span><strong>{{ counts.near_miss }}</strong></article>
+  <article><span>Violation notices</span><strong>{{ counts.violations }}</strong></article>
+  <article><span>Open PTW permits</span><strong>{{ counts.ptw_open }}</strong></article>
+  <article><span>Inductions</span><strong>{{ counts.inductions }}</strong><small>{{ counts.inductions_attendees }} attendees</small></article>
+  <article><span>Trainings</span><strong>{{ counts.trainings }}</strong><small>{{ counts.trainings_attendees }} attendees</small></article>
+  <article><span>TBTs</span><strong>{{ counts.tbts }}</strong><small>{{ counts.tbts_attendees }} attendees</small></article>
+  <article><span>Good practices</span><strong>{{ counts.good_practices }}</strong></article>
   <a href="{{ url_for('admin', view='certificates', status='attention') }}"><article><span>Certificates needing attention</span><strong>{{ counts.certificates_attention }}</strong></article></a>
 </section>
-
-<dialog id="preview-inspections" class="preview-dialog">
-  <div class="preview-dialog-content">
-    <div class="preview-dialog-head"><h3>Inspections logged this week</h3><button type="button" class="dialog-close-button" aria-label="Close">✕</button></div>
-    <table><thead><tr><th>Report</th><th>Date</th><th>Location</th><th>Contractor</th><th>Inspector</th><th>Score</th></tr></thead>
-      <tbody>
-        {% for row in previews.inspections %}
-        <tr><td>{{ row.report_no }}</td><td>{{ row.inspection_date }}</td><td>{{ row.work_location }}</td><td>{{ row.contractor }}</td><td>{{ row.inspected_by }}</td><td>{{ row.score }}%</td></tr>
-        {% else %}
-        <tr><td colspan="6" class="empty-state">No inspections logged this week yet.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    <p class="preview-dialog-footer"><a href="{{ url_for('admin', view='inspections') }}">Open full list in Records (login required) →</a></p>
-  </div>
-</dialog>
-
-<dialog id="preview-near-miss" class="preview-dialog">
-  <div class="preview-dialog-content">
-    <div class="preview-dialog-head"><h3>Near-miss reports this week</h3><button type="button" class="dialog-close-button" aria-label="Close">✕</button></div>
-    <table><thead><tr><th>Report</th><th>Date</th><th>Location</th><th>Reported By</th><th>Type</th><th>Status</th></tr></thead>
-      <tbody>
-        {% for row in previews.near_miss %}
-        <tr><td>{{ row.report_no }}</td><td>{{ row.incident_date }}</td><td>{{ row.location }}</td><td>{{ row.reported_by }}</td><td>{{ row.near_miss_types|join(', ') }}</td><td>{{ row.status or '—' }}</td></tr>
-        {% else %}
-        <tr><td colspan="6" class="empty-state">No near-miss reports this week yet.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    <p class="preview-dialog-footer"><a href="{{ url_for('admin', view='near-miss') }}">Open full list in Records (login required) →</a></p>
-  </div>
-</dialog>
-
-<dialog id="preview-violations" class="preview-dialog">
-  <div class="preview-dialog-content">
-    <div class="preview-dialog-head"><h3>Violation notices this week</h3><button type="button" class="dialog-close-button" aria-label="Close">✕</button></div>
-    <p class="field-note">The named individual on each notice is only shown in the logged-in Records view, not here.</p>
-    <table><thead><tr><th>Notice</th><th>Date</th><th>Type</th><th>Location</th><th>Action</th></tr></thead>
-      <tbody>
-        {% for row in previews.violations %}
-        <tr><td>{{ row.violation_no }}</td><td>{{ row.violation_date }}</td><td>{{ row.violation_type }}</td><td>{{ row.violation_location }}</td><td>{{ row.actions|join(', ') or '—' }}</td></tr>
-        {% else %}
-        <tr><td colspan="5" class="empty-state">No violation notices this week yet.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    <p class="preview-dialog-footer"><a href="{{ url_for('admin', view='violations') }}">Open full list in Records (login required) →</a></p>
-  </div>
-</dialog>
-
-<dialog id="preview-ptw" class="preview-dialog">
-  <div class="preview-dialog-content">
-    <div class="preview-dialog-head"><h3>Open PTW permits</h3><button type="button" class="dialog-close-button" aria-label="Close">✕</button></div>
-    <table><thead><tr><th>PTW No.</th><th>Type</th><th>Location</th><th>Company</th><th>Start</th><th>End</th></tr></thead>
-      <tbody>
-        {% for row in previews.ptw_open %}
-        <tr><td>{{ row.ptw_number }}</td><td>{{ row.ptw_type }}</td><td>{{ row.location }}</td><td>{{ row.company }}</td><td>{{ row.start_date }}</td><td>{{ row.end_date }}</td></tr>
-        {% else %}
-        <tr><td colspan="6" class="empty-state">No open permits right now.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    <p class="preview-dialog-footer"><a href="{{ url_for('admin', view='ptw') }}">Open full list in Records (login required) →</a></p>
-  </div>
-</dialog>
-
-<dialog id="preview-inductions" class="preview-dialog">
-  <div class="preview-dialog-content">
-    <div class="preview-dialog-head"><h3>Inductions this week</h3><button type="button" class="dialog-close-button" aria-label="Close">✕</button></div>
-    <table><thead><tr><th>Topic</th><th>Date</th><th>Trainer</th><th>Location</th><th>Attendees</th></tr></thead>
-      <tbody>
-        {% for row in previews.inductions %}
-        <tr><td>{{ row.topic }}</td><td>{{ row.session_date }}</td><td>{{ row.trainer or '—' }}</td><td>{{ row.location or '—' }}</td><td>{{ row.attendees_count if row.attendees_count is not none else '—' }}</td></tr>
-        {% else %}
-        <tr><td colspan="5" class="empty-state">No inductions logged this week yet.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    <p class="preview-dialog-footer"><a href="{{ url_for('admin', view='training') }}">Open full list in Records (login required) →</a></p>
-  </div>
-</dialog>
-
-<dialog id="preview-trainings" class="preview-dialog">
-  <div class="preview-dialog-content">
-    <div class="preview-dialog-head"><h3>Trainings this week</h3><button type="button" class="dialog-close-button" aria-label="Close">✕</button></div>
-    <table><thead><tr><th>Topic</th><th>Date</th><th>Trainer</th><th>Location</th><th>Attendees</th></tr></thead>
-      <tbody>
-        {% for row in previews.trainings %}
-        <tr><td>{{ row.topic }}</td><td>{{ row.session_date }}</td><td>{{ row.trainer or '—' }}</td><td>{{ row.location or '—' }}</td><td>{{ row.attendees_count if row.attendees_count is not none else '—' }}</td></tr>
-        {% else %}
-        <tr><td colspan="5" class="empty-state">No trainings logged this week yet.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    <p class="preview-dialog-footer"><a href="{{ url_for('admin', view='training') }}">Open full list in Records (login required) →</a></p>
-  </div>
-</dialog>
-
-<dialog id="preview-tbts" class="preview-dialog">
-  <div class="preview-dialog-content">
-    <div class="preview-dialog-head"><h3>TBTs this week</h3><button type="button" class="dialog-close-button" aria-label="Close">✕</button></div>
-    <table><thead><tr><th>Topic</th><th>Date</th><th>Trainer</th><th>Location</th><th>Attendees</th></tr></thead>
-      <tbody>
-        {% for row in previews.tbts %}
-        <tr><td>{{ row.topic }}</td><td>{{ row.session_date }}</td><td>{{ row.trainer or '—' }}</td><td>{{ row.location or '—' }}</td><td>{{ row.attendees_count if row.attendees_count is not none else '—' }}</td></tr>
-        {% else %}
-        <tr><td colspan="5" class="empty-state">No TBTs logged this week yet.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    <p class="preview-dialog-footer"><a href="{{ url_for('admin', view='training') }}">Open full list in Records (login required) →</a></p>
-  </div>
-</dialog>
-
-<dialog id="preview-good-practices" class="preview-dialog">
-  <div class="preview-dialog-content">
-    <div class="preview-dialog-head"><h3>Good practices this week</h3><button type="button" class="dialog-close-button" aria-label="Close">✕</button></div>
-    <table><thead><tr><th>Report</th><th>Date</th><th>Location</th><th>Observed By</th><th>Category</th></tr></thead>
-      <tbody>
-        {% for row in previews.good_practices %}
-        <tr><td>{{ row.report_no }}</td><td>{{ row.practice_date }}</td><td>{{ row.location }}</td><td>{{ row.observed_by }}</td><td>{{ row.category }}</td></tr>
-        {% else %}
-        <tr><td colspan="5" class="empty-state">No good practices logged this week yet.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    <p class="preview-dialog-footer"><a href="{{ url_for('admin', view='good-practices') }}">Open full list in Records (login required) →</a></p>
-  </div>
-</dialog>
 
 <div class="home-grid">
   <a class="home-card inspection" href="{{ url_for('inspection_form') }}">
@@ -205,4 +76,3 @@
   </a>
 </div>
 {% endblock %}
-{% block scripts %}<script src="{{ url_for('static', filename='home_tiles.js') }}" defer></script>{% endblock %}
