@@ -1735,6 +1735,77 @@ def weekly_record_counts() -> dict[str, int]:
     }
 
 
+HOMEPAGE_PREVIEW_LIMIT = 5
+
+
+def homepage_record_previews() -> dict[str, list[dict[str, Any]]]:
+    """Small previews shown in the homepage tiles' popups, scoped like weekly_record_counts
+    (current work week; PTW is a live open-permits snapshot). This page has no login, so
+    unlike the admin Records view, the violation preview deliberately omits the named
+    employee — a violation notice is disciplinary, and nothing here should let an anonymous
+    visitor publicly attach a name to one. Every other field, and every other record type,
+    is shown as-is."""
+    week_start, week_end = current_work_week_range()
+    limit = HOMEPAGE_PREVIEW_LIMIT
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql(
+            "SELECT report_no, inspection_date, work_location, contractor, inspected_by, score "
+            "FROM inspections WHERE inspection_date >= ? AND inspection_date < ? "
+            "ORDER BY inspection_date DESC, created_at DESC LIMIT ?"
+        ), [week_start, week_end, limit])
+        inspections = [dict(row) for row in cursor.fetchall()]
+
+        cursor.execute(sql(
+            "SELECT report_no, incident_date, location, reported_by, near_miss_types, status "
+            "FROM near_miss_reports WHERE incident_date >= ? AND incident_date < ? "
+            "ORDER BY incident_date DESC, created_at DESC LIMIT ?"
+        ), [week_start, week_end, limit])
+        near_miss = [dict(row) for row in cursor.fetchall()]
+        for row in near_miss:
+            row["near_miss_types"] = safe_json_list(row["near_miss_types"])
+
+        cursor.execute(sql(
+            "SELECT violation_no, violation_date, violation_type, violation_location, actions "
+            "FROM violation_notices WHERE violation_date >= ? AND violation_date < ? "
+            "ORDER BY violation_date DESC, created_at DESC LIMIT ?"
+        ), [week_start, week_end, limit])
+        violations = [dict(row) for row in cursor.fetchall()]
+        for row in violations:
+            row["actions"] = safe_json_list(row["actions"])
+
+        cursor.execute(sql(
+            "SELECT ptw_number, ptw_type, location, company, start_date, end_date "
+            "FROM ptw_logs WHERE status = ? ORDER BY start_date DESC, created_at DESC LIMIT ?"
+        ), ["open", limit])
+        ptw_open = [dict(row) for row in cursor.fetchall()]
+
+        def training_preview(session_types: list[str]) -> list[dict[str, Any]]:
+            placeholders = ",".join("?" for _ in session_types)
+            cursor.execute(sql(
+                f"SELECT topic, session_date, trainer, location, attendees_count FROM training_logs "
+                f"WHERE session_type IN ({placeholders}) AND session_date >= ? AND session_date < ? "
+                f"ORDER BY session_date DESC, created_at DESC LIMIT ?"
+            ), [*session_types, week_start, week_end, limit])
+            return [dict(row) for row in cursor.fetchall()]
+
+        inductions = training_preview(["Induction"])
+        trainings = training_preview(["Specific Training"])
+        tbts = training_preview(["TBT", "Mass TBT"])
+
+        cursor.execute(sql(
+            "SELECT report_no, practice_date, location, observed_by, category "
+            "FROM good_practices WHERE practice_date >= ? AND practice_date < ? "
+            "ORDER BY practice_date DESC, created_at DESC LIMIT ?"
+        ), [week_start, week_end, limit])
+        good_practices = [dict(row) for row in cursor.fetchall()]
+    return {
+        "inspections": inspections, "near_miss": near_miss, "violations": violations,
+        "ptw_open": ptw_open, "inductions": inductions, "trainings": trainings, "tbts": tbts,
+        "good_practices": good_practices,
+    }
+
+
 def ptw_overview() -> dict[str, Any]:
     """Snapshot of what's currently open on site: which areas have active permits,
     what activity is running in each, and how many of each permit type are open."""
@@ -1994,7 +2065,7 @@ def security_headers(response: Response) -> Response:
 
 @app.get("/")
 def home() -> str:
-    return render_template("home.html", counts=weekly_record_counts())
+    return render_template("home.html", counts=weekly_record_counts(), previews=homepage_record_previews())
 
 
 @app.get("/inspection")
@@ -2713,6 +2784,11 @@ def submit_certificate() -> tuple[Response, int] | Response:
         return jsonify({"error": "The certificate could not be saved."}), 500
 
 
+def safe_admin_redirect(value: str) -> str:
+    # Only ever redirect within this app — never an absolute/external URL (open-redirect guard).
+    return value if value.startswith("/") and not value.startswith("//") else url_for("admin")
+
+
 @app.route("/admin", methods=["GET", "POST"])
 def admin() -> str | Response:
     error = ""
@@ -2720,14 +2796,19 @@ def admin() -> str | Response:
     if request.method == "POST":
         supplied = request.form.get("password", "")
         expected = os.environ.get("ADMIN_PASSWORD", "")
+        destination = safe_admin_redirect(request.form.get("next", ""))
         if expected and hmac.compare_digest(supplied.encode(), expected.encode()):
             session.clear()
             session["admin"] = True
             session.permanent = True
-            return redirect(url_for("admin"))
+            return redirect(destination)
         error = "Incorrect admin password."
     if not session.get("admin"):
-        return render_template("login.html", error=error, configured=configured)
+        if request.method == "POST":
+            next_value = safe_admin_redirect(request.form.get("next", ""))
+        else:
+            next_value = safe_admin_redirect(request.args.get("next") or request.full_path)
+        return render_template("login.html", error=error, configured=configured, next=next_value)
 
     view = request.args.get("view", "inspections")
     if view not in {"inspections", "near-miss", "violations", "ptw", "training", "good-practices", "certificates", "weekly-tasks", "daily-kpis", "trends"}:

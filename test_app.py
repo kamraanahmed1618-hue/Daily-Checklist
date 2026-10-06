@@ -199,6 +199,48 @@ class ChecklistApplicationTests(unittest.TestCase):
         for path in ("/inspection", "/near-miss", "/violation", "/ptw", "/training", "/good-practice", "/admin"):
             self.assertIn(path.encode(), response.data)
 
+    def test_homepage_preview_dialogs_show_record_data_without_login(self):
+        from datetime import date
+        today = date.today().isoformat()
+        good_practice_payload = self.good_practice_payload()
+        good_practice_payload["practiceDate"] = today
+        self.client.post("/api/good-practice", json=good_practice_payload)
+        violation_payload = self.violation_payload()
+        violation_payload["violationDate"] = today
+        self.client.post("/api/violations", json=violation_payload)
+
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn("Housekeeping", body)
+        self.assertIn(violation_payload["violationType"], body)
+        # The named individual on a violation is disciplinary and this page has no login.
+        self.assertNotIn(violation_payload["employeeName"], body)
+
+    def test_login_redirect_preserves_original_destination(self):
+        record_id = self.client.post("/api/certificates", json=self.certificate_payload()).json["id"]
+        target = f"/admin/certificates/{record_id}"
+
+        redirected = self.client.get(target)
+        self.assertEqual(redirected.status_code, 302)
+        self.assertIn("next=", redirected.headers["Location"])
+
+        login_page = self.client.get(redirected.headers["Location"])
+        self.assertIn(target.encode(), login_page.data)
+
+        logged_in = self.client.post("/admin", data={"password": "test-admin-password", "next": target})
+        self.assertEqual(logged_in.status_code, 302)
+        self.assertEqual(logged_in.headers["Location"], target)
+
+    def test_login_failed_password_preserves_next_field(self):
+        response = self.client.post("/admin", data={"password": "wrong", "next": "/admin?view=certificates"})
+        self.assertIn(b'value="/admin?view=certificates"', response.data)
+
+    def test_login_next_rejects_external_redirect(self):
+        response = self.client.post("/admin", data={"password": "test-admin-password", "next": "//evil.example.com"})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], "/admin")
+
     def test_homepage_splits_training_sessions_by_type(self):
         from app import current_work_week_range
 
