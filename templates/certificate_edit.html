@@ -23,7 +23,13 @@
       <p>Fields marked <span class="required">*</span> are required</p>
     </div>
     <div class="field-grid">
-      <label><span>Equipment / Asset name <b>*</b></span><input name="assetName" required maxlength="200" value="{{ record.asset_name }}"></label>
+      <label><span>Certificate for <b>*</b></span>
+        <select name="certificateType" required>
+          {% for key, label in certificate_types.items() %}<option value="{{ key }}" {{ 'selected' if key == record.certificate_type else '' }}>{{ label }}</option>{% endfor %}
+        </select>
+      </label>
+      <label><span>Role (if personnel)</span><input name="holderRole" list="personnel-roles" maxlength="80" value="{{ record.holder_role }}" placeholder="e.g. Flagman, Fire Warden"></label>
+      <label><span>Equipment / Asset or person's name <b>*</b></span><input name="subjectName" required maxlength="200" value="{{ record.subject_name }}"></label>
       <label><span>Certifying body <b>*</b></span><input name="certifyingBody" list="certifying-bodies" required maxlength="200" value="{{ record.certifying_body }}"></label>
       <label><span>Certificate number <b>*</b></span><input name="certificateNumber" required maxlength="120" value="{{ record.certificate_number }}"></label>
       <label><span>Uploaded by <b>*</b></span><input name="uploadedBy" required maxlength="200" value="{{ record.uploaded_by }}"></label>
@@ -32,6 +38,9 @@
     </div>
     <datalist id="certifying-bodies">
       {% for body in certifying_bodies %}<option value="{{ body }}">{% endfor %}
+    </datalist>
+    <datalist id="personnel-roles">
+      {% for role in personnel_roles %}<option value="{{ role }}">{% endfor %}
     </datalist>
   </section>
 

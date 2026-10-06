@@ -425,13 +425,14 @@
         </table>
         {% elif view == 'certificates' %}
         <table>
-            <thead><tr><th>Cert No.</th><th>Equipment / Asset</th><th>Certifying Body</th><th>Issue Date</th><th>Expiry Date</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Cert No.</th><th>Type</th><th>Equipment / Person</th><th>Certifying Body</th><th>Issue Date</th><th>Expiry Date</th><th>Status</th><th></th></tr></thead>
             <tbody>
             {% for record in certificate_records %}
                 {% set status = certificate_expiry_status(record.expiry_date) %}
                 <tr>
                     <td><strong>{{ record.cert_no }}</strong><small>{{ record.certificate_number }}</small></td>
-                    <td>{{ record.asset_name }}</td>
+                    <td>{{ certificate_types.get(record.certificate_type, record.certificate_type) }}{% if record.certificate_type == 'personnel' and record.holder_role %}<small>{{ record.holder_role }}</small>{% endif %}</td>
+                    <td>{{ record.subject_name }}</td>
                     <td>{{ record.certifying_body }}</td>
                     <td>{{ record.issue_date }}</td>
                     <td>{{ record.expiry_date }}</td>
@@ -439,7 +440,7 @@
                     <td><a class="row-link" href="{{ url_for('certificate_detail', record_id=record.id, back=request.query_string.decode()) }}">View record</a></td>
                 </tr>
             {% else %}
-                <tr><td colspan="7" class="empty-state">No certificates found.</td></tr>
+                <tr><td colspan="8" class="empty-state">No certificates found.</td></tr>
             {% endfor %}
             </tbody>
         </table>

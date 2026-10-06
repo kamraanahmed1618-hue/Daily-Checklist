@@ -171,7 +171,9 @@ class ChecklistApplicationTests(unittest.TestCase):
 
     def certificate_payload(self, **overrides):
         payload = {
-            "assetName": "Mobile Crane CR-14",
+            "certificateType": "equipment",
+            "holderRole": "",
+            "subjectName": "Mobile Crane CR-14",
             "certifyingBody": "TÜV SÜD",
             "certificateNumber": "TUV-2026-00123",
             "uploadedBy": "Ali (Safety Officer)",
@@ -180,6 +182,14 @@ class ChecklistApplicationTests(unittest.TestCase):
             "notes": "Annual lifting equipment certification.",
             "fileKey": "uploads/tokcert1/aaaaaaaaaaaaaaaaaaaa.pdf",
         }
+        payload.update(overrides)
+        return payload
+
+    def personnel_certificate_payload(self, **overrides):
+        payload = self.certificate_payload(
+            certificateType="personnel", holderRole="Flagman", subjectName="Ahmed Khan",
+            certificateNumber="FLAG-2026-00456",
+        )
         payload.update(overrides)
         return payload
 
@@ -840,7 +850,7 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.login()
         response = self.client.post("/api/certificates", json=self.certificate_payload())
         record_id = response.json["id"]
-        updated = self.certificate_payload(assetName="Tower Crane TC-07")
+        updated = self.certificate_payload(subjectName="Tower Crane TC-07")
         self.client.post(f"/admin/certificates/{record_id}/edit", data=updated)
         with database() as connection:
             cursor = connection.cursor()
@@ -848,19 +858,53 @@ class ChecklistApplicationTests(unittest.TestCase):
             row = cursor.fetchone()
             cursor.execute("SELECT * FROM audit_log WHERE record_type = 'certificate' AND action = 'updated'")
             audit_row = cursor.fetchone()
-        self.assertEqual(row["asset_name"], "Tower Crane TC-07")
+        self.assertEqual(row["subject_name"], "Tower Crane TC-07")
         self.assertIsNotNone(audit_row)
 
     def test_certificate_edit_does_not_touch_file_key(self):
         payload = self.certificate_payload()
         record_id = self.client.post("/api/certificates", json=payload).json["id"]
         self.login()
-        self.client.post(f"/admin/certificates/{record_id}/edit", data=self.certificate_payload(assetName="Renamed Asset"))
+        self.client.post(f"/admin/certificates/{record_id}/edit", data=self.certificate_payload(subjectName="Renamed Asset"))
         with database() as connection:
             cursor = connection.cursor()
             cursor.execute("SELECT file_key FROM certificates WHERE id = ?", [record_id])
             row = cursor.fetchone()
         self.assertEqual(row["file_key"], payload["fileKey"])
+
+    def test_certificate_rejects_invalid_type(self):
+        payload = self.certificate_payload(certificateType="not-a-real-type")
+        response = self.client.post("/api/certificates", json=payload)
+        self.assertEqual(response.status_code, 400)
+
+    def test_personnel_certificate_requires_role(self):
+        payload = self.personnel_certificate_payload(holderRole="")
+        response = self.client.post("/api/certificates", json=payload)
+        self.assertEqual(response.status_code, 400)
+
+    def test_submit_personnel_certificate(self):
+        response = self.client.post("/api/certificates", json=self.personnel_certificate_payload())
+        self.assertEqual(response.status_code, 201)
+        record_id = response.json["id"]
+
+        self.login()
+        dashboard = self.client.get("/admin?view=certificates")
+        self.assertIn(b"Flagman", dashboard.data)
+        self.assertIn(b"Ahmed Khan", dashboard.data)
+        detail = self.client.get(f"/admin/certificates/{record_id}")
+        self.assertEqual(detail.status_code, 200)
+        self.assertIn(b"Flagman", detail.data)
+        self.assertIn(b"Ahmed Khan", detail.data)
+
+    def test_equipment_certificate_ignores_submitted_role(self):
+        # certificate_type "equipment" should clear any role text even if the client sent one.
+        response = self.client.post("/api/certificates", json=self.certificate_payload(holderRole="Flagman"))
+        record_id = response.json["id"]
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT holder_role FROM certificates WHERE id = ?", [record_id])
+            row = cursor.fetchone()
+        self.assertEqual(row["holder_role"], "")
 
     def test_violation_requires_employee_name(self):
         payload = self.violation_payload()

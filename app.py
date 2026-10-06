@@ -753,7 +753,9 @@ def init_db() -> None:
             id TEXT PRIMARY KEY,
             seq INTEGER,
             cert_no TEXT NOT NULL UNIQUE,
-            asset_name TEXT NOT NULL,
+            certificate_type TEXT NOT NULL DEFAULT 'equipment',
+            holder_role TEXT NOT NULL DEFAULT '',
+            subject_name TEXT NOT NULL,
             certifying_body TEXT NOT NULL,
             certificate_number TEXT NOT NULL,
             issue_date TEXT NOT NULL,
@@ -815,6 +817,8 @@ def init_db() -> None:
         ensure_column("violation_notices", "rel_department", "TEXT NOT NULL DEFAULT ''")
         ensure_column("violation_notices", "penalty", "TEXT NOT NULL DEFAULT ''")
         ensure_column("violation_notices", "subcontractor_discount_value", "TEXT NOT NULL DEFAULT ''")
+        ensure_column("certificates", "certificate_type", "TEXT NOT NULL DEFAULT 'equipment'")
+        ensure_column("certificates", "holder_role", "TEXT NOT NULL DEFAULT ''")
         # Backfill sequential numbers for any pre-existing records in submission order.
         for table in ("inspections", "near_miss_reports", "violation_notices", "ptw_logs", "training_logs", "good_practices", "certificates", "weekly_tasks"):
             cursor.execute(sql(f"SELECT COALESCE(MAX(seq), 0) AS next_seq FROM {table}"))
@@ -1017,6 +1021,11 @@ GOOD_PRACTICE_CATEGORIES = [
     "Teamwork & Communication", "Other",
 ]
 CERTIFYING_BODIES = ["TÜV SÜD", "TÜV Rheinland", "TÜV NORD", "Bureau Veritas", "SGS", "DNV", "Intertek"]
+CERTIFICATE_TYPES = {"equipment": "Equipment / Asset", "personnel": "Personnel"}
+PERSONNEL_CERTIFICATE_ROLES = [
+    "Flagman", "Fire Warden", "Banksman", "Scaffolder", "Rigger", "Lifting Supervisor",
+    "First Aider", "Confined Space Attendant", "Crane Operator", "Heavy Equipment Operator",
+]
 
 
 def clean_choices(value: Any, field: str, allowed: list[str]) -> list[str]:
@@ -1298,6 +1307,14 @@ def validate_good_practice(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def validate_certificate(payload: dict[str, Any]) -> dict[str, Any]:
+    certificate_type = clean_text(payload.get("certificateType"), "Certificate type", 20)
+    if certificate_type not in CERTIFICATE_TYPES:
+        raise ValueError("Select a valid certificate type.")
+    holder_role = clean_text(payload.get("holderRole"), "Role", 80, False)
+    if certificate_type == "personnel" and not holder_role:
+        raise ValueError("Enter the certificate holder's role (e.g. Flagman, Fire Warden).")
+    if certificate_type == "equipment":
+        holder_role = ""
     issue_date = clean_date(payload.get("issueDate"), "Issue date")
     expiry_date = clean_date(payload.get("expiryDate"), "Expiry date")
     if expiry_date < issue_date:
@@ -1305,8 +1322,11 @@ def validate_certificate(payload: dict[str, Any]) -> dict[str, Any]:
     file_key = clean_certificate_file_key(payload.get("fileKey"))
     if not file_key:
         raise ValueError("Upload the certificate file.")
+    subject_label = "Person's name" if certificate_type == "personnel" else "Equipment / asset name"
     return {
-        "asset_name": clean_text(payload.get("assetName"), "Equipment / asset name"),
+        "certificate_type": certificate_type,
+        "holder_role": holder_role,
+        "subject_name": clean_text(payload.get("subjectName"), subject_label),
         "certifying_body": clean_text(payload.get("certifyingBody"), "Certifying body", 200),
         "certificate_number": clean_text(payload.get("certificateNumber"), "Certificate number", 120),
         "issue_date": issue_date,
@@ -1557,7 +1577,7 @@ def paginated_good_practices() -> tuple[list[dict[str, Any]], int, int, int]:
     return filtered_rows_page("good_practices", ["report_no", "observed_by", "project_name", "location", "category"], "practice_date")
 
 
-CERTIFICATE_SEARCH_COLUMNS = ["cert_no", "asset_name", "certifying_body", "certificate_number", "uploaded_by"]
+CERTIFICATE_SEARCH_COLUMNS = ["cert_no", "subject_name", "holder_role", "certifying_body", "certificate_number", "uploaded_by"]
 
 
 def filtered_certificates(limit: int = 1000) -> list[dict[str, Any]]:
@@ -1951,7 +1971,10 @@ def good_practice_form() -> str:
 
 @app.get("/certificates")
 def certificate_form() -> str:
-    return render_template("certificate.html", certifying_bodies=CERTIFYING_BODIES)
+    return render_template(
+        "certificate.html", certifying_bodies=CERTIFYING_BODIES,
+        certificate_types=CERTIFICATE_TYPES, personnel_roles=PERSONNEL_CERTIFICATE_ROLES,
+    )
 
 
 @app.get("/ptw")
@@ -2601,13 +2624,13 @@ def submit_certificate() -> tuple[Response, int] | Response:
             seq = cursor.fetchone()["next_seq"]
             cert_no = f"CERT-{seq:03d}"
             values = [
-                record_id, seq, cert_no, record["asset_name"], record["certifying_body"],
-                record["certificate_number"], record["issue_date"], record["expiry_date"],
+                record_id, seq, cert_no, record["certificate_type"], record["holder_role"], record["subject_name"],
+                record["certifying_body"], record["certificate_number"], record["issue_date"], record["expiry_date"],
                 record["notes"], record["file_key"], record["uploaded_by"], created_at,
             ]
             columns = (
-                "id, seq, cert_no, asset_name, certifying_body, certificate_number, "
-                "issue_date, expiry_date, notes, file_key, uploaded_by, created_at"
+                "id, seq, cert_no, certificate_type, holder_role, subject_name, certifying_body, "
+                "certificate_number, issue_date, expiry_date, notes, file_key, uploaded_by, created_at"
             )
             placeholders = ",".join("?" for _ in values)
             cursor.execute(sql(f"INSERT INTO certificates ({columns}) VALUES ({placeholders})"), values)
@@ -2740,6 +2763,7 @@ def admin() -> str | Response:
         good_practice_records=good_practice_records,
         certificate_records=certificate_records,
         certificate_expiry_status=certificate_expiry_status,
+        certificate_types=CERTIFICATE_TYPES,
         trends=trends,
         trend_charts=trend_charts,
         daily_kpi_rows=daily_kpi_rows,
@@ -3448,12 +3472,14 @@ def certificate_detail(record_id: str) -> str | tuple[str, int]:
     file_urls = photo_urls([record["file_key"]]) if record["file_key"] else []
     return render_template(
         "certificate_record.html", record=record, file_url=(file_urls[0] if file_urls else None),
-        expiry_status=certificate_expiry_status(record["expiry_date"]), back=request.args.get("back", ""),
+        expiry_status=certificate_expiry_status(record["expiry_date"]), certificate_types=CERTIFICATE_TYPES,
+        back=request.args.get("back", ""),
     )
 
 
 CERTIFICATE_FORM_FIELDS = {
-    "assetName": "asset_name", "certifyingBody": "certifying_body", "certificateNumber": "certificate_number",
+    "certificateType": "certificate_type", "holderRole": "holder_role", "subjectName": "subject_name",
+    "certifyingBody": "certifying_body", "certificateNumber": "certificate_number",
     "issueDate": "issue_date", "expiryDate": "expiry_date", "uploadedBy": "uploaded_by", "notes": "notes",
 }
 
@@ -3477,18 +3503,22 @@ def certificate_edit(record_id: str) -> str | tuple[str, int] | Response:
             with database() as connection:
                 cursor = connection.cursor()
                 cursor.execute(sql(
-                    "UPDATE certificates SET asset_name=?, certifying_body=?, certificate_number=?, "
-                    "issue_date=?, expiry_date=?, uploaded_by=?, notes=? WHERE id=?"
+                    "UPDATE certificates SET certificate_type=?, holder_role=?, subject_name=?, certifying_body=?, "
+                    "certificate_number=?, issue_date=?, expiry_date=?, uploaded_by=?, notes=? WHERE id=?"
                 ), [
-                    updated["asset_name"], updated["certifying_body"], updated["certificate_number"],
-                    updated["issue_date"], updated["expiry_date"], updated["uploaded_by"], updated["notes"], record_id,
+                    updated["certificate_type"], updated["holder_role"], updated["subject_name"],
+                    updated["certifying_body"], updated["certificate_number"], updated["issue_date"],
+                    updated["expiry_date"], updated["uploaded_by"], updated["notes"], record_id,
                 ])
             log_audit("updated", "certificate", record["cert_no"])
             return redirect(url_for("certificate_detail", record_id=record_id))
         except ValueError as err:
             error = str(err)
             record = {**record, **{db_key: form_payload[form_key] for form_key, db_key in CERTIFICATE_FORM_FIELDS.items()}}
-    return render_template("certificate_edit.html", record=record, certifying_bodies=CERTIFYING_BODIES, error=error)
+    return render_template(
+        "certificate_edit.html", record=record, certifying_bodies=CERTIFYING_BODIES,
+        certificate_types=CERTIFICATE_TYPES, personnel_roles=PERSONNEL_CERTIFICATE_ROLES, error=error,
+    )
 
 
 @app.post("/admin/certificates/<record_id>/delete")
@@ -4244,12 +4274,13 @@ def certificates_csv(records: list[dict[str, Any]]) -> str:
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow([
-        "Cert No.", "Equipment / Asset", "Certifying Body", "Certificate Number",
-        "Issue Date", "Expiry Date", "Status", "Uploaded By", "Notes", "Submitted At",
+        "Cert No.", "Type", "Subject (Equipment / Person)", "Role (Personnel)", "Certifying Body",
+        "Certificate Number", "Issue Date", "Expiry Date", "Status", "Uploaded By", "Notes", "Submitted At",
     ])
     for record in records:
         writer.writerow([
-            record["cert_no"], record["asset_name"], record["certifying_body"], record["certificate_number"],
+            record["cert_no"], CERTIFICATE_TYPES.get(record["certificate_type"], record["certificate_type"]),
+            record["subject_name"], record["holder_role"], record["certifying_body"], record["certificate_number"],
             record["issue_date"], record["expiry_date"], certificate_expiry_status(record["expiry_date"]),
             record["uploaded_by"], record["notes"], record["created_at"],
         ])

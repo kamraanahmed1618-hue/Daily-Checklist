@@ -27,7 +27,8 @@
         </span>
       </td>
     </tr>
-    <tr><td class="info-label tan">Equipment / Asset:</td><td>{{ record.asset_name }}</td><td class="info-label tan">Certifying Body:</td><td>{{ record.certifying_body }}</td></tr>
+    <tr><td class="info-label tan">Type:</td><td>{{ certificate_types.get(record.certificate_type, record.certificate_type) }}</td><td class="info-label tan">{{ 'Role:' if record.certificate_type == 'personnel' else '' }}</td><td>{{ record.holder_role if record.certificate_type == 'personnel' else '' }}</td></tr>
+    <tr><td class="info-label tan">{{ 'Name:' if record.certificate_type == 'personnel' else 'Equipment / Asset:' }}</td><td>{{ record.subject_name }}</td><td class="info-label tan">Certifying Body:</td><td>{{ record.certifying_body }}</td></tr>
     <tr><td class="info-label tan">Certificate Number:</td><td>{{ record.certificate_number }}</td><td class="info-label tan">Uploaded By:</td><td>{{ record.uploaded_by }}</td></tr>
     <tr><td class="info-label tan">Issue Date:</td><td>{{ record.issue_date }}</td><td class="info-label tan">Expiry Date:</td><td>{{ record.expiry_date }}</td></tr>
   </table>

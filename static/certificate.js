@@ -5,10 +5,26 @@ const errorBox = document.getElementById("form-error");
 const successPanel = document.getElementById("success-panel");
 const successCopy = document.getElementById("success-copy");
 const fileUpload = initCertificateUpload("certificate-file-upload");
+const typeSelect = document.getElementById("certificate-type");
+const holderRoleField = document.getElementById("holder-role-field");
+const subjectNameLabel = document.getElementById("subject-name-label");
 
 function field(name) {
   return form.elements.namedItem(name);
 }
+
+function syncCertificateTypeFields() {
+  const isPersonnel = typeSelect.value === "personnel";
+  holderRoleField.classList.toggle("hidden", !isPersonnel);
+  field("holderRole").required = isPersonnel;
+  if (!isPersonnel) field("holderRole").value = "";
+  subjectNameLabel.innerHTML = isPersonnel
+    ? 'Person’s name <b>*</b>'
+    : 'Equipment / Asset name <b>*</b>';
+}
+
+typeSelect?.addEventListener("change", syncCertificateTypeFields);
+syncCertificateTypeFields();
 
 function showError(message) {
   errorBox.textContent = message;
@@ -28,7 +44,9 @@ async function submitCertificate(event) {
   }
 
   const payload = {
-    assetName: field("assetName").value,
+    certificateType: field("certificateType").value,
+    holderRole: field("holderRole").value,
+    subjectName: field("subjectName").value,
     certifyingBody: field("certifyingBody").value,
     certificateNumber: field("certificateNumber").value,
     uploadedBy: field("uploadedBy").value,
