@@ -4135,6 +4135,26 @@ def handle_unexpected_error(error: Exception) -> Any:
     return jsonify({"error": "Internal Server Error"}), 500
 
 
+def ensure_database_configured() -> None:
+    """Refuse to boot against a disposable local SQLite file in production.
+
+    `database()` silently falls back to local SQLite when DATABASE_URL is
+    unset — convenient for local dev/tests, but on Render that file lives on
+    the service's ephemeral disk. A missing/misconfigured DATABASE_URL would
+    otherwise look like everything is working while every record written
+    before the next restart or redeploy quietly vanishes with no error shown
+    anywhere. RENDER is set automatically on every Render service, so this
+    only fires there — local dev and the test suite are unaffected.
+    """
+    if os.environ.get("RENDER") and not os.environ.get("DATABASE_URL"):
+        raise RuntimeError(
+            "DATABASE_URL is not set. Refusing to start on Render without it — "
+            "falling back to local SQLite here would silently lose data on the "
+            "next restart or redeploy."
+        )
+
+
+ensure_database_configured()
 init_db()
 
 if __name__ == "__main__":
