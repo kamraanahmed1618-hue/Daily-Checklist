@@ -512,17 +512,31 @@ def good_practice_pdf_bytes(record: dict[str, Any], photo_cache: "PhotoCache | N
     ))
 
 
+BUNDLE_FETCH_MAX_WORKERS = 16
+
+
 def build_bundle_zip(
     csv_filename: str, csv_text: str, pdf_entries: list[tuple[str, bytes]], photo_entries: list[tuple[str, str]],
     photo_cache: "PhotoCache | None" = None,
 ) -> bytes:
+    # Fetched concurrently, same reasoning as record_photos() — these bundles can cover
+    # hundreds of photos across many records, and fetching them one at a time from B2 is
+    # exactly what used to make the combined PDF+photo backup "slow/heavy enough to time
+    # out or crash on Render" (see backup_all()'s docstring). Writing to the zip itself
+    # stays single-threaded afterward; zipfile.ZipFile isn't safe to write to concurrently.
+    fetched_photos: list[tuple[str, tuple[bytes, str] | None]] = []
+    if photo_entries:
+        with ThreadPoolExecutor(max_workers=min(BUNDLE_FETCH_MAX_WORKERS, len(photo_entries))) as executor:
+            fetched_photos = list(executor.map(
+                lambda entry: (entry[0], cached_fetch_photo_bytes(entry[1], photo_cache)), photo_entries,
+            ))
+
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr(csv_filename, "﻿" + csv_text)
         for archive_path, pdf_bytes in pdf_entries:
             archive.writestr(f"{archive_path}.pdf", pdf_bytes)
-        for archive_path, key in photo_entries:
-            fetched = cached_fetch_photo_bytes(key, photo_cache)
+        for archive_path, fetched in fetched_photos:
             if not fetched:
                 continue
             data, extension = fetched
@@ -533,11 +547,16 @@ def build_bundle_zip(
 
 def build_photos_zip(entries: list[tuple[str, str]]) -> bytes:
     """entries: (archive_path_without_extension, b2_key) pairs. A key that fails to
-    download is skipped rather than failing the whole export."""
+    download is skipped rather than failing the whole export. Fetched concurrently —
+    see build_bundle_zip's comment."""
+    fetched_photos: list[tuple[str, tuple[bytes, str] | None]] = []
+    if entries:
+        with ThreadPoolExecutor(max_workers=min(BUNDLE_FETCH_MAX_WORKERS, len(entries))) as executor:
+            fetched_photos = list(executor.map(lambda entry: (entry[0], fetch_photo_bytes(entry[1])), entries))
+
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        for archive_path, key in entries:
-            fetched = fetch_photo_bytes(key)
+        for archive_path, fetched in fetched_photos:
             if not fetched:
                 continue
             data, extension = fetched
