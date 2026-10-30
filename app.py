@@ -15,6 +15,7 @@ import sqlite3
 import traceback
 import warnings
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from email.message import EmailMessage
 from datetime import date, datetime, timedelta, timezone
@@ -353,7 +354,7 @@ def record_pdf_html(
         rows = ""
         for index in range(0, len(photos), 2):
             pair = photos[index:index + 2]
-            cells = "".join(f'<td><img src="{photo_data_uri(*resized_photo_for_pdf(data, extension))}"></td>' for data, extension in pair)
+            cells = "".join(f'<td><img src="{photo_data_uri(data, extension)}"></td>' for data, extension in pair)
             if len(pair) == 1:
                 cells += "<td></td>"
             rows += f"<tr>{cells}</tr>"
@@ -408,8 +409,25 @@ def cached_fetch_photo_bytes(key: str, cache: "PhotoCache | None") -> tuple[byte
 
 
 def record_photos(keys: list[str], cache: "PhotoCache | None" = None) -> list[tuple[bytes, str]]:
-    fetched = [cached_fetch_photo_bytes(key, cache) for key in keys]
-    return [item for item in fetched if item]
+    """Fetches each photo from B2 and downscales it for PDF embedding — both steps run
+    concurrently across photos instead of one at a time. Sequentially, a handful of
+    full-size phone photos combined B2's per-request network latency with Pillow's
+    resize cost badly enough that downloading a PDF could take several seconds; network
+    waits overlap across threads, and Pillow's own resize/encode releases the GIL during
+    the actual work, so both stages benefit. The shared `cache` still stores original
+    (not resized) bytes — build_bundle_zip reuses it to avoid a second download when the
+    same photo also goes into a zip as a raw file, so resizing happens only on this
+    function's own return value, never written back into the cache."""
+    if not keys:
+        return []
+
+    def fetch_and_resize(key: str) -> tuple[bytes, str] | None:
+        fetched = cached_fetch_photo_bytes(key, cache)
+        return resized_photo_for_pdf(*fetched) if fetched else None
+
+    with ThreadPoolExecutor(max_workers=min(8, len(keys))) as executor:
+        results = list(executor.map(fetch_and_resize, keys))
+    return [item for item in results if item]
 
 
 def near_miss_pdf_bytes(record: dict[str, Any], photo_cache: "PhotoCache | None" = None) -> bytes:
