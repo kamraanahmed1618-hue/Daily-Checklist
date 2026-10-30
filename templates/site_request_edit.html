@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}{{ record.request_no }} · Edit Site Request{% endblock %}
+{% block body_class %}form-page{% endblock %}
+{% block content %}
+<section class="record-toolbar no-print">
+  <a class="text-link" href="{{ url_for('site_request_detail', record_id=record.id) }}">← Back to record</a>
+</section>
+
+<section class="hero">
+  <div>
+    <span class="eyebrow">Site request</span>
+    <h1>{{ record.request_no }}</h1>
+    <p>Update the details, or change the status once you've raised it in ePromise.</p>
+  </div>
+</section>
+
+{% if error %}<div class="form-error" role="alert">{{ error }}</div>{% endif %}
+
+<form method="post">
+  <section class="card">
+    <div class="section-heading">
+      <div><span class="step-number">01</span><h2>Request details</h2></div>
+      <p>Fields marked <span class="required">*</span> are required</p>
+    </div>
+    <div class="field-grid">
+      <label><span>Department <b>*</b></span>
+        <select name="department" required>
+          {% for department in departments %}<option value="{{ department }}" {{ 'selected' if department == record.department }}>{{ department }}</option>{% endfor %}
+        </select>
+      </label>
+      <label><span>Requested by <b>*</b></span><input name="requestedBy" required maxlength="200" value="{{ record.requested_by }}"></label>
+      <label><span>Item required <b>*</b></span><input name="item" required maxlength="300" value="{{ record.item }}"></label>
+      <label><span>Quantity <b>*</b></span><input name="quantity" required maxlength="60" value="{{ record.quantity }}"></label>
+      <label><span>Urgency <b>*</b></span>
+        <select name="urgency" required>
+          {% for level in urgency_levels %}<option value="{{ level }}" {{ 'selected' if level == record.urgency }}>{{ level }}</option>{% endfor %}
+        </select>
+      </label>
+      <label><span>Status <b>*</b></span>
+        <select name="status" required>
+          {% for key, label in statuses.items() %}<option value="{{ key }}" {{ 'selected' if key == record.status }}>{{ label }}</option>{% endfor %}
+        </select>
+      </label>
+    </div>
+    <div class="field-grid one-col">
+      <label><span>Notes</span><textarea name="notes" rows="3" maxlength="2000">{{ record.notes }}</textarea></label>
+    </div>
+  </section>
+
+  <div class="submit-bar">
+    <div><strong>{{ record.request_no }}</strong></div>
+    <button class="button primary submit-button" type="submit">Save changes</button>
+  </div>
+</form>
+{% endblock %}

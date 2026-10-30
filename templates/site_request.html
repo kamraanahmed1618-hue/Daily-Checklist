@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Site Request · 1 Hotel Diriyah OHS{% endblock %}
+{% block body_class %}form-page{% endblock %}
+{% block content %}
+<section class="hero">
+  <div>
+    <div class="partner-logos">
+      <img src="{{ url_for('static', filename='egis.png') }}" alt="Egis">
+      <img src="{{ url_for('static', filename='dewan.png') }}" alt="Dewan">
+      <img src="{{ url_for('static', filename='bec-ashoka.png') }}" alt="BEC Ashoka">
+    </div>
+    <span class="eyebrow">Daily site assurance</span>
+    <h1>Site Request</h1>
+    <p>Request something you need on site — your coordinator reviews it here and takes care of raising it in ePromise.</p>
+  </div>
+</section>
+
+<div id="success-panel" class="success-panel hidden" role="status" aria-live="polite">
+  <span class="success-icon">✓</span>
+  <div>
+    <span class="eyebrow">Request logged</span>
+    <h2>Site request submitted</h2>
+    <p id="success-copy"></p>
+    <button class="button primary" id="new-report" type="button">Log another request</button>
+  </div>
+</div>
+
+<form id="site-request-form" novalidate>
+  <section class="card">
+    <div class="section-heading">
+      <div><span class="step-number">01</span><h2>Request details</h2></div>
+      <p>Fields marked <span class="required">*</span> are required</p>
+    </div>
+    <div class="field-grid">
+      <label><span>Department <b>*</b></span>
+        <select name="department" required>
+          {% for department in departments %}<option value="{{ department }}" {{ 'selected' if department == default_department }}>{{ department }}</option>{% endfor %}
+        </select>
+      </label>
+      <label><span>Requested by <b>*</b></span><input name="requestedBy" required maxlength="200"></label>
+      <label><span>Item required <b>*</b></span><input name="item" required maxlength="300" placeholder="e.g. Safety harnesses"></label>
+      <label><span>Quantity <b>*</b></span><input name="quantity" required maxlength="60" placeholder="e.g. 10 pcs"></label>
+      <label><span>Urgency <b>*</b></span>
+        <select name="urgency" required>
+          <option value="">Select</option>
+          {% for level in urgency_levels %}<option value="{{ level }}">{{ level }}</option>{% endfor %}
+        </select>
+      </label>
+    </div>
+    <div class="field-grid one-col">
+      <label><span>Notes</span><textarea name="notes" rows="3" maxlength="2000" placeholder="Anything else that helps — spec, size, where it's needed"></textarea></label>
+    </div>
+  </section>
+
+  <div id="form-error" class="form-error hidden" role="alert"></div>
+  <div class="submit-bar">
+    <div><strong>Site request</strong><span>Submit to add it to the records dashboard</span></div>
+    <button class="button primary submit-button" type="submit">Submit request</button>
+  </div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='site_request.js') }}" defer></script>
+{% endblock %}

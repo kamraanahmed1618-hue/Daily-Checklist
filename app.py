@@ -809,6 +809,22 @@ def init_db() -> None:
         )""",
         "CREATE INDEX IF NOT EXISTS certificates_expiry_idx ON certificates (expiry_date)",
         "CREATE INDEX IF NOT EXISTS certificates_created_idx ON certificates (created_at)",
+        """CREATE TABLE IF NOT EXISTS site_requests (
+            id TEXT PRIMARY KEY,
+            seq INTEGER,
+            request_no TEXT NOT NULL UNIQUE,
+            department TEXT NOT NULL,
+            item TEXT NOT NULL,
+            quantity TEXT NOT NULL,
+            requested_by TEXT NOT NULL,
+            urgency TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            notes TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )""",
+        "CREATE INDEX IF NOT EXISTS site_requests_status_idx ON site_requests (status)",
+        "CREATE INDEX IF NOT EXISTS site_requests_created_idx ON site_requests (created_at)",
         """CREATE TABLE IF NOT EXISTS weekly_tasks (
             id TEXT PRIMARY KEY,
             seq INTEGER,
@@ -863,7 +879,7 @@ def init_db() -> None:
         ensure_column("certificates", "holder_role", "TEXT NOT NULL DEFAULT ''")
         ensure_column("ptw_logs", "photos", "TEXT NOT NULL DEFAULT '[]'")
         # Backfill sequential numbers for any pre-existing records in submission order.
-        for table in ("inspections", "near_miss_reports", "violation_notices", "ptw_logs", "training_logs", "good_practices", "certificates", "weekly_tasks"):
+        for table in ("inspections", "near_miss_reports", "violation_notices", "ptw_logs", "training_logs", "good_practices", "certificates", "site_requests", "weekly_tasks"):
             cursor.execute(sql(f"SELECT COALESCE(MAX(seq), 0) AS next_seq FROM {table}"))
             next_seq = cursor.fetchone()["next_seq"] or 0
             cursor.execute(sql(f"SELECT id FROM {table} WHERE seq IS NULL ORDER BY created_at ASC"))
@@ -1058,6 +1074,8 @@ TRAINING_TYPE_LABELS = {
     "Induction": "Induction", "TBT": "TBT (Toolbox Talk)", "Mass TBT": "Mass TBT (large combined session)",
     "Specific Training": "Specific Training",
 }
+SITE_REQUEST_URGENCY_LEVELS = ["Normal", "Urgent"]
+SITE_REQUEST_STATUSES = {"pending": "Pending", "submitted": "Submitted to ePromise", "fulfilled": "Fulfilled"}
 GOOD_PRACTICE_CATEGORIES = [
     "Housekeeping", "PPE Compliance", "Safe Use of Tools & Equipment", "Proper Lifting / Ergonomics",
     "Barricading & Signage", "Emergency Preparedness", "Environmental Practice",
@@ -1422,6 +1440,24 @@ def validate_certificate(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def validate_site_request(payload: dict[str, Any]) -> dict[str, Any]:
+    urgency = clean_text(payload.get("urgency"), "Urgency", 20)
+    if urgency not in SITE_REQUEST_URGENCY_LEVELS:
+        raise ValueError("Select a valid urgency.")
+    status = clean_text(payload.get("status"), "Status", 20, False) or "pending"
+    if status not in SITE_REQUEST_STATUSES:
+        raise ValueError("Select a valid status.")
+    return {
+        "department": clean_text(payload.get("department"), "Department", 200),
+        "item": clean_text(payload.get("item"), "Item required", 300),
+        "quantity": clean_text(payload.get("quantity"), "Quantity", 60),
+        "requested_by": clean_text(payload.get("requestedBy"), "Requested by", 200),
+        "urgency": urgency,
+        "status": status,
+        "notes": clean_text(payload.get("notes"), "Notes", 2000, False),
+    }
+
+
 def week_start_for(value: date) -> date:
     """Snaps any date to the Saturday that starts its on-site work week, so tasks
     entered against any day of a week still group under one consistent week_start."""
@@ -1673,6 +1709,42 @@ def paginated_certificates() -> tuple[list[dict[str, Any]], int, int, int]:
     return filtered_rows_page("certificates", CERTIFICATE_SEARCH_COLUMNS, "issue_date")
 
 
+SITE_REQUEST_SEARCH_COLUMNS = ["request_no", "department", "item", "requested_by"]
+
+
+def filtered_site_requests(limit: int = 1000) -> list[dict[str, Any]]:
+    return filtered_rows("site_requests", SITE_REQUEST_SEARCH_COLUMNS, "created_at", limit)
+
+
+def paginated_site_requests() -> tuple[list[dict[str, Any]], int, int, int]:
+    return filtered_rows_page("site_requests", SITE_REQUEST_SEARCH_COLUMNS, "created_at")
+
+
+def paginated_open_site_requests(page_size: int = PAGE_SIZE) -> tuple[list[dict[str, Any]], int, int, int]:
+    """Like paginated_site_requests, but scoped to not-yet-fulfilled requests, most
+    urgent and most recent first — what the homepage's "open requests" tile links to."""
+    where, params = _filter_clause(SITE_REQUEST_SEARCH_COLUMNS, "created_at")
+    where = f"{where} AND status != 'fulfilled'" if where else " WHERE status != 'fulfilled'"
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql(f"SELECT COUNT(*) AS c FROM site_requests{where}"), params)
+        total_count = cursor.fetchone()["c"]
+        total_pages = max(1, math.ceil(total_count / page_size))
+        page_arg = request.args.get("page", "1")
+        page = int(page_arg) if page_arg.isdigit() else 1
+        page = min(max(1, page), total_pages)
+        offset = (page - 1) * page_size
+        cursor.execute(
+            sql(
+                f"SELECT * FROM site_requests{where} "
+                "ORDER BY (urgency = 'Urgent') DESC, created_at DESC LIMIT ? OFFSET ?"
+            ),
+            [*params, page_size, offset],
+        )
+        rows = cursor.fetchall()
+    return [dict(row) for row in rows], page, total_pages, total_count
+
+
 def record_counts() -> dict[str, int]:
     auto_close_expired_ptw()
     with database() as connection:
@@ -1693,10 +1765,15 @@ def record_counts() -> dict[str, int]:
         good_practices = cursor.fetchone()["c"]
         cursor.execute("SELECT COUNT(*) AS c FROM certificates")
         certificates = cursor.fetchone()["c"]
+        cursor.execute("SELECT COUNT(*) AS c FROM site_requests")
+        site_requests = cursor.fetchone()["c"]
+        cursor.execute(sql("SELECT COUNT(*) AS c FROM site_requests WHERE status != ?"), ["fulfilled"])
+        site_requests_open = cursor.fetchone()["c"]
     return {
         "inspections": inspections, "near_miss": near_miss, "violations": violations,
         "ptw": ptw, "ptw_open": ptw_open, "training": training, "good_practices": good_practices,
-        "certificates": certificates,
+        "site_requests": site_requests,
+        "certificates": certificates, "site_requests_open": site_requests_open,
     }
 
 
@@ -1736,6 +1813,8 @@ def weekly_record_counts() -> dict[str, int]:
         warning_cutoff = (datetime.now(SITE_TZ).date() + timedelta(days=CERTIFICATE_EXPIRY_WARNING_DAYS)).isoformat()
         cursor.execute(sql("SELECT COUNT(*) AS c FROM certificates WHERE expiry_date <= ?"), [warning_cutoff])
         certificates_attention = cursor.fetchone()["c"]
+        cursor.execute(sql("SELECT COUNT(*) AS c FROM site_requests WHERE status != ?"), ["fulfilled"])
+        site_requests_open = cursor.fetchone()["c"]
     week_end_display = (date.fromisoformat(week_end) - timedelta(days=1)).isoformat()
     inductions, inductions_attendees = training_by_type.get("Induction", (0, 0))
     trainings, trainings_attendees = training_by_type.get("Specific Training", (0, 0))
@@ -1750,6 +1829,7 @@ def weekly_record_counts() -> dict[str, int]:
         "tbts_attendees": tbts_attendees,
         "good_practices": good_practices,
         "certificates_attention": certificates_attention,
+        "site_requests_open": site_requests_open,
         "week_start": week_start, "week_end": week_end_display,
     }
 
@@ -2059,6 +2139,14 @@ def certificate_form() -> str:
     return render_template(
         "certificate.html", certifying_bodies=CERTIFYING_BODIES,
         certificate_types=CERTIFICATE_TYPES, personnel_roles=PERSONNEL_CERTIFICATE_ROLES,
+    )
+
+
+@app.get("/site-requests")
+def site_request_form() -> str:
+    return render_template(
+        "site_request.html", departments=HSE_DEPARTMENTS, default_department=HSE_DEFAULT_DEPARTMENT,
+        urgency_levels=SITE_REQUEST_URGENCY_LEVELS,
     )
 
 
@@ -2733,6 +2821,40 @@ def submit_certificate() -> tuple[Response, int] | Response:
         return jsonify({"error": "The certificate could not be saved."}), 500
 
 
+@app.post("/api/site-requests")
+def submit_site_request() -> tuple[Response, int] | Response:
+    try:
+        payload = request.get_json(force=True, silent=False)
+        if not isinstance(payload, dict):
+            raise ValueError("The request data is invalid.")
+        record = validate_site_request(payload)
+        record_id = secrets.token_hex(16)
+        now = datetime.now(timezone.utc).isoformat()
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute(sql("SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM site_requests"))
+            seq = cursor.fetchone()["next_seq"]
+            request_no = f"REQ-{seq:03d}"
+            values = [
+                record_id, seq, request_no, record["department"], record["item"], record["quantity"],
+                record["requested_by"], record["urgency"], record["notes"], now, now,
+            ]
+            columns = (
+                "id, seq, request_no, department, item, quantity, "
+                "requested_by, urgency, notes, created_at, updated_at"
+            )
+            placeholders = ",".join("?" for _ in values)
+            cursor.execute(sql(f"INSERT INTO site_requests ({columns}) VALUES ({placeholders})"), values)
+        return jsonify({"id": record_id, "requestNo": request_no}), 201
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+    except HTTPException:
+        raise
+    except Exception:
+        app.logger.exception("Site request submission failed")
+        return jsonify({"error": "The request could not be saved."}), 500
+
+
 @app.route("/admin", methods=["GET", "POST"])
 def admin() -> str | Response:
     error = ""
@@ -2750,7 +2872,7 @@ def admin() -> str | Response:
         return render_template("login.html", error=error, configured=configured)
 
     view = request.args.get("view", "inspections")
-    if view not in {"inspections", "near-miss", "violations", "ptw", "training", "good-practices", "certificates", "weekly-tasks", "daily-kpis", "trends"}:
+    if view not in {"inspections", "near-miss", "violations", "ptw", "training", "good-practices", "certificates", "site-requests", "weekly-tasks", "daily-kpis", "trends"}:
         view = "inspections"
 
     counts = record_counts()
@@ -2767,6 +2889,7 @@ def admin() -> str | Response:
     training_logs: list[dict[str, Any]] = []
     good_practice_records: list[dict[str, Any]] = []
     certificate_records: list[dict[str, Any]] = []
+    site_request_records: list[dict[str, Any]] = []
     trends: list[dict[str, Any]] = []
     daily_kpi_rows: list[dict[str, Any]] = []
     daily_kpi_from = daily_kpi_to = ""
@@ -2793,6 +2916,11 @@ def admin() -> str | Response:
         good_practice_records, page, total_pages, total_count = paginated_good_practices()
     elif view == "certificates":
         certificate_records, page, total_pages, total_count = paginated_certificates()
+    elif view == "site-requests":
+        if request.args.get("status") == "open":
+            site_request_records, page, total_pages, total_count = paginated_open_site_requests()
+        else:
+            site_request_records, page, total_pages, total_count = paginated_site_requests()
     elif view == "weekly-tasks":
         raw_week = request.args.get("week", "").strip()
         if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw_week):
@@ -2850,6 +2978,8 @@ def admin() -> str | Response:
         certificate_records=certificate_records,
         certificate_expiry_status=certificate_expiry_status,
         certificate_types=CERTIFICATE_TYPES,
+        site_request_records=site_request_records,
+        site_request_statuses=SITE_REQUEST_STATUSES,
         trends=trends,
         trend_charts=trend_charts,
         daily_kpi_rows=daily_kpi_rows,
@@ -2865,6 +2995,7 @@ def admin() -> str | Response:
         training_count=counts["training"],
         good_practices_count=counts["good_practices"],
         certificates_count=counts["certificates"],
+        site_requests_count=counts["site_requests"],
         training_type_labels=TRAINING_TYPE_LABELS,
         this_week_start=this_week_start, this_week_end=this_week_end,
         last_week_start=last_week_start, last_week_end=last_week_end,
@@ -3622,6 +3753,76 @@ def delete_certificate(record_id: str) -> Response | tuple[str, int]:
             delete_photos([row["file_key"]])
         log_audit("deleted", "certificate", row["cert_no"])
     return redirect(url_for("admin", view="certificates"))
+
+
+@app.get("/admin/site-requests/<record_id>")
+@admin_required
+def site_request_detail(record_id: str) -> str | tuple[str, int]:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT * FROM site_requests WHERE id = ?"), [record_id])
+        row = cursor.fetchone()
+    if not row:
+        return "Record not found", 404
+    return render_template(
+        "site_request_record.html", record=dict(row), statuses=SITE_REQUEST_STATUSES,
+        back=request.args.get("back", ""),
+    )
+
+
+SITE_REQUEST_FORM_FIELDS = {
+    "department": "department", "item": "item", "quantity": "quantity", "requestedBy": "requested_by",
+    "urgency": "urgency", "status": "status", "notes": "notes",
+}
+
+
+@app.route("/admin/site-requests/<record_id>/edit", methods=["GET", "POST"])
+@admin_required
+def site_request_edit(record_id: str) -> str | tuple[str, int] | Response:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT * FROM site_requests WHERE id = ?"), [record_id])
+        row = cursor.fetchone()
+    if not row:
+        return "Record not found", 404
+    record = dict(row)
+    error = ""
+    if request.method == "POST":
+        form_payload = {form_key: request.form.get(form_key) for form_key in SITE_REQUEST_FORM_FIELDS}
+        try:
+            updated = validate_site_request(form_payload)
+            with database() as connection:
+                cursor = connection.cursor()
+                cursor.execute(sql(
+                    "UPDATE site_requests SET department=?, item=?, quantity=?, requested_by=?, "
+                    "urgency=?, status=?, notes=?, updated_at=? WHERE id=?"
+                ), [
+                    updated["department"], updated["item"], updated["quantity"], updated["requested_by"],
+                    updated["urgency"], updated["status"], updated["notes"],
+                    datetime.now(timezone.utc).isoformat(), record_id,
+                ])
+            log_audit("updated", "site_request", record["request_no"])
+            return redirect(url_for("site_request_detail", record_id=record_id))
+        except ValueError as err:
+            error = str(err)
+            record = {**record, **{db_key: form_payload[form_key] for form_key, db_key in SITE_REQUEST_FORM_FIELDS.items()}}
+    return render_template(
+        "site_request_edit.html", record=record, departments=HSE_DEPARTMENTS,
+        urgency_levels=SITE_REQUEST_URGENCY_LEVELS, statuses=SITE_REQUEST_STATUSES, error=error,
+    )
+
+
+@app.post("/admin/site-requests/<record_id>/delete")
+@admin_required
+def delete_site_request(record_id: str) -> Response | tuple[str, int]:
+    with database() as connection:
+        cursor = connection.cursor()
+        cursor.execute(sql("SELECT request_no FROM site_requests WHERE id = ?"), [record_id])
+        row = cursor.fetchone()
+        cursor.execute(sql("DELETE FROM site_requests WHERE id = ?"), [record_id])
+    if row:
+        log_audit("deleted", "site_request", row["request_no"])
+    return redirect(url_for("admin", view="site-requests"))
 
 
 def insert_weekly_task(record: dict[str, Any]) -> str:
@@ -4383,6 +4584,30 @@ def export_certificates() -> Response:
     return Response("﻿" + csv_text, mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
+def site_requests_csv(records: list[dict[str, Any]]) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Request No.", "Department", "Item Required", "Quantity", "Requested By",
+        "Urgency", "Status", "Notes", "Submitted At", "Last Updated",
+    ])
+    for record in records:
+        writer.writerow([
+            record["request_no"], record["department"], record["item"], record["quantity"],
+            record["requested_by"], record["urgency"], SITE_REQUEST_STATUSES.get(record["status"], record["status"]),
+            record["notes"], record["created_at"], record["updated_at"],
+        ])
+    return output.getvalue()
+
+
+@app.get("/admin/export/site-requests")
+@admin_required
+def export_site_requests() -> Response:
+    csv_text = site_requests_csv(filtered_site_requests(limit=5000))
+    filename = f'diriyah-site-requests-{datetime.now(timezone.utc).date().isoformat()}.csv'
+    return Response("﻿" + csv_text, mimetype="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
 def certificate_bundle_zip_bytes() -> bytes:
     records = filtered_certificates(limit=5000)
     photo_entries = [
@@ -4470,6 +4695,7 @@ def backup_all() -> Response | tuple[Response, int]:
         archive.writestr(f"training-log-{today}.csv", "\ufeff" + training_csv(filtered_training(limit=5000)))
         archive.writestr(f"good-practices-{today}.csv", "\ufeff" + good_practices_csv(filtered_good_practices(limit=5000)))
         archive.writestr(f"certificates-{today}.csv", "\ufeff" + certificates_csv(filtered_certificates(limit=5000)))
+        archive.writestr(f"site-requests-{today}.csv", "\ufeff" + site_requests_csv(filtered_site_requests(limit=5000)))
     buffer.seek(0)
     filename = f"diriyah-ohs-backup-{today}.zip"
     return Response(buffer.getvalue(), mimetype="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})

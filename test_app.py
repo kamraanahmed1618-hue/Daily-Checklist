@@ -38,6 +38,7 @@ class ChecklistApplicationTests(unittest.TestCase):
             connection.execute("DELETE FROM training_logs")
             connection.execute("DELETE FROM good_practices")
             connection.execute("DELETE FROM certificates")
+            connection.execute("DELETE FROM site_requests")
             connection.execute("DELETE FROM weekly_tasks")
             connection.execute("DELETE FROM audit_log")
 
@@ -190,6 +191,18 @@ class ChecklistApplicationTests(unittest.TestCase):
             certificateType="personnel", holderRole="Flagman", subjectName="Ahmed Khan",
             certificateNumber="FLAG-2026-00456",
         )
+        payload.update(overrides)
+        return payload
+
+    def site_request_payload(self, **overrides):
+        payload = {
+            "department": "Health & Safety",
+            "requestedBy": "Ali (Safety Officer)",
+            "item": "Safety harnesses",
+            "quantity": "10 pcs",
+            "urgency": "Normal",
+            "notes": "Needed for scaffold crew.",
+        }
         payload.update(overrides)
         return payload
 
@@ -905,6 +918,87 @@ class ChecklistApplicationTests(unittest.TestCase):
             cursor.execute("SELECT holder_role FROM certificates WHERE id = ?", [record_id])
             row = cursor.fetchone()
         self.assertEqual(row["holder_role"], "")
+
+    def test_site_request_form_page_loads(self):
+        self.assertEqual(self.client.get("/site-requests").status_code, 200)
+
+    def test_site_request_requires_valid_urgency(self):
+        payload = self.site_request_payload(urgency="Not a real level")
+        response = self.client.post("/api/site-requests", json=payload)
+        self.assertEqual(response.status_code, 400)
+
+    def test_submit_review_and_export_site_request(self):
+        response = self.client.post("/api/site-requests", json=self.site_request_payload())
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json["requestNo"], "REQ-001")
+        record_id = response.json["id"]
+
+        self.login()
+        dashboard = self.client.get("/admin?view=site-requests")
+        self.assertIn(b"REQ-001", dashboard.data)
+        self.assertIn(b"Safety harnesses", dashboard.data)
+        detail = self.client.get(f"/admin/site-requests/{record_id}")
+        self.assertEqual(detail.status_code, 200)
+        self.assertIn(b"SITE REQUEST", detail.data)
+        self.assertIn(b"Safety harnesses", detail.data)
+        # New requests default to pending until a coordinator actions them.
+        self.assertIn(b"Pending", detail.data)
+
+        export = self.client.get("/admin/export/site-requests")
+        self.assertEqual(export.status_code, 200)
+        self.assertIn("REQ-001", export.get_data(as_text=True))
+
+    def test_site_request_defaults_to_pending_status(self):
+        record_id = self.client.post("/api/site-requests", json=self.site_request_payload()).json["id"]
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT status FROM site_requests WHERE id = ?", [record_id])
+            row = cursor.fetchone()
+        self.assertEqual(row["status"], "pending")
+
+    def test_site_request_open_filter_excludes_fulfilled(self):
+        fulfilled_id = self.client.post("/api/site-requests", json=self.site_request_payload(item="Fulfilled item")).json["id"]
+        self.client.post("/api/site-requests", json=self.site_request_payload(item="Still pending item"))
+        self.login()
+        edit_payload = {**self.site_request_payload(item="Fulfilled item"), "status": "fulfilled"}
+        self.client.post(f"/admin/site-requests/{fulfilled_id}/edit", data=edit_payload)
+
+        response = self.client.get("/admin?view=site-requests&status=open")
+        self.assertIn(b"Still pending item", response.data)
+        self.assertNotIn(b"Fulfilled item", response.data)
+
+    def test_site_request_edit_updates_status_and_persists(self):
+        record_id = self.client.post("/api/site-requests", json=self.site_request_payload()).json["id"]
+        self.login()
+        edit_payload = {**self.site_request_payload(), "status": "submitted"}
+        response = self.client.post(f"/admin/site-requests/{record_id}/edit", data=edit_payload)
+        self.assertEqual(response.status_code, 302)
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT status FROM site_requests WHERE id = ?", [record_id])
+            row = cursor.fetchone()
+        self.assertEqual(row["status"], "submitted")
+
+    def test_site_request_edit_rejects_invalid_status(self):
+        record_id = self.client.post("/api/site-requests", json=self.site_request_payload()).json["id"]
+        self.login()
+        edit_payload = {**self.site_request_payload(), "status": "not-a-real-status"}
+        response = self.client.post(f"/admin/site-requests/{record_id}/edit", data=edit_payload)
+        self.assertIn(b"Select a valid status", response.data)
+
+    def test_delete_site_request_logs_audit_entry(self):
+        self.login()
+        response = self.client.post("/api/site-requests", json=self.site_request_payload())
+        record_id = response.json["id"]
+        delete_response = self.client.post(f"/admin/site-requests/{record_id}/delete")
+        self.assertEqual(delete_response.status_code, 302)
+        self.assertEqual(self.client.get(f"/admin/site-requests/{record_id}").status_code, 404)
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT * FROM audit_log WHERE record_type = 'site_request'")
+            row = cursor.fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row["action"], "deleted")
 
     def test_violation_requires_employee_name(self):
         payload = self.violation_payload()
@@ -2486,7 +2580,7 @@ class ChecklistApplicationTests(unittest.TestCase):
         # can't time out or crash the whole backup.
         archive = zipfile.ZipFile(io.BytesIO(response.data))
         names = archive.namelist()
-        self.assertEqual(len(names), 8)
+        self.assertEqual(len(names), 9)
         self.assertTrue(any(name.startswith("inspections-summary-") for name in names))
         self.assertTrue(any(name.startswith("inspections-detailed-") for name in names))
         self.assertTrue(any(name.startswith("near-miss-") for name in names))
@@ -2495,6 +2589,7 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertTrue(any(name.startswith("training-log-") for name in names))
         self.assertTrue(any(name.startswith("good-practices-") for name in names))
         self.assertTrue(any(name.startswith("certificates-") for name in names))
+        self.assertTrue(any(name.startswith("site-requests-") for name in names))
 
     def test_per_type_backup_endpoints_reject_missing_or_wrong_token(self):
         for path in ("/admin/backup/near-miss.zip", "/admin/backup/violations.zip", "/admin/backup/training.zip"):

@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}{{ record.request_no }} · Site Request{% endblock %}
+{% block body_class %}record-page{% endblock %}
+{% block content %}
+<section class="record-toolbar no-print">
+  <a class="text-link" href="{{ (url_for('admin') + '?' + back) if back else url_for('admin', view='site-requests') }}">← Back to records</a>
+  <div class="record-toolbar-actions">
+    <form class="delete-form" method="post" action="{{ url_for('delete_site_request', record_id=record.id) }}">
+      <button class="button ghost danger" type="submit">Delete record</button>
+    </form>
+    <a class="button ghost" href="{{ url_for('site_request_edit', record_id=record.id) }}">Edit / update status</a>
+  </div>
+</section>
+
+<article class="doc-sheet">
+  <div class="doc-letterhead"><img src="{{ url_for('static', filename='bec-arabia-contracting.png') }}" alt="BEC Arabia Contracting"></div>
+  <div class="doc-band">SITE REQUEST</div>
+
+  <table class="doc-info">
+    <tr>
+      <td class="info-label tan">Request No:</td><td>{{ record.request_no }}</td>
+      <td class="info-label tan">Status:</td>
+      <td>
+        <span class="score-pill {{ 'low' if record.status == 'pending' else 'medium' if record.status == 'submitted' else '' }}">
+          {{ statuses.get(record.status, record.status) }}
+        </span>
+      </td>
+    </tr>
+    <tr><td class="info-label tan">Department:</td><td>{{ record.department }}</td><td class="info-label tan">Requested By:</td><td>{{ record.requested_by }}</td></tr>
+    <tr><td class="info-label tan">Item Required:</td><td>{{ record.item }}</td><td class="info-label tan">Quantity:</td><td>{{ record.quantity }}</td></tr>
+    <tr><td class="info-label tan">Urgency:</td><td colspan="3"><span class="score-pill {{ 'low' if record.urgency == 'Urgent' else '' }}">{{ record.urgency }}</span></td></tr>
+  </table>
+
+  {% if record.notes %}
+  <div class="doc-band">Notes</div>
+  <table class="doc-info stacked"><tr><td>{{ record.notes }}</td></tr></table>
+  {% endif %}
+
+  <div class="doc-classification">
+    <span>Classification: BEC Arabia - External - Unrestricted Use</span>
+  </div>
+</article>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='record.js') }}" defer></script>{% endblock %}
