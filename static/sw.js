@@ -1,17 +1,28 @@
 "use strict";
 
-const CACHE_NAME = "ohs-diriyah-v7";
+const CACHE_NAME = "ohs-diriyah-v8";
 const APP_SHELL = [
   "/",
   "/inspection",
   "/near-miss",
   "/violation",
   "/ptw",
+  "/good-practice",
+  "/training",
+  "/certificates",
+  "/site-requests",
+  "/tasks",
   "/static/style.css",
   "/static/form.js",
   "/static/near_miss.js",
   "/static/violation.js",
   "/static/ptw.js",
+  "/static/good_practice.js",
+  "/static/training.js",
+  "/static/certificate.js",
+  "/static/certificate_upload.js",
+  "/static/site_request.js",
+  "/static/tasks.js",
   "/static/photo_upload.js",
   "/static/icons/icon-192.png",
   "/static/icons/icon-512.png",

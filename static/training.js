@@ -32,6 +32,11 @@ async function submitEntry(event) {
   event.preventDefault();
   errorBox.classList.add("hidden");
   if (!form.reportValidity()) return;
+  const [attendanceOk, photosOk] = await Promise.all([attendanceUpload.waitForUploads(), photoUpload.waitForUploads()]);
+  if (!attendanceOk || !photosOk) {
+    showError("A photo failed to upload — remove it or wait for uploads to finish, then try again.");
+    return;
+  }
 
   const payload = {
     sessionType: field("sessionType").value,

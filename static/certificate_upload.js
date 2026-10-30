@@ -16,12 +16,15 @@ function resolveCertificateContentType(file) {
 
 function initCertificateUpload(rootId) {
   const root = document.getElementById(rootId);
-  if (!root) return { getKey: () => "" };
+  if (!root) return { getKey: () => "", waitForUpload: async () => {} };
   const input = root.querySelector('input[type="file"]');
   const addButton = root.querySelector(".photo-add-button");
   const status = root.querySelector(".certificate-upload-status");
   const token = crypto.randomUUID().replace(/-/g, "");
   let key = "";
+  // A quick tap on Submit can otherwise land before the upload finishes — getKey()
+  // would read "" and the form would wrongly claim no file was attached at all.
+  let pending = Promise.resolve();
 
   addButton.addEventListener("click", () => input.click());
 
@@ -57,9 +60,9 @@ function initCertificateUpload(rootId) {
   }
 
   input.addEventListener("change", () => {
-    if (input.files[0]) uploadFile(input.files[0]);
+    if (input.files[0]) pending = uploadFile(input.files[0]);
     input.value = "";
   });
 
-  return { getKey: () => key };
+  return { getKey: () => key, waitForUpload: () => pending };
 }

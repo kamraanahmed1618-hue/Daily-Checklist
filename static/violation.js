@@ -165,6 +165,10 @@ async function submitNotice(event) {
     showError("Choose a violation description from the approved list — use the matcher above or pick manually.");
     return;
   }
+  if (!(await photoUpload.waitForUploads())) {
+    showError("A photo failed to upload — remove it or wait for uploads to finish, then try again.");
+    return;
+  }
   if (!photoUpload.getKeys().length) {
     showError("Attach at least one photo before submitting — photographs are the primary evidence and are required.");
     return;

@@ -36,6 +36,7 @@ async function submitCertificate(event) {
   event.preventDefault();
   errorBox.classList.add("hidden");
   if (!form.reportValidity()) return;
+  await fileUpload.waitForUpload();
 
   const fileKey = fileUpload.getKey();
   if (!fileKey) {

@@ -33,6 +33,10 @@ async function submitReport(event) {
   event.preventDefault();
   errorBox.classList.add("hidden");
   if (!form.reportValidity()) return;
+  if (!(await photoUpload.waitForUploads())) {
+    showError("A photo failed to upload — remove it or wait for uploads to finish, then try again.");
+    return;
+  }
 
   const nearMissTypes = checkedValues("nearMissTypes");
   if (nearMissTypes.length === 0) {
