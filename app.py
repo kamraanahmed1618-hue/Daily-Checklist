@@ -177,6 +177,10 @@ app.jinja_env.filters["from_json"] = json.loads
 
 B2_BUCKET = os.environ.get("B2_BUCKET_NAME")
 PHOTO_MAX_COUNT = 8
+# TBT/Induction/Specific Training sessions can run large — many attendees' group shots,
+# multi-page attendance sheets — so training gets a higher per-field cap than every other
+# record type's default.
+TRAINING_PHOTO_MAX_COUNT = 20
 PHOTO_KEY_PATTERN = re.compile(r"uploads/[a-zA-Z0-9_-]{8,64}/[0-9a-f]{20}\.(?:jpg|png|webp)")
 CERTIFICATE_FILE_MAX_BYTES = 15 * 1024 * 1024
 CERTIFICATE_FILE_KEY_PATTERN = re.compile(r"uploads/[a-zA-Z0-9_-]{8,64}/[0-9a-f]{20}\.(?:jpg|png|webp|pdf)")
@@ -576,11 +580,11 @@ def delete_photos(keys: list[str]) -> None:
         app.logger.exception("Failed to delete photos from storage")
 
 
-def clean_photo_keys(value: Any) -> list[str]:
+def clean_photo_keys(value: Any, max_count: int = PHOTO_MAX_COUNT) -> list[str]:
     if not isinstance(value, list):
         return []
     keys = [item for item in value if isinstance(item, str) and PHOTO_KEY_PATTERN.fullmatch(item)]
-    return list(dict.fromkeys(keys))[:PHOTO_MAX_COUNT]
+    return list(dict.fromkeys(keys))[:max_count]
 
 
 def clean_certificate_file_key(value: Any) -> str:
@@ -1367,8 +1371,8 @@ def validate_training(payload: dict[str, Any]) -> dict[str, Any]:
         **record,
         "attendees_count": attendees_count,
         "key_lessons": clean_list_text(payload.get("keyLessons"), "Key lesson", 10, 300),
-        "photos": clean_photo_keys(payload.get("photoKeys")),
-        "attendance_photos": clean_photo_keys(payload.get("attendancePhotoKeys")),
+        "photos": clean_photo_keys(payload.get("photoKeys"), TRAINING_PHOTO_MAX_COUNT),
+        "attendance_photos": clean_photo_keys(payload.get("attendancePhotoKeys"), TRAINING_PHOTO_MAX_COUNT),
     }
 
 

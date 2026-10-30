@@ -4,8 +4,10 @@ const form = document.getElementById("training-form");
 const errorBox = document.getElementById("form-error");
 const successPanel = document.getElementById("success-panel");
 const successCopy = document.getElementById("success-copy");
-const attendanceUpload = initPhotoUpload("attendance-photo-upload");
-const photoUpload = initPhotoUpload("training-photo-upload");
+// TBT/Induction sessions can run large — many attendees, multi-page attendance sheets —
+// so these get a higher cap than the 8-photo default used elsewhere.
+const attendanceUpload = initPhotoUpload("attendance-photo-upload", 20);
+const photoUpload = initPhotoUpload("training-photo-upload", 20);
 
 function field(name) {
   return form.elements.namedItem(name);

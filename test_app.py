@@ -1403,6 +1403,44 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertIn("Work at Height", export_text)
         self.assertIn("Always inspect harness before use.", export_text)
 
+    def test_training_accepts_more_than_the_default_photo_cap(self):
+        photo_keys = [f"uploads/tok11111/{i:020x}.jpg" for i in range(12)]
+        payload = self.training_payload()
+        payload["photoKeys"] = photo_keys
+        payload["attendancePhotoKeys"] = photo_keys
+        response = self.client.post("/api/training", json=payload)
+        record_id = response.json["id"]
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT photos, attendance_photos FROM training_logs WHERE id = ?", [record_id])
+            row = cursor.fetchone()
+        self.assertEqual(len(json.loads(row["photos"])), 12)
+        self.assertEqual(len(json.loads(row["attendance_photos"])), 12)
+
+    def test_training_photo_count_still_caps_at_twenty(self):
+        photo_keys = [f"uploads/tok11111/{i:020x}.jpg" for i in range(25)]
+        payload = self.training_payload()
+        payload["photoKeys"] = photo_keys
+        response = self.client.post("/api/training", json=payload)
+        record_id = response.json["id"]
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT photos FROM training_logs WHERE id = ?", [record_id])
+            row = cursor.fetchone()
+        self.assertEqual(len(json.loads(row["photos"])), 20)
+
+    def test_other_record_types_still_cap_at_default_eight_photos(self):
+        photo_keys = [f"uploads/tok11111/{i:020x}.jpg" for i in range(12)]
+        payload = self.good_practice_payload()
+        payload["photoKeys"] = photo_keys
+        response = self.client.post("/api/good-practice", json=payload)
+        record_id = response.json["id"]
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT photos FROM good_practices WHERE id = ?", [record_id])
+            row = cursor.fetchone()
+        self.assertEqual(len(json.loads(row["photos"])), 8)
+
     def test_training_records_are_numbered_per_session_type(self):
         tbt_payload = self.training_payload()
         tbt_payload["sessionType"] = "TBT"
