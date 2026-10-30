@@ -17,6 +17,7 @@
     <meta name="apple-mobile-web-app-title" content="OHS Diriyah">
     <meta name="mobile-web-app-capable" content="yes">
     <script src="{{ url_for('static', filename='sw-register.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='nav.js') }}" defer></script>
 
     {% block head %}{% endblock %}
 </head>
@@ -31,7 +32,11 @@
                 <span class="department-name">Occupational Health & Safety</span>
             </a>
 
-            <nav class="main-nav">
+            <button class="nav-toggle" id="nav-toggle" type="button" aria-expanded="false" aria-controls="main-nav" aria-label="Open menu">
+                <span></span><span></span><span></span>
+            </button>
+
+            <nav class="main-nav" id="main-nav">
                 <a href="{{ url_for('inspection_form') }}">New Inspection</a>
                 <a href="{{ url_for('near_miss_form') }}">Near-Miss Report</a>
                 <a href="{{ url_for('violation_form') }}">Violation Notice</a>
