@@ -72,5 +72,17 @@
     <button class="button primary submit-button" type="submit">Save changes</button>
   </div>
 </form>
+
+<section class="card">
+  <div class="section-heading"><div><h2>Photo of the permit</h2></div></div>
+  {% if photo_urls %}
+  <p class="field-note">Not editable here — delete and resubmit if a photo needs replacing.</p>
+  <div class="doc-evidence">
+    {% for url in photo_urls %}<a href="{{ url }}" target="_blank" rel="noopener"><img src="{{ url }}" alt="PTW permit photo {{ loop.index }}"></a>{% endfor %}
+  </div>
+  {% else %}
+  <p class="field-note">No photo attached to this permit — ask whoever logged it to add one.</p>
+  {% endif %}
+</section>
 {% endblock %}
 {% block scripts %}<script src="{{ url_for('static', filename='record.js') }}" defer></script>{% endblock %}

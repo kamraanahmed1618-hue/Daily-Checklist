@@ -4,6 +4,7 @@ const form = document.getElementById("ptw-form");
 const errorBox = document.getElementById("form-error");
 const successPanel = document.getElementById("success-panel");
 const successCopy = document.getElementById("success-copy");
+const photoUpload = initPhotoUpload("ptw-photo-upload");
 
 function field(name) {
   return form.elements.namedItem(name);
@@ -36,6 +37,7 @@ async function submitEntry(event) {
     startTime: field("startTime").value,
     endDate: field("endDate").value,
     endTime: field("endTime").value,
+    photoKeys: photoUpload.getKeys(),
   };
 
   const button = form.querySelector("button[type=submit]");

@@ -743,6 +743,7 @@ def init_db() -> None:
             status TEXT NOT NULL DEFAULT 'open',
             workers_count INTEGER,
             reviewed_by TEXT NOT NULL DEFAULT '',
+            photos TEXT NOT NULL DEFAULT '[]',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )""",
@@ -856,6 +857,7 @@ def init_db() -> None:
         ensure_column("violation_notices", "subcontractor_discount_value", "TEXT NOT NULL DEFAULT ''")
         ensure_column("certificates", "certificate_type", "TEXT NOT NULL DEFAULT 'equipment'")
         ensure_column("certificates", "holder_role", "TEXT NOT NULL DEFAULT ''")
+        ensure_column("ptw_logs", "photos", "TEXT NOT NULL DEFAULT '[]'")
         # Backfill sequential numbers for any pre-existing records in submission order.
         for table in ("inspections", "near_miss_reports", "violation_notices", "ptw_logs", "training_logs", "good_practices", "certificates", "weekly_tasks"):
             cursor.execute(sql(f"SELECT COALESCE(MAX(seq), 0) AS next_seq FROM {table}"))
@@ -1332,7 +1334,7 @@ def validate_ptw(payload: dict[str, Any]) -> dict[str, Any]:
         if workers_count < 0 or workers_count > 9999:
             raise ValueError("Number of workers must be between 0 and 9999.")
 
-    return {**record, "workers_count": workers_count}
+    return {**record, "workers_count": workers_count, "photos": clean_photo_keys(payload.get("photoKeys"))}
 
 
 def validate_training(payload: dict[str, Any]) -> dict[str, Any]:
@@ -2586,13 +2588,14 @@ def submit_ptw() -> tuple[Response, int] | Response:
                 record_id, seq, record["ptw_number"], record["issuer"], record["receiver"], record["ptw_type"],
                 record["work_description"], record["area_hse_personnel"], record["location"], record["shift"],
                 record["start_date"], record["start_time"], record["end_date"], record["end_time"],
-                record["company"], record["status"], record["workers_count"], record["reviewed_by"], now, now,
+                record["company"], record["status"], record["workers_count"], record["reviewed_by"],
+                json.dumps(record["photos"]), now, now,
             ]
             columns = (
                 "id, seq, ptw_number, issuer, receiver, ptw_type, "
                 "work_description, area_hse_personnel, location, shift, "
                 "start_date, start_time, end_date, end_time, "
-                "company, status, workers_count, reviewed_by, created_at, updated_at"
+                "company, status, workers_count, reviewed_by, photos, created_at, updated_at"
             )
             placeholders = ",".join("?" for _ in values)
             cursor.execute(sql(f"INSERT INTO ptw_logs ({columns}) VALUES ({placeholders})"), values)
@@ -3264,6 +3267,7 @@ def ptw_detail(record_id: str) -> str | tuple[str, int] | Response:
     if not row:
         return "Record not found", 404
     record = dict(row)
+    record["photos"] = safe_json_list(record["photos"])
     error = ""
     if request.method == "POST":
         form_payload = {key: request.form.get(key) for key in PTW_FORM_FIELDS}
@@ -3298,7 +3302,7 @@ def ptw_detail(record_id: str) -> str | tuple[str, int] | Response:
                 raise
     return render_template(
         "ptw_edit.html", record=record, ptw_types=PTW_TYPES, shifts=PTW_SHIFTS, statuses=PTW_STATUSES, error=error,
-        back=request.args.get("back", ""),
+        photo_urls=photo_urls(record["photos"]), back=request.args.get("back", ""),
     )
 
 
@@ -3307,10 +3311,11 @@ def ptw_detail(record_id: str) -> str | tuple[str, int] | Response:
 def delete_ptw(record_id: str) -> Response | tuple[str, int]:
     with database() as connection:
         cursor = connection.cursor()
-        cursor.execute(sql("SELECT ptw_number FROM ptw_logs WHERE id = ?"), [record_id])
+        cursor.execute(sql("SELECT ptw_number, photos FROM ptw_logs WHERE id = ?"), [record_id])
         row = cursor.fetchone()
         cursor.execute(sql("DELETE FROM ptw_logs WHERE id = ?"), [record_id])
     if row:
+        delete_photos(safe_json_list(row["photos"]))
         log_audit("deleted", "ptw", row["ptw_number"])
     return redirect(url_for("admin", view="ptw"))
 

@@ -68,6 +68,17 @@
     </div>
   </section>
 
+  <section class="card">
+    <div class="section-heading"><div><span class="step-number">03</span><h2>Photo of the permit</h2></div></div>
+    <p class="field-note">Attach a photo of the actual signed permit — it's the fastest way for your coordinator to double-check the PTW number above against the real document.</p>
+    <div class="photo-upload" id="ptw-photo-upload">
+      <input type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
+      <button class="button secondary photo-add-button" type="button">+ Add photo</button>
+      <span class="field-note">JPEG, PNG, or WEBP · up to 8 photos · 8 MB each</span>
+      <div class="photo-grid"></div>
+    </div>
+  </section>
+
   <div id="form-error" class="form-error hidden" role="alert"></div>
   <div class="submit-bar">
     <div><strong>PTW log entry</strong><span>New entries start as "open" — your coordinator closes them once work finishes</span></div>
@@ -76,5 +87,6 @@
 </form>
 {% endblock %}
 {% block scripts %}
+<script src="{{ url_for('static', filename='photo_upload.js') }}" defer></script>
 <script src="{{ url_for('static', filename='ptw.js') }}" defer></script>
 {% endblock %}

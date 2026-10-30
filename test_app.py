@@ -1040,6 +1040,36 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertEqual(export.status_code, 200)
         self.assertIn("BAJV-829", export.get_data(as_text=True))
 
+    def test_ptw_detail_shows_no_photo_message_when_none_attached(self):
+        record_id = self.client.post("/api/ptw", json=self.ptw_payload()).json["id"]
+        self.login()
+        detail = self.client.get(f"/admin/ptw/{record_id}")
+        self.assertIn(b"No photo attached to this permit", detail.data)
+
+    def test_submit_ptw_with_photo_persists_key(self):
+        payload = self.ptw_payload()
+        payload["photoKeys"] = ["uploads/tok11111/aaaaaaaaaaaaaaaaaaaa.jpg"]
+        record_id = self.client.post("/api/ptw", json=payload).json["id"]
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT photos FROM ptw_logs WHERE id = ?", [record_id])
+            row = cursor.fetchone()
+        self.assertIn("uploads/tok11111/aaaaaaaaaaaaaaaaaaaa.jpg", row["photos"])
+
+    def test_ptw_edit_does_not_touch_photos(self):
+        payload = self.ptw_payload()
+        payload["photoKeys"] = ["uploads/tok11111/aaaaaaaaaaaaaaaaaaaa.jpg"]
+        record_id = self.client.post("/api/ptw", json=payload).json["id"]
+        self.login()
+        edit_payload = {k: v for k, v in payload.items() if k != "photoKeys"}
+        edit_payload["status"] = "closed"
+        self.client.post(f"/admin/ptw/{record_id}", data=edit_payload)
+        with database() as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT photos FROM ptw_logs WHERE id = ?", [record_id])
+            row = cursor.fetchone()
+        self.assertIn("uploads/tok11111/aaaaaaaaaaaaaaaaaaaa.jpg", row["photos"])
+
     def test_ptw_xlsx_export_matches_original_columns_and_highlights_open(self):
         open_id = self.client.post("/api/ptw", json=self.ptw_payload()).json["id"]
         closed_payload = self.ptw_payload()
