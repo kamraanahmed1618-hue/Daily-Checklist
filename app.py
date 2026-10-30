@@ -2851,7 +2851,7 @@ def submit_site_request() -> tuple[Response, int] | Response:
     except HTTPException:
         raise
     except Exception:
-        app.logger.exception("Site request submission failed")
+        app.logger.exception("Site material request submission failed")
         return jsonify({"error": "The request could not be saved."}), 500
 
 

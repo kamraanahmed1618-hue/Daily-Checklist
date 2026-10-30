@@ -26,7 +26,7 @@
     <a class="record-tab {{ 'active' if view == 'training' }}" href="{{ url_for('admin', view='training') }}">Training / TBT / Induction <span>{{ training_count }}</span></a>
     <a class="record-tab {{ 'active' if view == 'good-practices' }}" href="{{ url_for('admin', view='good-practices') }}">Good Practices <span>{{ good_practices_count }}</span></a>
     <a class="record-tab {{ 'active' if view == 'certificates' }}" href="{{ url_for('admin', view='certificates') }}">3rd Party Certificates <span>{{ certificates_count }}</span></a>
-    <a class="record-tab {{ 'active' if view == 'site-requests' }}" href="{{ url_for('admin', view='site-requests') }}">Site Requests <span>{{ site_requests_count }}</span></a>
+    <a class="record-tab {{ 'active' if view == 'site-requests' }}" href="{{ url_for('admin', view='site-requests') }}">Site Material Requests <span>{{ site_requests_count }}</span></a>
     <a class="record-tab {{ 'active' if view == 'weekly-tasks' }}" href="{{ url_for('admin', view='weekly-tasks') }}">Weekly Tasks</a>
     <a class="record-tab {{ 'active' if view == 'daily-kpis' }}" href="{{ url_for('admin', view='daily-kpis') }}">Daily KPIs</a>
     <a class="record-tab {{ 'active' if view == 'trends' }}" href="{{ url_for('admin', view='trends') }}">Trends</a>
@@ -450,7 +450,7 @@
         {% elif view == 'site-requests' %}
         {% if request.args.get('status') == 'open' %}
         <div class="notice warning" role="status">
-            Showing only <strong>open</strong> requests (pending or submitted, not yet fulfilled) —
+            Showing only <strong>open</strong> material requests (pending or submitted, not yet fulfilled) —
             <a href="{{ url_for('admin', view='site-requests') }}">view all requests</a>
         </div>
         {% endif %}
@@ -469,7 +469,7 @@
                     <td><a class="row-link" href="{{ url_for('site_request_detail', record_id=record.id, back=request.query_string.decode()) }}">View record</a></td>
                 </tr>
             {% else %}
-                <tr><td colspan="8" class="empty-state">No site requests found.</td></tr>
+                <tr><td colspan="8" class="empty-state">No site material requests found.</td></tr>
             {% endfor %}
             </tbody>
         </table>

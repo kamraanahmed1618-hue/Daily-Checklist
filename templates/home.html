@@ -26,7 +26,7 @@
   <article><span>TBTs</span><strong>{{ counts.tbts }}</strong><small>{{ counts.tbts_attendees }} attendees</small></article>
   <article><span>Good practices</span><strong>{{ counts.good_practices }}</strong></article>
   <article><span>Certificates needing attention</span><strong>{{ counts.certificates_attention }}</strong></article>
-  <article><span>Open site requests</span><strong>{{ counts.site_requests_open }}</strong></article>
+  <article><span>Open site material requests</span><strong>{{ counts.site_requests_open }}</strong></article>
 </section>
 
 <div class="home-grid">
@@ -66,8 +66,8 @@
     <span class="home-card-arrow">Upload certificate →</span>
   </a>
   <a class="home-card site-requests" href="{{ url_for('site_request_form') }}">
-    <h2>Site Request</h2>
-    <p>Request something you need on site — your coordinator reviews it here and raises it in ePromise.</p>
+    <h2>Site Material Request</h2>
+    <p>Request a material you need on site — your coordinator reviews it here and raises it in ePromise.</p>
     <span class="home-card-arrow">Log a request →</span>
   </a>
   <a class="home-card weekly-tasks" href="{{ url_for('weekly_tasks_page') }}">

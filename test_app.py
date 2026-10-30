@@ -939,7 +939,7 @@ class ChecklistApplicationTests(unittest.TestCase):
         self.assertIn(b"Safety harnesses", dashboard.data)
         detail = self.client.get(f"/admin/site-requests/{record_id}")
         self.assertEqual(detail.status_code, 200)
-        self.assertIn(b"SITE REQUEST", detail.data)
+        self.assertIn(b"SITE MATERIAL REQUEST", detail.data)
         self.assertIn(b"Safety harnesses", detail.data)
         # New requests default to pending until a coordinator actions them.
         self.assertIn(b"Pending", detail.data)
