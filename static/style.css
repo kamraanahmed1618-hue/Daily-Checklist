@@ -27,27 +27,15 @@ a { color: inherit; }
 .hidden { display: none !important; }
 
 .site-header { min-height: 76px; padding: 12px max(24px, calc((100vw - 1180px) / 2)); background: var(--navy); color: white; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
-.header-inner { position: relative; width: 100%; display: flex; flex-wrap: wrap; row-gap: 8px; align-items: center; justify-content: space-between; gap: 24px; }
+.header-inner { width: 100%; display: flex; flex-wrap: wrap; row-gap: 8px; align-items: center; justify-content: space-between; gap: 24px; }
 .brand { display: flex; align-items: center; gap: 14px; color: white; text-decoration: none; }
 .project-name { font-size: 17px; font-weight: 800; letter-spacing: .01em; }
 .department-name { padding-left: 14px; color: rgba(255,255,255,.72); font-size: 12px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; border-left: 1px solid rgba(255,255,255,.3); }
-/* The nav always opens behind the toggle, at every screen width: the page content
-   (and so the header) is capped at ~1180px via .site-header's padding formula above,
-   and 9 top-level links never fit inline in that width no matter how wide the monitor
-   is — letting them wrap inline (the old behavior) produced a cramped two-row header
-   even on a full desktop window. It's positioned absolute (not a normal flex item) so
-   an open menu overlays the page below the header instead of stretching the header's
-   own height to fit all 9 stacked links. */
-.main-nav { display: none; position: absolute; top: calc(100% + 8px); left: 0; right: 0; flex-direction: column; gap: 2px; background: var(--navy); border-radius: 10px; padding: 6px; box-shadow: 0 16px 32px rgba(0,0,0,.35); z-index: 40; }
-.main-nav.open { display: flex; }
-.main-nav a { display: block; width: 100%; padding: 12px 14px; color: rgba(255,255,255,.88); border-radius: 8px; font-size: 15px; font-weight: 650; text-decoration: none; }
-.main-nav a:hover { background: rgba(255,255,255,.14); color: white; }
+.main-nav { display: flex; flex-wrap: wrap; gap: 8px; }
+.main-nav a { padding: 9px 13px; color: rgba(255,255,255,.82); border-radius: 9px; font-size: 14px; font-weight: 650; text-decoration: none; }
+.main-nav a:hover { background: rgba(255,255,255,.12); color: white; }
 
-@media (min-width: 681px) {
-  .main-nav { left: auto; width: 300px; }
-}
-
-.nav-toggle { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 5px; width: 40px; height: 40px; padding: 0; border: none; border-radius: 9px; background: rgba(255,255,255,.12); cursor: pointer; }
+.nav-toggle { display: none; flex-direction: column; justify-content: center; align-items: center; gap: 5px; width: 40px; height: 40px; padding: 0; border: none; border-radius: 9px; background: rgba(255,255,255,.12); cursor: pointer; }
 .nav-toggle span { display: block; width: 20px; height: 2px; background: white; border-radius: 2px; pointer-events: none; }
 
 main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; }
@@ -386,6 +374,10 @@ td small { margin-top: 3px; color: var(--muted); }
   main { width: min(100% - 24px, 1180px); }
   .site-header { padding: 10px 14px; }
   .department-name { display: none; }
+  .nav-toggle { display: flex; }
+  .main-nav { display: none; width: 100%; flex-direction: column; gap: 2px; order: 3; background: rgba(0,0,0,.14); border-radius: 10px; padding: 6px; }
+  .main-nav.open { display: flex; }
+  .main-nav a { width: 100%; padding: 13px 14px; font-size: 15px; border-radius: 8px; }
   .hero, .admin-hero { padding: 38px 2px 25px; align-items: stretch; flex-direction: column; gap: 20px; }
   .hero h1, .admin-hero h1 { font-size: 39px; }
   .hero p { font-size: 15px; }
