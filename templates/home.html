@@ -17,16 +17,16 @@
 
 <p class="stats-period">This week ({{ counts.week_start }} to {{ counts.week_end }})</p>
 <section class="stats-grid cols-8">
-  <article><span>Inspections logged</span><strong>{{ counts.inspections }}</strong></article>
-  <article><span>Near-miss reports</span><strong>{{ counts.near_miss }}</strong></article>
-  <article><span>Violation notices</span><strong>{{ counts.violations }}</strong></article>
-  <article><span>Open PTW permits</span><strong>{{ counts.ptw_open }}</strong></article>
-  <article><span>Inductions</span><strong>{{ counts.inductions }}</strong><small>{{ counts.inductions_attendees }} attendees</small></article>
-  <article><span>Trainings</span><strong>{{ counts.trainings }}</strong><small>{{ counts.trainings_attendees }} attendees</small></article>
-  <article><span>TBTs</span><strong>{{ counts.tbts }}</strong><small>{{ counts.tbts_attendees }} attendees</small></article>
-  <article><span>Good practices</span><strong>{{ counts.good_practices }}</strong></article>
-  <article><span>Certificates needing attention</span><strong>{{ counts.certificates_attention }}</strong></article>
-  <article><span>Open site material requests</span><strong>{{ counts.site_requests_open }}</strong></article>
+  <article class="inspection"><span>Inspections logged</span><strong>{{ counts.inspections }}</strong></article>
+  <article class="near-miss"><span>Near-miss reports</span><strong>{{ counts.near_miss }}</strong></article>
+  <article class="violation"><span>Violation notices</span><strong>{{ counts.violations }}</strong></article>
+  <article class="ptw"><span>Open PTW permits</span><strong>{{ counts.ptw_open }}</strong></article>
+  <article class="training"><span>Inductions</span><strong>{{ counts.inductions }}</strong><small>{{ counts.inductions_attendees }} attendees</small></article>
+  <article class="training"><span>Trainings</span><strong>{{ counts.trainings }}</strong><small>{{ counts.trainings_attendees }} attendees</small></article>
+  <article class="training"><span>TBTs</span><strong>{{ counts.tbts }}</strong><small>{{ counts.tbts_attendees }} attendees</small></article>
+  <article class="good-practice"><span>Good practices</span><strong>{{ counts.good_practices }}</strong></article>
+  <article class="certificates"><span>Certificates needing attention</span><strong>{{ counts.certificates_attention }}</strong></article>
+  <article class="site-requests"><span>Open site material requests</span><strong>{{ counts.site_requests_open }}</strong></article>
 </section>
 
 <div class="home-grid">

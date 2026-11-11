@@ -210,10 +210,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--navy-2); box-sha
 .stats-grid.cols-5 { grid-template-columns: repeat(5, 1fr); }
 .stats-grid.cols-6 { grid-template-columns: repeat(6, 1fr); }
 .stats-grid.cols-8 { grid-template-columns: repeat(4, 1fr); }
-.stats-grid article { padding: 21px 23px; background: white; border: 1px solid var(--line); border-radius: 14px; }
+.stats-grid article { padding: 21px 23px; background: white; border: 1px solid var(--line); border-top: 3px solid var(--accent, var(--navy)); border-radius: 16px; box-shadow: var(--shadow); }
 .stats-grid span, .stats-grid strong { display: block; }
 .stats-grid span { margin-bottom: 7px; color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
-.stats-grid strong { font-family: Georgia, serif; font-size: 32px; font-weight: 500; }
+.stats-grid strong { font-family: Georgia, serif; font-size: 32px; font-weight: 500; color: var(--accent, var(--ink)); }
 .stats-grid strong.text { font-size: 22px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .stats-grid small { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
 
@@ -226,15 +226,15 @@ input:focus, select:focus, textarea:focus { border-color: var(--navy-2); box-sha
 .home-card h2 { margin: 0; font-family: Georgia, serif; font-size: 21px; font-weight: 500; }
 .home-card p { margin: 0; color: var(--muted); font-size: 13px; flex-grow: 1; }
 .home-card-arrow { color: var(--accent, var(--navy-2)); font-size: 13px; font-weight: 800; }
-.home-card.inspection { --accent: #2a78d6; }
-.home-card.near-miss { --accent: #eb6834; }
-.home-card.violation { --accent: #ad3328; }
-.home-card.ptw { --accent: #1baf7a; }
-.home-card.training { --accent: #7c3aed; }
-.home-card.good-practice { --accent: #0e9488; }
+.home-card.inspection, .stats-grid article.inspection { --accent: #2a78d6; }
+.home-card.near-miss, .stats-grid article.near-miss { --accent: #eb6834; }
+.home-card.violation, .stats-grid article.violation { --accent: #ad3328; }
+.home-card.ptw, .stats-grid article.ptw { --accent: #1baf7a; }
+.home-card.training, .stats-grid article.training { --accent: #7c3aed; }
+.home-card.good-practice, .stats-grid article.good-practice { --accent: #0e9488; }
 .home-card.weekly-tasks { --accent: #c026d3; }
-.home-card.certificates { --accent: #b45309; }
-.home-card.site-requests { --accent: #0e7490; }
+.home-card.certificates, .stats-grid article.certificates { --accent: #b45309; }
+.home-card.site-requests, .stats-grid article.site-requests { --accent: #0e7490; }
 .home-card.records { --accent: var(--navy); }
 .records-card { padding: 0; overflow: hidden; }
 .filter-bar { padding: 22px; background: #f4f6fb; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: minmax(240px, 1fr) 160px 160px auto auto; align-items: end; gap: 12px; }
